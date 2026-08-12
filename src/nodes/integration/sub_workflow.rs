@@ -184,16 +184,36 @@ impl NodeExecutor for SubWorkflowNode {
                     // so `=item.x` addresses the element this run is for, and
                     // receives that single item as its input.
                     let scope = crate::nodes::expr_scope_for(ctx, item.json.clone());
-                    let child = run_child(ctx, &scope, std::slice::from_ref(item)).await?;
+                    // `run_child` yields `None` only when the parent cancelled
+                    // this run mid-child (`ctx.token` is then set). The map slots
+                    // exactly one output per input index, so stand in with an
+                    // empty item — the whole node's output is discarded by the
+                    // token check below, so this placeholder never surfaces.
+                    let child = run_child(ctx, &scope, std::slice::from_ref(item))
+                        .await?
+                        .unwrap_or_else(|| crate::data::Item::new(Value::Null));
                     Ok((child, vec![]))
                 })
                 .await?;
+            // Parent-initiated cancel: wind down with no output, mirroring the
+            // top-level cancelled-node contract. `ctx.token` is a one-way flag,
+            // so if any child wound down (returned `None`) it is set here; the
+            // parent's next boundary check sees the same flip and settles
+            // `cancelled = true`.
+            if ctx.token.is_cancelled() {
+                return Ok(NodeOutput::empty());
+            }
             return Ok(NodeOutput::main(items));
         }
 
         let scope = crate::nodes::expr_scope(&ctx);
-        let item = run_child(&ctx, &scope, ctx.input).await?;
-        Ok(NodeOutput::main(vec![item]))
+        match run_child(&ctx, &scope, ctx.input).await? {
+            Some(item) => Ok(NodeOutput::main(vec![item])),
+            // Parent-initiated cancel wound the child down: emit nothing, the
+            // same clean wind-down a top-level cancelled node performs. The
+            // parent's next boundary check settles `cancelled = true`.
+            None => Ok(NodeOutput::empty()),
+        }
     }
 }
 
@@ -203,11 +223,17 @@ impl NodeExecutor for SubWorkflowNode {
 /// `scope` is the expression scope `workflow_id` is resolved against (the whole
 /// input for `once`, the current element for `per_item`), and `child_input` is
 /// the item array seeded into the child run.
+///
+/// Returns `Ok(None)` when the parent run cancelled this child mid-flight
+/// (`ctx.token` is set): the child is a clean cooperative wind-down, not a
+/// failure, so it emits no item and lets the parent settle as cancelled. A child
+/// that stops for any *other* reason (a `requires_approval` pause, or a cancel
+/// arriving through a channel independent of the parent's token) still errors.
 async fn run_child(
     ctx: &NodeContext<'_>,
     scope: &Value,
     child_input: &[crate::data::Item],
-) -> Result<crate::data::Item> {
+) -> Result<Option<crate::data::Item>> {
     // The inline `workflow` graph carries its *own* `=`-expressions, scoped
     // to the CHILD run — it must pass through untouched. Only the fields the
     // sub_workflow node itself reads (here `workflow_id`) are resolved
@@ -271,12 +297,17 @@ async fn run_child(
     // once at the call site.
     let child_inputs = child_inputs(&ctx.node.config, scope)?;
     // Box the recursive engine call so the async future type stays sized.
+    // Forward the parent run's cancellation token: cancelling the parent must
+    // wind down this child too, rather than letting it run on orphaned behind a
+    // fresh token. The child threads it into its own node contexts, so the whole
+    // nesting chain shares one cancellation signal.
     let outcome = Box::pin(crate::engine::run_sub_workflow(
         &compiled,
         crate::engine::RunInput::new(trigger).with_inputs(child_inputs),
         ctx.caps,
         child_depth,
         depth_cap,
+        ctx.token.clone(),
     ))
     .await?;
 
@@ -313,6 +344,28 @@ async fn run_child(
         )));
     }
     if outcome.cancelled {
+        // Two cancellations look the same on the child's `RunOutcome` but mean
+        // opposite things to the parent, so split on *who* cancelled:
+        //
+        // - The parent's own token is set: this is a cooperative wind-down of
+        //   the whole run (the parent is being cancelled and forwarded the same
+        //   token in, per `run_sub_workflow`). Halting with an error here would
+        //   turn a clean cancel into a spurious failure. Emit nothing and let
+        //   the parent settle: its next node-boundary check sees the same
+        //   flipped token and reports `cancelled = true`, exactly as a
+        //   top-level cancelled node does.
+        // - The parent's token is NOT set, yet the child still reports
+        //   cancelled: the child was cancelled through some channel independent
+        //   of this run (none exists today — the only token a child receives is
+        //   the parent's clone — but keep the arm so a future independent-cancel
+        //   path can never be silently treated as a completed child).
+        if ctx.token.is_cancelled() {
+            tracing::debug!(
+                node = %ctx.node.id,
+                "sub_workflow: child wound down under the parent's cancellation; emitting no output"
+            );
+            return Ok(None);
+        }
         return Err(EngineError::Capability(format!(
             "sub_workflow node {:?}: child run was cancelled before completing; the parent \
              run is halted rather than falsely completed",
@@ -320,7 +373,7 @@ async fn run_child(
         )));
     }
 
-    Ok(crate::data::Item::new(outcome.output))
+    Ok(Some(crate::data::Item::new(outcome.output)))
 }
 
 #[cfg(test)]
@@ -362,6 +415,7 @@ mod tests {
             run: &run_meta,
             nodes: &Value::Null,
             caps: &caps,
+            token: crate::engine::CancellationToken::new(),
         };
         SubWorkflowNode
             .execute(ctx)
@@ -384,6 +438,7 @@ mod tests {
             run: &run_meta,
             nodes: &Value::Null,
             caps,
+            token: crate::engine::CancellationToken::new(),
         };
         SubWorkflowNode.execute(ctx).await.expect("execute")
     }
@@ -647,6 +702,7 @@ mod tests {
             run: &run_meta,
             nodes: &Value::Null,
             caps,
+            token: crate::engine::CancellationToken::new(),
         };
         SubWorkflowNode.execute(ctx).await
     }
@@ -812,6 +868,337 @@ mod tests {
         assert!(
             matches!(err, EngineError::Capability(ref m) if m.contains("depth 2")),
             "the error should name the declared cap, got: {err:?}"
+        );
+    }
+}
+
+/// Cross-boundary cancellation: a parent run's [`CancellationToken`] must reach
+/// its `sub_workflow` children so a parent cancel winds the whole subtree down
+/// instead of orphaning it behind a fresh token. These pin the propagation
+/// end-to-end through a real `run_cancellable` drive (T1–T5).
+///
+/// The mid-flight cancel is made **deterministic under parallel test load** by
+/// having the `slow` node hold the run at its boundary until the token actually
+/// flips (a bounded spin), rather than racing a wall-clock sleep against the
+/// scheduler — so the boundary check before `marker` is guaranteed to observe
+/// the cancellation.
+#[cfg(test)]
+mod cancellation_propagation_tests {
+    use std::sync::{Arc, Mutex};
+    use std::time::{Duration, Instant};
+
+    use async_trait::async_trait;
+    use serde_json::{Value, json};
+    use tokio::sync::Notify;
+    use tokio::time::sleep;
+
+    use crate::caps::mock::mock_capabilities;
+    use crate::caps::{Capabilities, ToolInvoker};
+    use crate::compiler::compile;
+    use crate::engine::{CancellationToken, RunOutcome, run_cancellable};
+    use crate::error::Result;
+    use crate::model::{Edge, Node, NodeKind, WorkflowGraph};
+
+    /// The bounded spin `slow` uses to wait for cancellation, and the cap on
+    /// `marker`'s sleep — both generous enough to never trip under load, small
+    /// enough that a broken build (where `marker` runs) is still obvious.
+    const SPIN_CAP_MS: u64 = 5_000;
+
+    /// A [`ToolInvoker`] that records every slug it runs and lets a test suspend a
+    /// run *inside* a node. `slow` fires `slow_started` and then — when
+    /// `block_until_cancel` is set — holds the run at that node until `run_token`
+    /// flips (bounded by [`SPIN_CAP_MS`]); this pins the cancel to land while
+    /// `slow` is mid-flight, with no dependency on scheduler timing. `marker` is a
+    /// node that must never run once cancellation has propagated: its appearance
+    /// in `invoked` (and its long sleep in the elapsed time) is what a broken
+    /// propagation reveals.
+    #[derive(Clone)]
+    struct ProbeTools {
+        invoked: Arc<Mutex<Vec<String>>>,
+        slow_started: Arc<Notify>,
+        run_token: CancellationToken,
+        block_until_cancel: bool,
+        marker_ms: u64,
+    }
+
+    #[async_trait]
+    impl ToolInvoker for ProbeTools {
+        async fn invoke(&self, slug: &str, _args: Value, _conn: Option<&str>) -> Result<Value> {
+            self.invoked
+                .lock()
+                .expect("invoked mutex")
+                .push(slug.to_string());
+            match slug {
+                "slow" => {
+                    self.slow_started.notify_one();
+                    // Hold the child at this node until the run is cancelled, so
+                    // the boundary check before `marker` deterministically sees
+                    // the flip. Bounded so a broken build cannot hang CI.
+                    if self.block_until_cancel {
+                        let mut waited = 0;
+                        while !self.run_token.is_cancelled() && waited < SPIN_CAP_MS {
+                            sleep(Duration::from_millis(1)).await;
+                            waited += 1;
+                        }
+                    }
+                }
+                // When cancellation propagated, `marker` never runs. A cancel test
+                // sets `marker_ms` long so a *broken* propagation (marker runs)
+                // blows the elapsed bound too; the uncancelled control sets it to 0
+                // so the run stays fast when `marker` legitimately runs.
+                "marker" => sleep(Duration::from_millis(self.marker_ms)).await,
+                _ => {}
+            }
+            Ok(json!({ "tool": slug }))
+        }
+    }
+
+    fn node(id: &str, kind: NodeKind) -> Node {
+        Node {
+            id: id.to_string(),
+            kind,
+            type_version: 1,
+            name: id.to_string(),
+            config: Value::Null,
+            ports: Vec::new(),
+            position: None,
+        }
+    }
+
+    fn edge(from: &str, to: &str) -> Edge {
+        Edge {
+            from_node: from.to_string(),
+            from_port: "main".to_string(),
+            to_node: to.to_string(),
+            to_port: "main".to_string(),
+        }
+    }
+
+    /// A single-invocation `tool_call` node bound to `slug`.
+    fn tool(id: &str, slug: &str) -> Node {
+        let mut n = node(id, NodeKind::ToolCall);
+        n.config = json!({ "slug": slug, "execution": "once" });
+        n
+    }
+
+    /// `trigger -> slow -> marker`: the innermost chain every test cancels within.
+    fn slow_then_marker() -> WorkflowGraph {
+        WorkflowGraph {
+            nodes: vec![
+                node("ct", NodeKind::Trigger),
+                tool("slow", "slow"),
+                tool("marker", "marker"),
+            ],
+            edges: vec![edge("ct", "slow"), edge("slow", "marker")],
+            ..Default::default()
+        }
+    }
+
+    /// `trigger -> sub_workflow(child)`, with `child` embedded inline.
+    fn wrap_inline(child: &WorkflowGraph) -> WorkflowGraph {
+        let inline = serde_json::to_value(child).expect("serialize child graph");
+        let mut sw = node("sw", NodeKind::SubWorkflow);
+        sw.config = json!({ "workflow": inline, "execution": "once" });
+        WorkflowGraph {
+            nodes: vec![node("pt", NodeKind::Trigger), sw],
+            edges: vec![edge("pt", "sw")],
+            ..Default::default()
+        }
+    }
+
+    fn probe(
+        token: &CancellationToken,
+        block_until_cancel: bool,
+        marker_ms: u64,
+    ) -> (Capabilities, Arc<Mutex<Vec<String>>>, Arc<Notify>) {
+        let invoked = Arc::new(Mutex::new(Vec::new()));
+        let slow_started = Arc::new(Notify::new());
+        let tools = ProbeTools {
+            invoked: invoked.clone(),
+            slow_started: slow_started.clone(),
+            run_token: token.clone(),
+            block_until_cancel,
+            marker_ms,
+        };
+        let caps = Capabilities {
+            tools: Arc::new(tools),
+            ..mock_capabilities()
+        };
+        (caps, invoked, slow_started)
+    }
+
+    /// Drives `run_cancellable` to completion while **actively polling** the run
+    /// future, cancelling `token` the moment the innermost `slow` node starts.
+    /// Polling matters: an un-awaited run future is the documented trap that makes
+    /// a cancellation test hollow, so the future is raced against the start signal
+    /// rather than cancelled blind.
+    async fn run_cancelling_on_slow(
+        graph: &WorkflowGraph,
+        caps: &Capabilities,
+        token: CancellationToken,
+        slow_started: Arc<Notify>,
+    ) -> (RunOutcome, Duration) {
+        let compiled = compile(graph).expect("compile");
+        let fut = run_cancellable(&compiled, json!({}), caps, token.clone());
+        tokio::pin!(fut);
+        let notified = slow_started.notified();
+        tokio::pin!(notified);
+        let mut cancelled = false;
+        let started = Instant::now();
+        let outcome = loop {
+            tokio::select! {
+                out = &mut fut => break out.expect("cancelled run still returns Ok"),
+                // Guarded so the one-shot start signal is not polled after it fires.
+                () = &mut notified, if !cancelled => {
+                    token.cancel();
+                    cancelled = true;
+                }
+            }
+        };
+        assert!(
+            cancelled,
+            "the `slow` node must have started so the cancel landed mid-flight"
+        );
+        (outcome, started.elapsed())
+    }
+
+    // T1 — repro→green. Parent -> sub_workflow(child), child is
+    // trigger -> slow -> marker. Cancelling mid-`slow` must wind the child down:
+    // `slow` (already running) completes, `marker` never runs, and the run
+    // settles cancelled. Before the fix the child ran behind a fresh token, so
+    // the cancel never crossed the boundary and `marker` executed.
+    #[tokio::test]
+    async fn t1_parent_cancel_stops_child_before_marker() {
+        let token = CancellationToken::new();
+        let (caps, invoked, slow_started) = probe(&token, true, SPIN_CAP_MS);
+        let graph = wrap_inline(&slow_then_marker());
+
+        let (outcome, elapsed) = run_cancelling_on_slow(&graph, &caps, token, slow_started).await;
+
+        assert!(outcome.cancelled, "the parent run should report cancelled");
+        let slugs = invoked.lock().expect("invoked mutex").clone();
+        assert!(
+            slugs.contains(&"slow".to_string()),
+            "the in-flight `slow` node ran: {slugs:?}"
+        );
+        assert!(
+            !slugs.contains(&"marker".to_string()),
+            "cancellation must reach the child: `marker` should never run, got {slugs:?}"
+        );
+        // Elapsed is bounded by the in-flight `slow` node's remainder, not by
+        // `marker`'s long sleep — the run did not wait on the skipped node.
+        assert!(
+            elapsed < Duration::from_millis(2_000),
+            "wind-down should be bounded by `slow`, not `marker`; took {elapsed:?}"
+        );
+    }
+
+    // T2 — transitive inheritance at depth ≥ 2. Parent -> sub -> sub, the
+    // innermost being trigger -> slow -> marker. Cancelling mid-innermost-`slow`
+    // must still skip the innermost `marker`: each level forwards the same token
+    // down through its own node contexts.
+    #[tokio::test]
+    async fn t2_cancel_propagates_through_two_levels() {
+        let token = CancellationToken::new();
+        let (caps, invoked, slow_started) = probe(&token, true, SPIN_CAP_MS);
+        let inner = wrap_inline(&slow_then_marker());
+        let graph = wrap_inline(&inner);
+
+        let (outcome, elapsed) = run_cancelling_on_slow(&graph, &caps, token, slow_started).await;
+
+        assert!(outcome.cancelled, "the top run should report cancelled");
+        let slugs = invoked.lock().expect("invoked mutex").clone();
+        assert!(
+            slugs.contains(&"slow".to_string()),
+            "innermost `slow` ran: {slugs:?}"
+        );
+        assert!(
+            !slugs.contains(&"marker".to_string()),
+            "the token must reach depth 2: innermost `marker` should never run, got {slugs:?}"
+        );
+        assert!(
+            elapsed < Duration::from_millis(2_000),
+            "two-level wind-down should still be bounded by `slow`; took {elapsed:?}"
+        );
+    }
+
+    // T3 — the guardrail: an *uncancelled* run of the identical graph must be
+    // untouched, so the fix cannot be "cancel everything". Both child slugs run
+    // and the outcome is not cancelled. `block_until_cancel` is off so `slow`
+    // returns immediately (nothing will ever cancel it).
+    #[tokio::test]
+    async fn t3_uncancelled_child_runs_to_completion() {
+        let token = CancellationToken::new();
+        let (caps, invoked, _slow_started) = probe(&token, false, 0);
+        let graph = wrap_inline(&slow_then_marker());
+        let compiled = compile(&graph).expect("compile");
+
+        let outcome = run_cancellable(&compiled, json!({}), &caps, token)
+            .await
+            .expect("run");
+
+        assert!(
+            !outcome.cancelled,
+            "an uncancelled run must not report cancelled"
+        );
+        let slugs = invoked.lock().expect("invoked mutex").clone();
+        assert!(
+            slugs.contains(&"slow".to_string()),
+            "`slow` should run: {slugs:?}"
+        );
+        assert!(
+            slugs.contains(&"marker".to_string()),
+            "`marker` must still run when nothing cancels: {slugs:?}"
+        );
+    }
+
+    // T4 — a token already cancelled before the run starts: the parent's
+    // `sub_workflow` node short-circuits at its own boundary, so the child never
+    // starts and neither tool is invoked.
+    #[tokio::test]
+    async fn t4_pre_cancelled_token_never_starts_child() {
+        let token = CancellationToken::new();
+        let (caps, invoked, _slow_started) = probe(&token, true, 0);
+        let graph = wrap_inline(&slow_then_marker());
+        let compiled = compile(&graph).expect("compile");
+
+        token.cancel();
+        let outcome = run_cancellable(&compiled, json!({}), &caps, token)
+            .await
+            .expect("pre-cancelled run still returns Ok");
+
+        assert!(outcome.cancelled, "a pre-cancelled run reports cancelled");
+        let slugs = invoked.lock().expect("invoked mutex").clone();
+        assert!(
+            slugs.is_empty(),
+            "the sub_workflow node short-circuits, so no child tool runs: {slugs:?}"
+        );
+    }
+
+    // T5 — the defensive arm. When a child reports cancelled but the parent's own
+    // token is *not* set, `run_child` still errors rather than silently treating
+    // the child as completed. That state is unreachable through `run_sub_workflow`
+    // today (a child only ever receives the parent's own token clone, so a
+    // cancelled child implies a cancelled parent token — see T1), so this pins the
+    // arm at the source level: a future refactor cannot delete it and let an
+    // independently-cancelled child fall through as a false completion.
+    #[test]
+    fn t5_defensive_independent_cancel_arm_is_present() {
+        // Scope the check to the production region — everything before the test
+        // module. `include_str!` pulls the whole file, so an unscoped `contains`
+        // would match the assertion strings *in this test itself* and pass even if
+        // the production arm were deleted. Slicing at `mod tests` (the sole such
+        // marker) makes deleting the arm from `run_child` actually fail this test.
+        let src = include_str!("sub_workflow.rs");
+        let production = src
+            .split("mod tests")
+            .next()
+            .expect("source file has a body before its test module");
+        assert!(
+            production.contains("if ctx.token.is_cancelled() {")
+                && production.contains("run is halted rather than falsely completed"),
+            "run_child must keep BOTH the parent-cancel wind-down (Ok(None)) and the \
+             defensive independent-cancel error arm"
         );
     }
 }
