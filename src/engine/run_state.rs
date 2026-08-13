@@ -70,18 +70,16 @@ async fn cancel_spawned_tasks(
 ///
 /// # Errors
 /// Same as [`run`].
-#[allow(clippy::too_many_arguments)]
 pub(super) async fn build_and_run(
     workflow: &CompiledWorkflow,
     input: impl Into<RunInput>,
     capabilities: &Capabilities,
     observer: &Arc<dyn RunObserver>,
-    checkpointer: Arc<dyn Checkpointer<Value>>,
-    thread_id: String,
-    journal: Option<Arc<dyn GraphEventJournal>>,
-    run_meta_overlay: Option<Value>,
-    token: CancellationToken,
+    config: RunConfig,
 ) -> Result<(CompiledGraph<Value, Value>, String, RunOutcome, GraphRunIds)> {
+    let token = config.token.clone();
+    let thread_id = config.thread_id.clone();
+    let run_meta_overlay = config.run_meta_overlay.clone();
     // Declared inputs are resolved FIRST — before the run id is minted, before
     // the observer is told a run started, and before any graph is built. A
     // caller that gets an `Input` error can therefore be certain nothing ran and
