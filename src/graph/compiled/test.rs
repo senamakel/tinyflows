@@ -2279,7 +2279,7 @@ impl Checkpointer<i32> for FailNonTerminalCheckpointer {
         checkpoint: crate::graph::checkpoint::Checkpoint<i32>,
     ) -> crate::graph::error::Result<crate::graph::ids::CheckpointId> {
         if !checkpoint.next_nodes.is_empty() {
-            return Err(crate::error::GraphError::Checkpoint(
+            return Err(crate::graph::error::GraphError::Checkpoint(
                 "injected background write failure".to_string(),
             ));
         }
@@ -3070,7 +3070,7 @@ impl Checkpointer<i32> for FirstPutFailsSlowlyCheckpointer {
     ) -> crate::graph::error::Result<crate::graph::ids::CheckpointId> {
         if self.attempts.fetch_add(1, AtomicOrdering::SeqCst) == 0 {
             tokio::time::sleep(Duration::from_millis(100)).await;
-            return Err(crate::error::GraphError::Checkpoint(
+            return Err(crate::graph::error::GraphError::Checkpoint(
                 "injected background write failure".to_string(),
             ));
         }

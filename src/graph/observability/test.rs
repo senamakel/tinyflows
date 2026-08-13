@@ -3,7 +3,7 @@
 //! namespaced subgraph observations.
 
 use super::*;
-use crate::error::GraphError;
+use crate::graph::error::GraphError;
 use crate::graph::builder::{GraphBuilder, NodeContext};
 use crate::graph::command::NodeResult;
 use crate::graph::compiled::CompiledGraph;
