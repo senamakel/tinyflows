@@ -19,6 +19,9 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+/// Reading the expression bindings a graph declares — which node an
+/// `={{ ... }}` reads from, and whether it reads as prose.
+pub mod bindings;
 /// Browser automation protocol, action validation, and tool routing.
 pub mod browser;
 pub mod caps;
@@ -30,11 +33,22 @@ pub mod data;
 pub mod engine;
 pub mod error;
 pub mod expr;
+/// Authoring gates: what is *guaranteed* wrong with a graph, caught before a
+/// write lands rather than as a silent null at run time.
+pub mod gates;
 pub mod graph_ops;
+// Only the file-backed store and the process-backed capabilities need unique
+// scratch names, and both are optional.
+#[cfg(any(test, feature = "store", feature = "host-caps"))]
+mod ids;
 pub mod migrate;
 pub mod model;
 pub mod nodes;
 pub mod observability;
+/// Stored workflows and their run history: the durable model around a graph,
+/// and a file-backed store for it. Behind the `store` feature.
+#[cfg(any(test, feature = "store"))]
+pub mod store;
 pub mod validate;
 
 /// The crate name published to crates.io.

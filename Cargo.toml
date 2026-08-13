@@ -35,6 +35,13 @@ tracing = "0.1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "sync", "time"] }
 axum = { version = "0.8", features = ["ws"] }
 reqwest = { version = "0.13", default-features = false, features = ["json"] }
+# `caps::host` only: hashing an author-supplied state key (and namespace) into
+# one safe path component, and staging a script in a temporary directory.
+sha2 = { version = "0.10", optional = true }
+tempfile = { version = "3", optional = true }
+# `store` only: the advisory file lock that keeps two processes from deciding
+# the same proposal at once.
+fs2 = { version = "0.4", optional = true }
 jaq-core = "3.1.0"
 jaq-std = "3.0.1"
 jaq-json = { version = "2.0.1", features = ["serde"] }
@@ -44,7 +51,26 @@ jaq-json = { version = "2.0.1", features = ["serde"] }
 # and examples. Mocks are always available inside this crate's own tests.
 default = []
 mock = []
+# Off by default; enables `caps::host` — ready-made capability implementations
+# for a host that runs scripts as child processes of itself and keeps state on
+# its own disk. Off by default because a host with a sandbox wants none of it,
+# and because it is the only thing in the crate that spawns a process or writes
+# a file. Always available inside this crate's own tests.
+host-caps = ["dep:sha2", "dep:tempfile", "tokio/fs", "tokio/process", "tokio/io-util"]
+# Off by default; enables `store` — the durable model around a graph (versioned
+# documents, run records, notes, proposals) and a JSON file-backed store for it.
+# A host with its own catalog or database wants none of it, so it is not part of
+# the engine. Always available inside this crate's own tests.
+store = ["dep:sha2", "dep:fs2"]
 
 [dev-dependencies]
 proptest = "1"
 async-trait = "0.1"
+# `caps::host` compiles inside this crate's own tests whether or not the
+# `host-caps` feature is on (the same rule `caps::mock` follows), so what that
+# feature would switch on has to be present for a test build too. An optional
+# dependency is not activated by `cfg(test)`, hence these.
+sha2 = "0.10"
+tempfile = "3"
+fs2 = "0.4"
+tokio = { version = "1", features = ["fs", "process", "io-util"] }
