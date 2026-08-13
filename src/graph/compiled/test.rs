@@ -2702,10 +2702,16 @@ async fn attributed_update_to_sink_node_keeps_other_pending_branches() {
 
 #[tokio::test]
 async fn attributed_update_preserves_pending_send_args_of_other_branches() {
-    // Three `Send` activations of `worker` are pending behind an interrupt. A
-    // write attributed to an unrelated node must carry them over *with* their
-    // args — dropping them loses the fanout, and re-scheduling them by node id
-    // alone loses each packet's payload.
+    // Three `Send` activations of `worker` run concurrently; the one carrying
+    // arg 1 interrupts, the other two finish. A write attributed to an unrelated
+    // node must carry the still-pending packet over *with* its arg — dropping it
+    // loses the fanout, and re-scheduling by node id alone loses the payload.
+    //
+    // Only the interrupted packet is pending. Workers 2 and 3 ran to completion
+    // in this same superstep (parallel execution folds the whole active set), so
+    // their updates are already committed and rescheduling them would run them a
+    // second time. Their work is asserted against the state below rather than
+    // against the pending set.
     let cp = Arc::new(InMemoryCheckpointer::<Counter>::new());
     let graph = GraphBuilder::<Counter, i32>::new()
         .with_parallel(true)
@@ -2781,7 +2787,16 @@ async fn attributed_update_preserves_pending_send_args_of_other_branches() {
         })
         .collect();
     args.sort_unstable();
-    assert_eq!(args, vec![1, 2, 3], "every pending Send packet survives");
+    assert_eq!(
+        args,
+        vec![1],
+        "only the interrupted packet is pending, and it keeps its arg"
+    );
+    assert_eq!(
+        paused.state.value, 5,
+        "workers 2 and 3 completed in the interrupted step, so their updates are \
+         already folded (2 + 3) — a lower value means completed work was thrown away"
+    );
     assert!(
         pending.iter().any(|a| a.node.as_str() == "tail"),
         "the attributed node's successor is scheduled alongside them"
