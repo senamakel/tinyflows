@@ -193,14 +193,6 @@ pub struct ChildRun {
     /// The shared root run id of the whole recursion tree (preserved from the
     /// enclosing run).
     pub root_run_id: RunId,
-    /// Token usage rolled up from the child run, when the child reported any.
-    ///
-    /// Subgraph children leave this at the default (their usage is tracked by
-    /// their own model calls); a [`crate::graph::subagent_node`] sub-agent child
-    /// folds the delegated harness agent's [`UsageTotals`] here so it is visible
-    /// on the parent [`GraphExecution`](crate::graph::GraphExecution) rollup.
-    #[serde(default)]
-    pub usage: crate::harness::usage::UsageTotals,
 }
 
 /// A thread-safe collector the executor hands to node contexts so that a

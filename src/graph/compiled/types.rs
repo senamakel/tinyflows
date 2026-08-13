@@ -75,14 +75,6 @@ pub struct CompiledGraph<State, Update> {
     /// When checkpoints are persisted relative to execution (default
     /// [`DurabilityMode::Sync`]).
     pub(crate) durability: DurabilityMode,
-    /// Optional per-node retry policy applied around each node handler. When
-    /// set, a handler that fails with a
-    /// [retryable][crate::harness::retry::is_retryable] error is re-run from its
-    /// start (with opt-in backoff) up to the policy's attempt cap before the
-    /// failure escalates. `None` (default) preserves the original
-    /// abort-on-first-error behavior. Configured via
-    /// [`CompiledGraph::with_node_retry`](crate::graph::CompiledGraph::with_node_retry).
-    pub(crate) node_retry: Option<crate::harness::retry::RetryPolicy>,
 }
 
 impl<State, Update> std::fmt::Debug for CompiledGraph<State, Update> {
@@ -126,7 +118,6 @@ impl<State, Update> Clone for CompiledGraph<State, Update> {
             node_timeout: self.node_timeout,
             run_deadline: self.run_deadline,
             durability: self.durability,
-            node_retry: self.node_retry.clone(),
         }
     }
 }

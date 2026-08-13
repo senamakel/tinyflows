@@ -95,7 +95,6 @@ use crate::graph::stream::{GraphEvent, GraphEventSink};
 use crate::graph::ids::{
     CheckpointId, ExecutionStatus, GraphId, InterruptId, NodeId, RunId, ThreadId,
 };
-use crate::harness::retry::is_retryable;
 use crate::graph::error::{GraphError, Result};
 
 /// Allocates a fresh checkpoint id (string form) that is collision-free across
@@ -324,7 +323,6 @@ impl<State, Update> CompiledGraph<State, Update> {
             node_timeout,
             run_deadline: None,
             durability: crate::graph::checkpoint::DurabilityMode::default(),
-            node_retry: None,
         }
     }
 
@@ -377,26 +375,6 @@ impl<State, Update> CompiledGraph<State, Update> {
         self
     }
 
-    /// Sets the per-node [`RetryPolicy`] applied around every node handler.
-    ///
-    /// Opt-in network resilience for the graph: when a node handler fails with a
-    /// [retryable][crate::harness::retry::is_retryable] error (a model or tool
-    /// error — the transient class), the executor re-runs the node from its
-    /// start up to the policy's attempt cap, emitting a
-    /// [`GraphEvent::NodeRetryScheduled`](crate::graph::stream::GraphEvent::NodeRetryScheduled)
-    /// before each retry. Backoff between attempts is slept on only when the
-    /// policy opts in via
-    /// [`RetryPolicy::with_backoff_sleep`](crate::harness::retry::RetryPolicy::with_backoff_sleep).
-    ///
-    /// Non-retryable errors, and retryable errors once attempts are exhausted,
-    /// escalate — and, on a checkpointed thread, leave a resumable
-    /// failure-boundary checkpoint (see [`CompiledGraph::resume`]) so the run can
-    /// be restarted or continued rather than lost. Without a policy (the
-    /// default) the first node error aborts the run immediately.
-    pub fn with_node_retry(mut self, policy: crate::harness::retry::RetryPolicy) -> Self {
-        self.node_retry = Some(policy);
-        self
-    }
 
     /// Bounds the whole run by a wall-clock `deadline`, checked at every
     /// super-step boundary.
