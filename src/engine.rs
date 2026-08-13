@@ -2103,10 +2103,18 @@ fn merge_approvals(input: impl Into<RunInput>, newly_approved: Vec<String>) -> R
         }
     }
 
+    // Carry forward approvals delivered through the explicit channel too, so a
+    // resume of a run started with `with_approvals` does not silently drop them.
+    for id in prior {
+        if !approvals.contains(&id) {
+            approvals.push(id);
+        }
+    }
+
     if let Value::Object(map) = &mut trigger {
-        map.insert("approvals".to_string(), json!(approvals));
+        map.insert("approvals".to_string(), json!(approvals.clone()));
     } else {
-        trigger = json!({ "approvals": approvals });
+        trigger = json!({ "approvals": approvals.clone() });
     }
 
     RunInput { trigger, inputs }
