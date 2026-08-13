@@ -302,3 +302,72 @@ async fn a_sibling_that_completed_is_not_re_run_on_resume() {
          second time"
     );
 }
+
+/// A child workflow paused at an approval gate **pauses the parent** instead of
+/// failing it, and approving the namespaced gate lets the whole thing finish.
+///
+/// This used to be a hard error: a node executor had no way to inject an
+/// interrupt into the parent run, so a gated child halted the parent rather than
+/// suspending it — approval gating was unusable across a sub-workflow boundary.
+///
+/// The gate surfaces as `<node id>::<child gate id>`. The namespace matters:
+/// parent and child are separate graphs with separate id spaces, so an
+/// unqualified `approve` from the child would be indistinguishable from a
+/// parent gate of the same name.
+#[tokio::test]
+async fn a_child_paused_at_a_gate_pauses_the_parent_and_resumes() {
+    let child = json!({
+        "name": "gated_child",
+        "nodes": [
+            { "id": "ct", "kind": "trigger", "type_version": 1, "name": "ct", "config": null },
+            { "id": "cgate", "kind": "output_parser", "type_version": 1, "name": "cgate",
+              "config": { "requires_approval": true } },
+            { "id": "cdone", "kind": "output_parser", "type_version": 1, "name": "cdone",
+              "config": null }
+        ],
+        "edges": [
+            { "from_node": "ct", "from_port": "main", "to_node": "cgate", "to_port": "main" },
+            { "from_node": "cgate", "from_port": "main", "to_node": "cdone", "to_port": "main" }
+        ]
+    });
+
+    let graph = WorkflowGraph {
+        name: "parent_of_gated_child".to_string(),
+        nodes: vec![
+            node("t", NodeKind::Trigger, Value::Null),
+            node("sw", NodeKind::SubWorkflow, json!({ "workflow": child })),
+            node("after", NodeKind::OutputParser, Value::Null),
+        ],
+        edges: vec![edge("t", "sw"), edge("sw", "after")],
+        ..Default::default()
+    };
+    let compiled = compile(&graph).expect("compile");
+    let caps = mock_capabilities();
+
+    let resumable = run_resumable(&compiled, json!({}), &caps)
+        .await
+        .expect("a gated child should pause the parent, not fail it");
+    assert_eq!(
+        resumable.outcome().pending_approvals,
+        vec!["sw::cgate".to_string()],
+        "the child's gate surfaces namespaced by the sub_workflow node"
+    );
+    assert!(
+        resumable.outcome().output["nodes"]["after"].is_null(),
+        "downstream of the sub-workflow must not run while the child is gated"
+    );
+
+    let done = resumable
+        .resume(vec!["sw::cgate".to_string()])
+        .await
+        .expect("resume");
+    assert!(
+        done.pending_approvals.is_empty(),
+        "approving the child's gate should settle the run, got {:?}",
+        done.pending_approvals
+    );
+    assert!(
+        !done.output["nodes"]["after"]["items"].is_null(),
+        "the parent continues past the sub-workflow once the child's gate clears"
+    );
+}
