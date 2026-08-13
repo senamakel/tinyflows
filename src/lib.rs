@@ -4,7 +4,7 @@
 //! tinyflows models an automation as a [`model::WorkflowGraph`]: a directed graph
 //! of typed [`model::Node`]s connected by [`model::Edge`]s. A [`compiler::compile`]
 //! step validates the graph and (from stage A1) lowers it onto the
-//! [`tinyagents`](https://crates.io/crates/tinyagents) state-graph engine, which
+//! in-crate [`graph`](crate::graph) state-graph runtime, which
 //! the [`engine::run`] entry point drives.
 //!
 //! The crate is deliberately **host-agnostic**: anything that touches the outside
@@ -36,6 +36,7 @@ pub mod expr;
 /// Authoring gates: what is *guaranteed* wrong with a graph, caught before a
 /// write lands rather than as a silent null at run time.
 pub mod gates;
+pub mod graph;
 pub mod graph_ops;
 // Only the file-backed store and the process-backed capabilities need unique
 // scratch names, and both are optional.

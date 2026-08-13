@@ -320,7 +320,7 @@ async fn run_child(
     //
     // The child run is a *separate* engine invocation whose non-completion is
     // reported on its [`RunOutcome`], not on the [`NodeOutput`] this node
-    // returns. A node executor has no channel to inject a tinyagents interrupt
+    // returns. A node executor has no channel to inject a graph interrupt
     // into the *parent* run (the parent's `pending_approvals` are collected
     // solely from its own boundary interrupts), so we cannot yet transparently
     // pause the parent and resume the child at its gate. What we MUST NOT do is

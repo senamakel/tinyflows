@@ -9,7 +9,7 @@ crate.**
 
 tinyflows models an automation as a `WorkflowGraph` — a directed graph of typed
 nodes — that is validated, compiled, and lowered per run onto the
-[`tinyagents`](https://crates.io/crates/tinyagents) state-graph engine, then
+in-crate `graph` state-graph runtime, then
 driven to completion by `engine::run`. It is deliberately host-agnostic:
 everything that touches the outside world — LLMs, integration tools, HTTP, code
 execution, persistence — goes through capability traits the embedding
@@ -22,7 +22,7 @@ Rust 2024 · MSRV 1.85 · `#![forbid(unsafe_code)]` · GPL-3.0-or-later.
 **Engine**
 
 - Typed workflow model (`WorkflowGraph` of `Node`s and `Edge`s) with JSON as the
-  wire format, structural validation, and per-run compilation onto `tinyagents`.
+  wire format, structural validation, and per-run compilation onto the in-crate `graph` runtime.
 - Item-based data flow: a connection carries an array of items
   (`{ json, binary?, paired_item? }`); nodes map their logic over input items.
 - `=`-prefixed config expressions (e.g. `"=item.name"`) resolved against the run
@@ -94,12 +94,12 @@ Rust 2024 · MSRV 1.85 · `#![forbid(unsafe_code)]` · GPL-3.0-or-later.
 ```text
 model::WorkflowGraph  ->  validate  ->  compiler::compile  ->  engine::run
    (typed graph)        (structural)     (validated handle)     (lowers onto
-                                                                 tinyagents,
+                                                                 crate::graph,
                                                                  drives to done)
 ```
 
 `compile` validates the graph and returns an opaque `CompiledWorkflow`; the graph
-is lowered onto a fresh `tinyagents` state graph once **per run**, inside
+is lowered onto a fresh `graph` state graph once **per run**, inside
 `engine::run`, which captures that run's capabilities in each node handler. Run
 state is a single JSON value shaped as
 `{ "run": { "trigger": … }, "nodes": { "<id>": { "items": [ … ] } } }`: a merge
@@ -231,7 +231,7 @@ ports.
 ## Status
 
 The Phase-A engine is complete: model, validation, per-run compilation and
-lowering onto `tinyagents`, the full node catalog, item-based data flow with
+lowering onto the in-crate `graph` runtime, the full node catalog, item-based data flow with
 `=`-expressions, linear / conditional / parallel-fan-out / merge-barrier routing,
 per-node error handling (`on_error` / retry / error port), human-in-the-loop
 approval gating (`pending_approvals` + `resume`), `tracing` + `RunObserver`

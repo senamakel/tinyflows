@@ -8,7 +8,7 @@ Rust 2024 · MSRV 1.85 · `#![forbid(unsafe_code)]` · GPL-3.0-or-later.
 ## Implemented
 
 - **Pipeline** — `WorkflowGraph → validate → compile → engine::run`, lowered
-  per-run onto the `tinyagents` state-graph engine.
+  per-run onto the in-crate `graph` state-graph runtime.
 - **All 11 node kinds + trigger** — control flow (`condition`, `switch`, `merge`,
   `split_out`, `transform`) and capability-backed (`agent`, `tool_call`,
   `http_request`, `code`, `output_parser`, `sub_workflow`).

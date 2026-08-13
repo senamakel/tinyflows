@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Removed the `tinyagents` dependency.** The state-graph runtime the engine
+  lowers workflows onto now lives in-crate as `crate::graph` (builder, superstep
+  executor, channels, reducers, commands/interrupts, checkpointing, run status,
+  and the durable event journal), vendored out of `tinyagents` and trimmed to the
+  surface tinyflows actually drives. Agents are a host concern reached through
+  `caps`, so the crate no longer carries an agent-harness dependency, its
+  vendored `vendor/tinyagents` submodule, or the `[patch.crates-io]` table that
+  redirected it. Dropped along the way: the graph-level node retry policy
+  (tinyflows applies its own `on_error`/retry inside each node handler, so a
+  second retry loop would have multiplied the attempt budget), the SQLite
+  checkpointer, the Langfuse exporter, and the store-backed event journal.
+  `engine`'s re-exports (`Checkpointer`, `DurabilityMode`, `FileCheckpointer`,
+  `InMemoryCheckpointer`, `GraphEventJournal`, `GraphObservation`,
+  `InMemoryGraphEventJournal`) keep their names and now resolve to `crate::graph`,
+  so host code that only used those re-exports is unaffected; anything naming
+  `tinyagents::` types directly must switch to `tinyflows::graph::`.
+
 ### Added
 
 - **Configurable agents.** An `agent` node can now be given dynamic context,
