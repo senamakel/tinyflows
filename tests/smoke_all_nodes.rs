@@ -288,3 +288,49 @@ async fn big_chained_workflow_runs_end_to_end() {
     );
     assert!(outcome.pending_approvals.is_empty());
 }
+
+#[tokio::test]
+async fn smoke_spawn() {
+    smoke_single_node(
+        NodeKind::Spawn,
+        json!({ "target": "tool", "slug": "smoke.run", "args": { "x": 1 } }),
+        json!({}),
+    )
+    .await;
+}
+
+/// A `gate` cannot be smoke-tested on its own: with nothing to wait for it has
+/// no tickets, and a gate with zero expected arrivals releases immediately. So
+/// this drives the real pair — `spawn -> gate` — which is the only shape a gate
+/// is ever authored in.
+#[tokio::test]
+async fn smoke_gate_collects_a_spawn() {
+    let graph = WorkflowGraph {
+        name: "smoke_gate".to_string(),
+        nodes: vec![
+            trigger("t", TriggerKind::Manual),
+            node(
+                "kick",
+                NodeKind::Spawn,
+                json!({ "target": "tool", "slug": "smoke.run" }),
+            ),
+            node(
+                "n",
+                NodeKind::Gate,
+                json!({ "from": ["kick"], "poll_interval_ms": 1 }),
+            ),
+        ],
+        edges: vec![edge("t", "main", "kick"), edge("kick", "main", "n")],
+        ..Default::default()
+    };
+    let compiled = compile(&graph).expect("compile");
+    let outcome = run(&compiled, json!({}), &mock_capabilities())
+        .await
+        .expect("run should succeed");
+
+    let items = outcome.output["nodes"]["n"]["items"]
+        .as_array()
+        .expect("the gate should produce an items array");
+    assert_eq!(items.len(), 1, "one spawned task, one collected result");
+    assert!(items[0].get("json").is_some());
+}
