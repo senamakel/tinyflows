@@ -30,6 +30,21 @@ model::WorkflowGraph  →  validate  →  compiler::compile  →  engine::run
 - `validate.rs` — structural validation, run before compile.
 - `caps/` — host-injected capability traits (`caps/mod.rs`); `caps/mock.rs` has
   in-memory mock impls, gated behind the `mock` feature (always on inside tests).
+  `caps/host/` has *real* implementations a host may opt into — out-of-process
+  script/shell running, a file-backed `StateStore`, an allowlisted HTTP client —
+  behind the `host-caps` feature. These are offered, never assumed: nothing in
+  the engine reaches into them, and a host with a sandbox implements its own.
+- `store/` — the durable model *around* a graph (versioned documents, run
+  records, notes, proposals), a JSON file-backed store for it, and `authoring`
+  (patch-based editing: apply → validate → gate → save), behind the `store`
+  feature. Not part of the engine: `engine::run` neither reads nor writes any of
+  it. `store::HostPolicy` is where a host injects the judgements only it can
+  make — which harnesses exist, which slugs resolve.
+- `bindings.rs` — reading the `={{ ... }}` bindings a graph declares: which node
+  an expression reads from, and whether it reads as prose rather than jq.
+- `gates/` — authoring gates: what is *guaranteed* wrong with a graph, refused
+  before a write rather than surfacing as a silent null at run time. Only the
+  host-agnostic ones; a host adds its own via `store::HostPolicy::check_graph`.
 - `nodes/` — `NodeExecutor` trait + dispatch; `control_flow.rs` (if/switch/merge/
   split_out/…) and `integration.rs` (agent/tool_call/http_request/code/…).
 - `compiler.rs` — compiles a validated graph into runnable form.
@@ -44,6 +59,9 @@ model::WorkflowGraph  →  validate  →  compiler::compile  →  engine::run
 - **Host-agnostic rule:** never hard-code an LLM/tool/HTTP/persistence vendor in
   the crate. New outside-world effects go through a `caps` trait, not a direct
   dependency. This is the core design constraint — do not violate it.
+  `caps/host/` and `store/` do not weaken it: they are *optional* implementations
+  behind default-off features, and the engine never depends on them. A host name
+  (`medulla`, `openhuman`) must not appear in either.
 - **Declarative model:** no arbitrary embedded scripting in the workflow model;
   code execution is a sandboxed capability, not model logic.
 - **License:** GPL-3.0-or-later. Keep new files compatible.
@@ -52,8 +70,10 @@ model::WorkflowGraph  →  validate  →  compiler::compile  →  engine::run
 
 ```bash
 cargo check                        # fast type/borrow check
-cargo test                         # unit + compiler tests (mocks auto-available)
+cargo test                         # unit + compiler tests (all optional modules compile in tests)
 cargo test --features mock         # exercise the mock capabilities explicitly
+cargo check --features host-caps   # the opt-in host capability implementations
+cargo check --features store       # the file-backed workflow/run store
 cargo clippy --all-targets         # lint
 cargo fmt                          # format (run before committing)
 cargo build --release

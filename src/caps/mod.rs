@@ -6,6 +6,8 @@
 //! curated Composio tools, `HttpRequestTool`, and sandboxed code runtimes.
 
 pub mod agent;
+#[cfg(any(test, feature = "host-caps"))]
+pub mod host;
 #[cfg(any(test, feature = "mock"))]
 pub mod mock;
 pub mod shell;
