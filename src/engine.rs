@@ -1423,6 +1423,8 @@ fn build_graph(
                                 agents: &agents,
                                 observer: observer.as_ref(),
                                 token: token.clone(),
+                                lane: lane.clone(),
+                                step: activation_step,
                             };
                             let scope = crate::nodes::expr_scope(&ctx);
                             crate::expr::resolve_traced(&node.config, &scope).1
