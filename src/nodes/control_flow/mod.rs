@@ -8,8 +8,10 @@
 
 pub mod condition;
 pub mod dedup;
+pub mod gather;
 pub mod loop_node;
 pub mod merge;
+pub mod scatter;
 pub mod split_out;
 pub mod switch;
 pub mod transform;
