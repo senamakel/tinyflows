@@ -54,6 +54,24 @@ pub enum Shape {
         /// What runs on each pass.
         body: Box<Shape>,
     },
+    /// `n` tasks spawned without blocking, collected by a gate on `release`.
+    ///
+    /// The async pair. Present so generated graphs exercise the poll loop and
+    /// the release policies against structures nobody hand-picked — a gate
+    /// downstream of a branch, inside a loop body, beside a fan-out.
+    Spawned {
+        /// How many tasks to spawn.
+        tasks: usize,
+        /// The gate's release policy, as its config `release` value.
+        release: &'static str,
+        /// `n` for `first_n`/`quorum`; ignored otherwise.
+        n: usize,
+    },
+    /// A sub-workflow running a nested shape.
+    ///
+    /// Depth-bounded by the generator itself rather than by the engine's cap,
+    /// so a generated graph never fails merely for nesting too deep.
+    Nested(Box<Shape>),
     /// A node that pauses the run awaiting approval, followed by a shape.
     ///
     /// Present so generated runs actually *suspend*, which is the only way to
@@ -77,6 +95,12 @@ impl Shape {
             // Each pass costs the body plus the head itself.
             Self::Loop { max_iter, body } => (max_iter + 1) * (body.step_budget() + 1),
             Self::Gate(rest) => 1 + rest.step_budget(),
+            // A gate may poll several times before its tasks settle, and every
+            // poll is a super-step.
+            Self::Spawned { tasks, .. } => 2 + (*tasks as u64) + 8,
+            // The child runs inside one activation of the parent, so it costs
+            // the parent a single step regardless of its own size.
+            Self::Nested(_) => 2,
         }
     }
 
@@ -221,6 +245,55 @@ impl Builder {
                 Span {
                     entry: head,
                     exit: out,
+                }
+            }
+
+            Shape::Spawned { tasks, release, n } => {
+                let apex = self.passthrough();
+                let mut sources = Vec::new();
+                for index in 0..*tasks {
+                    let spawn = self.add(
+                        NodeKind::Spawn,
+                        json!({ "target": "tool", "slug": format!("gen.task{index}") }),
+                    );
+                    self.connect(&apex, "main", &spawn);
+                    sources.push(spawn);
+                }
+                let mut config = json!({
+                    "from": sources,
+                    "release": release,
+                    // Poll fast: these runs are in-process and the interval is
+                    // pure latency in a test.
+                    "poll_interval_ms": 1,
+                    // Settle for what arrived rather than failing, so a release
+                    // policy that cannot be met is not reported as a bug.
+                    "on_timeout": "partial",
+                });
+                if matches!(*release, "first_n" | "quorum") {
+                    config["n"] = json!((*n).clamp(1, (*tasks).max(1)));
+                }
+                let gate = self.add(NodeKind::Gate, config);
+                for source in &sources {
+                    self.connect(source, "main", &gate);
+                }
+                Span {
+                    entry: apex,
+                    exit: gate,
+                }
+            }
+
+            Shape::Nested(inner) => {
+                // The child is a complete graph in its own right, built by a
+                // fresh builder so its ids live in their own space — exactly the
+                // separation that makes a child's gate ids need namespacing.
+                let child = graph_of(inner);
+                let node = self.add(
+                    NodeKind::SubWorkflow,
+                    json!({ "workflow": serde_json::to_value(&child).expect("child graph") }),
+                );
+                Span {
+                    entry: node.clone(),
+                    exit: node,
                 }
             }
 
