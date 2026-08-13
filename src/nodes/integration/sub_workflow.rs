@@ -475,16 +475,6 @@ async fn run_child(
             .iter()
             .map(|gate| namespaced_gate(&ctx.node.id, gate))
             .collect();
-        tracing::info!(
-            node = %ctx.node.id,
-            gates = ?namespaced,
-            "sub_workflow: child paused awaiting approval; pausing the parent"
-        );
-        // The interrupt id is the first pending gate, because a run's pending
-        // set is keyed by interrupt id and a node produces one interrupt. The
-        // payload carries the full list, and a host may approve several at once
-        // — the next re-run seeds all of them, so a child with N gates need not
-        // cost N round trips.
         return Ok(ChildOutcome::Paused(namespaced));
     }
     if outcome.cancelled {
