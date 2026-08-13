@@ -64,6 +64,11 @@ pub mod observability;
 /// and a file-backed store for it. Behind the `store` feature.
 #[cfg(any(test, feature = "store"))]
 pub mod store;
+/// Testing, mocking, and live debugging for workflows: programmable capability
+/// doubles, a structured run trace, breakpoints, and an agent-facing tool
+/// surface over all of it. Behind the `testkit` feature.
+#[cfg(any(test, feature = "testkit"))]
+pub mod testkit;
 pub mod validate;
 /// Render workflow structure to PNG or JPEG files for visual debugging.
 #[cfg(feature = "graph-debug")]
