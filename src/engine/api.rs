@@ -150,23 +150,18 @@ pub(crate) async fn run_sub_workflow(
     max_depth: u64,
     token: CancellationToken,
 ) -> Result<RunOutcome> {
-    let checkpointer: Arc<dyn Checkpointer<Value>> =
-        Arc::new(InMemoryCheckpointer::<Value>::default());
-    let thread_id = default_thread_id(workflow)?;
     let observer: Arc<dyn RunObserver> = Arc::new(crate::observability::NoopObserver);
     let (_graph, _thread_id, outcome, _run_ids) = build_and_run(
         workflow,
         input,
         capabilities,
         &observer,
-        checkpointer,
-        thread_id,
-        None,
-        Some(json!({
-            "sub_workflow_depth": depth,
-            "max_sub_workflow_depth": max_depth,
-        })),
-        token,
+        RunConfig::new(workflow)?
+            .with_token(token)
+            .with_overlay(json!({
+                "sub_workflow_depth": depth,
+                "max_sub_workflow_depth": max_depth,
+            })),
     )
     .await?;
     Ok(outcome)
