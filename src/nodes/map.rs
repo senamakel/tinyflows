@@ -653,7 +653,8 @@ mod tests {
         assert_eq!(
             map_options(
                 &json!({ "concurrency": 8, "on_item_error": "fail_fast" }),
-                "n"
+                "n",
+                &Value::Null
             )
             .on_item_error,
             ItemErrorPolicy::FailFast,
