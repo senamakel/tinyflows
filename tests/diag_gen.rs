@@ -1,6 +1,7 @@
 #![cfg(feature = "mock")]
 mod support;
 use proptest::prelude::*;
+use proptest::strategy::ValueTree;
 use proptest::test_runner::{TestRunner, Config};
 use support::graphgen::{arb_shape, graph_of};
 use tinyflows::compiler::compile;
