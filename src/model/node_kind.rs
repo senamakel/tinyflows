@@ -69,6 +69,35 @@ pub enum NodeKind {
     /// [`crate::nodes::control_flow::dedup`] for the full `StateStore` key
     /// contract this kind depends on.
     Dedup,
+    /// Starts work **without waiting for it** and emits a ticket per started
+    /// task, so the branch carries on while the work runs. A downstream
+    /// [`NodeKind::Gate`] collects the results.
+    ///
+    /// Needs the [`TaskRunner`](crate::caps::TaskRunner) capability to actually
+    /// overlap; with none injected the work runs inline and the ticket comes
+    /// back already settled, so the graph still computes the right answer
+    /// without the concurrency.
+    Spawn,
+    /// Fans the **downstream path** out into parallel lanes: each lane runs its
+    /// own copy of every node between here and the matching [`NodeKind::Gather`].
+    ///
+    /// Different from an ordinary fan-out, which runs each *successor* once. A
+    /// scatter over 8 items turns a five-node pipeline into 8 concurrent
+    /// five-node pipelines.
+    Scatter,
+    /// Collects the lanes a [`NodeKind::Scatter`] opened, on a release policy.
+    ///
+    /// Where lanes end: routing to a gather is a plain activation, so N lanes
+    /// converge on one gather rather than each running their own.
+    Gather,
+    /// Waits for tickets — from [`NodeKind::Spawn`], or named by expression —
+    /// and emits their results once its release policy is satisfied.
+    ///
+    /// The policy (`all` / `any` / `first_n` / `quorum` / `timeout_partial`)
+    /// is what makes this more than a barrier: a gate can proceed on a quorum
+    /// and leave the stragglers, or settle for whatever arrived before its
+    /// deadline. See [`crate::nodes::release`].
+    Gate,
 }
 
 /// How a [`NodeKind::Trigger`] node is fired.

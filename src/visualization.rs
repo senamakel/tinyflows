@@ -331,6 +331,10 @@ fn kind_name(kind: &NodeKind) -> &'static str {
         NodeKind::SubWorkflow => "sub_workflow",
         NodeKind::Memory => "memory",
         NodeKind::Dedup => "dedup",
+        NodeKind::Spawn => "spawn",
+        NodeKind::Scatter => "scatter",
+        NodeKind::Gather => "gather",
+        NodeKind::Gate => "gate",
     }
 }
 

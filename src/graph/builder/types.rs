@@ -116,9 +116,22 @@ pub(crate) struct NodeMeta {
     /// The node embeds and runs a child graph (a subgraph node).
     pub(crate) subgraph: bool,
     /// Declared `goto` destination hints for a command-routing node, in the
-    /// order they were registered. Purely advisory: the runtime resolves the
-    /// real target from the emitted [`crate::graph::Command`] at runtime.
+    /// order they were registered. Advisory for routing — the runtime resolves
+    /// the real target from the emitted [`crate::graph::Command`] — but load
+    /// bearing for barrier relief when [`Self::command_fanout`] is set.
     pub(crate) command_destinations: Vec<NodeId>,
+    /// Every one of [`Self::command_destinations`] runs whenever this node
+    /// runs: the node is an unconditional fan-out, not a choice between ports.
+    ///
+    /// This is the one command-routing fact that *is* statically knowable, and
+    /// barrier relief needs it. Relief asks "did the taken branch lead to this
+    /// predecessor?" by walking forward through deterministic routing; a
+    /// command node normally stops that walk, because which target it picks is
+    /// a runtime decision. For a fan-out there is no decision — all of them run
+    /// — so the walk can and must continue through it. Stopping instead makes
+    /// relief conclude the branch was untaken and fire a phantom arrival,
+    /// clearing a barrier before its real predecessors have run.
+    pub(crate) command_fanout: bool,
     /// Arbitrary, sorted key/value annotations carried into the export.
     pub(crate) metadata: BTreeMap<String, String>,
 }
@@ -231,6 +244,9 @@ pub struct GraphBuilder<State, Update> {
     pub(crate) parallel: bool,
     /// Upper bound on concurrently-running branches per step (`None` = unbounded).
     pub(crate) max_concurrency: Option<usize>,
+    /// Per-node ceilings on concurrent activations of that *same* node within a
+    /// step (`None` for a node = bounded only by `max_concurrency`).
+    pub(crate) node_concurrency: HashMap<NodeId, usize>,
     /// Default per-node handler timeout (`None` = no timeout).
     pub(crate) node_timeout: Option<Duration>,
     /// Behavior-free per-node markers/metadata surfaced by the topology export.

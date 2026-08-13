@@ -86,6 +86,7 @@ where
             recursion_limit: 50,
             parallel: false,
             max_concurrency: None,
+            node_concurrency: HashMap::new(),
             node_timeout: None,
             node_meta: HashMap::new(),
         }
@@ -116,6 +117,27 @@ where
     /// handlers are in flight at once. `0` is treated as unbounded.
     pub fn with_max_concurrency(mut self, n: usize) -> Self {
         self.max_concurrency = (n > 0).then_some(n);
+        self
+    }
+
+    /// Bounds how many activations of **one node** may run concurrently within a
+    /// step, independently of the graph-wide [`Self::with_max_concurrency`].
+    ///
+    /// Only meaningful for a node that can be activated more than once in the
+    /// same superstep — i.e. one scheduled through `Send` packets, where a fan-out
+    /// of N items becomes N activations of the same node. The graph-wide bound
+    /// cannot express "let this one node run 4 at a time" without also throttling
+    /// every unrelated branch in the step.
+    ///
+    /// Both bounds apply: a branch starts only when the step is below the global
+    /// limit *and* its node is below this one. `0` removes the per-node bound.
+    pub fn with_node_concurrency(mut self, node: impl Into<NodeId>, n: usize) -> Self {
+        let node = node.into();
+        if n == 0 {
+            self.node_concurrency.remove(&node);
+        } else {
+            self.node_concurrency.insert(node, n);
+        }
         self
     }
 
@@ -332,6 +354,33 @@ where
         self
     }
 
+    /// Records destinations for a command node that fans out to **all** of
+    /// them, unconditionally, every time it runs.
+    ///
+    /// Like [`Self::with_command_destinations`], but additionally promises
+    /// there is no runtime choice among the destinations. Barrier relief relies
+    /// on that promise to walk forward through this node when deciding whether
+    /// a conditional branch was taken; without it, relief treats the node as an
+    /// unresolvable decision point, concludes the branch was untaken, and
+    /// clears a downstream barrier before its real predecessors have run.
+    ///
+    /// Only use this where every destination genuinely always runs. A node that
+    /// picks between ports must use [`Self::with_command_destinations`].
+    pub fn with_unconditional_fanout<I, N>(
+        mut self,
+        node: impl Into<NodeId>,
+        destinations: I,
+    ) -> Self
+    where
+        I: IntoIterator<Item = N>,
+        N: Into<NodeId>,
+    {
+        let node = node.into();
+        self = self.with_command_destinations(node.clone(), destinations);
+        self.node_meta.entry(node).or_default().command_fanout = true;
+        self
+    }
+
     /// Sets a human-readable kind for `node` (e.g. `model`, `tool`, `subgraph`)
     /// surfaced as [`crate::graph::NodeInfo::kind`] in the export.
     pub fn with_node_kind(mut self, node: impl Into<NodeId>, kind: impl Into<String>) -> Self {
@@ -460,6 +509,7 @@ where
             recursion_limit,
             parallel,
             max_concurrency,
+            node_concurrency,
             node_timeout,
             node_meta,
             barrier_reliefs,
@@ -478,6 +528,7 @@ where
             recursion_limit,
             parallel,
             max_concurrency,
+            node_concurrency,
             node_timeout,
             node_meta,
             barrier_reliefs,

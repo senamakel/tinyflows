@@ -23,7 +23,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use crate::graph::{
-    Command, CompiledGraph, END, GraphBuilder, GraphError, Interrupt, NodeResult, StateReducer,
+    Command, CompiledGraph, END, GraphBuilder, GraphError, Interrupt, NodeResult, RouteTarget,
+    StateReducer,
 };
 use serde_json::{Map, Value, json};
 
@@ -135,6 +136,15 @@ pub struct RunInput {
     /// Caller-supplied values for the workflow's declared inputs, by name.
     /// Validated by [`crate::model::resolve_inputs`] before the run starts.
     pub inputs: Map<String, Value>,
+    /// Gate ids pre-approved for this run.
+    ///
+    /// An explicit channel, separate from the trigger payload. Approvals can
+    /// also be written as `trigger.approvals` when the trigger happens to be an
+    /// object, and that remains supported — but a run whose trigger is an array
+    /// or a scalar (a `sub_workflow` child is seeded with its input *items*, an
+    /// array) has nowhere to put them, so smuggling approvals through the
+    /// payload cannot work in general.
+    pub approvals: Vec<String>,
 }
 
 impl RunInput {
@@ -144,6 +154,7 @@ impl RunInput {
         Self {
             trigger,
             inputs: Map::new(),
+            approvals: Vec::new(),
         }
     }
 
@@ -151,6 +162,13 @@ impl RunInput {
     #[must_use]
     pub fn with_inputs(mut self, inputs: Map<String, Value>) -> Self {
         self.inputs = inputs;
+        self
+    }
+
+    /// Pre-approves the named gates for this run (see [`Self::approvals`]).
+    #[must_use]
+    pub fn with_approvals(mut self, approvals: Vec<String>) -> Self {
+        self.approvals = approvals;
         self
     }
 }
@@ -218,9 +236,48 @@ impl StateReducer<Value, Value> for MergeReducer {
     }
 }
 
+/// The sentinel key that makes an update *assign* rather than merge.
+///
+/// An update object shaped exactly `{"$replace": v}` sets its slot to `v`
+/// wholesale.
+pub(crate) const REPLACE: &str = "$replace";
+
+/// Wraps `value` so [`merge`] assigns it instead of merging into what is there.
+pub(crate) fn replace(value: Value) -> Value {
+    json!({ REPLACE: value })
+}
+
 /// Recursively merges `update` into `base`: objects merge key-by-key; any other
-/// value (array, scalar, null) overwrites.
+/// value (array, scalar, null) overwrites; and an update of exactly
+/// `{"$replace": v}` assigns `v` wholesale.
+///
+/// # Why the sentinel exists
+///
+/// Key-by-key merging means an object-valued slot can only ever *gain* keys. A
+/// node that keeps state across its own activations — a `loop` node's
+/// accumulator — could therefore never drop one: `{"attempts": [...], "err":
+/// "x"}` has no way to become `{"attempts": [...]}`. Arrays and scalars already
+/// overwrite, so this is specifically the object case, which is the interesting
+/// one for an accumulator.
+///
+/// # Why user data cannot be mistaken for it
+///
+/// `merge` only ever recurses through the object-valued subtrees of an *update*,
+/// and the only object subtrees an update contains are the root, `"nodes"`, each
+/// node's slot, and the `meta` values a node records about itself. Item payloads
+/// live inside `slot["items"]`, which is an **array** — it hits the overwrite arm
+/// without being walked into. So a workflow whose data happens to contain a
+/// `$replace` key is never examined by this function, and cannot trigger it.
 fn merge(base: &mut Value, update: Value) {
+    // Checked before the object/object arm: the sentinel *is* an object, and
+    // merging it key-by-key would write a literal `$replace` key into state.
+    if let Value::Object(map) = &update
+        && map.len() == 1
+        && let Some(value) = map.get(REPLACE)
+    {
+        *base = value.clone();
+        return;
+    }
     match (base, update) {
         (Value::Object(base), Value::Object(update)) => {
             for (key, value) in update {
@@ -229,6 +286,98 @@ fn merge(base: &mut Value, update: Value) {
         }
         (base, update) => *base = update,
     }
+}
+
+/// Builds a lane activation's state update.
+///
+/// A lane writes under `nodes.<id>.lanes.<lane id>` and **never** touches the
+/// slot's top-level `items`/`port`. That is the whole reason N concurrent
+/// activations of one node do not clobber each other: the reducer merges
+/// objects key-by-key, so distinct lane keys are collision-free without the
+/// reducer needing to know lanes exist.
+///
+/// This is the single writer of lane slots, deliberately — the "lanes never
+/// write the top level" rule is structural, enforced by there being one
+/// constructor, rather than by anything the engine checks at run time.
+fn lane_items_update(
+    node_id: &str,
+    lane: &crate::nodes::LaneContext,
+    items: &[Item],
+    port: Option<&str>,
+    status: &str,
+    meta: Option<&Value>,
+) -> crate::graph::Result<Value> {
+    let mut slot = json!({
+        "items": serde_json::to_value(items)?,
+        "port": port.map(Value::from).unwrap_or(Value::Null),
+        "status": status,
+        "index": lane.index,
+    });
+    if let (Some(Value::Object(extra)), Some(map)) = (meta, slot.as_object_mut()) {
+        for (key, value) in extra {
+            map.insert(key.clone(), value.clone());
+        }
+    }
+    Ok(json!({ "nodes": { node_id: { "lanes": { lane.id.clone(): slot } } } }))
+}
+
+/// The lane envelope a fan-out schedules one activation with.
+fn lane_envelope(
+    origin: &str,
+    index: usize,
+    count: usize,
+    items: &[Item],
+) -> crate::graph::Result<Value> {
+    Ok(json!({
+        LANE_KEY: {
+            "id": format!("{origin}#{index}"),
+            "origin": origin,
+            "index": index,
+            "count": count,
+        },
+        "items": serde_json::to_value(items)?,
+    }))
+}
+
+/// Reads a lane activation's items back out of its envelope.
+///
+/// A lane takes its input from here rather than from [`collect_input`], and
+/// must: every branch of a super-step reads the same committed snapshot, so
+/// `collect_input` would hand all N lanes the identical items.
+fn lane_input(send_arg: Option<&Value>) -> Vec<Item> {
+    send_arg
+        .and_then(|arg| arg.get("items"))
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| serde_json::from_value::<Item>(item.clone()).ok())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The key a lane envelope records its lane identity under, inside the
+/// `send_arg` a fan-out schedules each concurrent activation with.
+///
+/// Underscore-prefixed because it shares the envelope with the lane's `items`
+/// and must never be mistaken for user data.
+pub(crate) const LANE_KEY: &str = "_lane";
+
+/// Decodes the lane identity from an activation's `send_arg`.
+///
+/// `None` for an ordinary activation — one scheduled by a plain route rather
+/// than by a fan-out packet — which is every activation until a fan-out node
+/// exists. A malformed envelope also yields `None` rather than failing the run:
+/// the activation then behaves as an ordinary one, which is the safe reading.
+fn lane_context(send_arg: Option<&Value>) -> Option<crate::nodes::LaneContext> {
+    let lane = send_arg?.get(LANE_KEY)?;
+    Some(crate::nodes::LaneContext {
+        id: lane.get("id")?.as_str()?.to_string(),
+        origin: lane.get("origin")?.as_str()?.to_string(),
+        index: usize::try_from(lane.get("index")?.as_u64()?).ok()?,
+        count: usize::try_from(lane.get("count")?.as_u64()?).ok()?,
+    })
 }
 
 /// Collects a node's input items from the `items` its predecessors emitted into
@@ -801,6 +950,15 @@ pub async fn run_cancellable_with_observer(
 /// agrees on one bound.
 pub const MAX_SUB_WORKFLOW_DEPTH: u64 = 8;
 
+/// The ceiling on `trigger.config.max_concurrency`: how many branches of one
+/// super-step the engine will ever run at once.
+///
+/// A cap rather than an error, mirroring how a node's own `concurrency` is
+/// clamped: a graph asking for 100_000 concurrent branches has a mistake in it,
+/// and refusing the run outright would be a worse answer than running it
+/// sensibly and saying so in a warning.
+pub const MAX_GRAPH_CONCURRENCY: usize = 256;
+
 /// Runs a nested child workflow for a `sub_workflow` node, threading the current
 /// nesting `depth` into the child run's `run.sub_workflow_depth`.
 ///
@@ -911,6 +1069,29 @@ fn build_graph(
         .and_then(Value::as_u64)
         .filter(|n| *n > 0)
         .map(std::time::Duration::from_secs);
+    // How many branches of one super-step may be in flight at once.
+    //
+    // This is *admission control*, not backpressure: a super-step engine cannot
+    // block a producer mid-step, so the only lever is how many activations are
+    // allowed to start. Unset means unbounded, which is the historical behavior.
+    let max_concurrency = trigger
+        .config
+        .get("max_concurrency")
+        .and_then(Value::as_u64)
+        .filter(|n| *n > 0)
+        .map(|requested| {
+            let requested = usize::try_from(requested).unwrap_or(MAX_GRAPH_CONCURRENCY);
+            if requested > MAX_GRAPH_CONCURRENCY {
+                tracing::warn!(
+                    requested,
+                    max = MAX_GRAPH_CONCURRENCY,
+                    "max_concurrency above the engine ceiling; clamping"
+                );
+                MAX_GRAPH_CONCURRENCY
+            } else {
+                requested
+            }
+        });
 
     tracing::info!(node_count = graph.nodes.len(), trigger = %trigger_id, "workflow run starting");
 
@@ -944,6 +1125,9 @@ fn build_graph(
     let mut builder = GraphBuilder::<Value, Value>::new()
         .with_parallel(true)
         .set_reducer(MergeReducer);
+    if let Some(limit) = max_concurrency {
+        builder = builder.with_max_concurrency(limit);
+    }
     if let Some(limit) = recursion_limit {
         builder = builder.with_recursion_limit(limit as usize);
     } else {
@@ -1018,6 +1202,24 @@ fn build_graph(
         let is_trigger = node.kind == NodeKind::Trigger;
         // How this node drives its successors once it has an update.
         let routing = handler_routing(graph, &node.id);
+        // Successors on the emitted port, needed only inside a lane: `Plain`
+        // routing normally rides static edges, but a lane has to re-schedule
+        // every successor as a `Send`, so it needs the target list explicitly.
+        let plain_targets: Vec<String> = graph
+            .edges
+            .iter()
+            .filter(|e| e.from_node == node.id)
+            .map(|e| e.to_node.clone())
+            .collect();
+        // Which successors end a lane. Routing to one of these is a plain
+        // activation, so the lanes converge on it instead of each running their
+        // own copy.
+        let gather_nodes: std::collections::HashSet<String> = graph
+            .nodes
+            .iter()
+            .filter(|n| n.kind == NodeKind::Gather)
+            .map(|n| n.id.clone())
+            .collect();
         // Whether the node has an outgoing edge on the `error` port. A denied
         // approval gate (see the resume-deny path below) routes its error item
         // there when present, and fails the run when absent.
@@ -1037,10 +1239,21 @@ fn build_graph(
             let terminal_error = terminal_error.clone();
             let token = token.clone();
             let routing = routing.clone();
+            let plain_targets = plain_targets.clone();
+            let gather_nodes = gather_nodes.clone();
             // The resume value delivered to this node on a checkpointed resume, if
             // any. A bare `true` means "approve the interrupted gate"; a structured
             // `{ "rejected": [<gate id>, …] }` denies the named gate(s).
             let resume_value = ctx.resume.clone();
+            // The lane envelope this activation was scheduled with, if it is one
+            // of several concurrent activations of this same node. Decoded once
+            // here because `ctx` is not moved into the async body below.
+            let lane = lane_context(ctx.send_arg.as_ref());
+            let lane_send_arg = lane
+                .is_some()
+                .then(|| ctx.send_arg.clone())
+                .flatten();
+            let activation_step = ctx.step;
             // A checkpointed resume (see `ResumableRun::resume`) delivers a resume
             // value to the interrupted node via `NodeContext::resume`. A resume
             // approves *this* gate only when it is a bare `true` (backward-compat,
@@ -1068,8 +1281,57 @@ fn build_graph(
                 // port-command node drives only the successors of the port it
                 // emitted on (`port`, defaulting to `main`); everything else emits
                 // a plain update and follows its static/conditional edge.
-                let emit = |mut update: Value, port: Option<&str>| {
-                    stamp_activation_step(&mut update, &node.id, ctx.step);
+                let emit = |mut update: Value, port: Option<&str>, routed_items: &[Item]| {
+                    // Only a non-lane activation stamps the node's slot: the
+                    // stamp is how a loop head tells its own re-entry from a
+                    // stale arm, and a lane slot is not that.
+                    if lane.is_none() {
+                        stamp_activation_step(&mut update, &node.id, ctx.step);
+                    }
+
+                    // Inside a lane, routing carries the lane onward. Every
+                    // successor is re-scheduled as a `Send` holding this
+                    // activation's output and the same lane identity, so the
+                    // whole downstream path runs once per lane rather than
+                    // once in total.
+                    //
+                    // Except a gather: that is where lanes end. A gather is
+                    // scheduled as a plain activation, and plain activations
+                    // dedupe by node, so N lanes converge on one gather rather
+                    // than activating it N times.
+                    if let Some(lane) = lane.as_ref() {
+                        let emitted = port.unwrap_or("main");
+                        let targets: Vec<String> = match &routing {
+                            HandlerRouting::Plain => plain_targets.clone(),
+                            HandlerRouting::FanOut(targets) => targets.clone(),
+                            HandlerRouting::PortCommand(groups) => groups
+                                .iter()
+                                .find(|(p, _)| p == emitted)
+                                .map(|(_, targets)| targets.clone())
+                                .unwrap_or_default(),
+                        };
+                        let routed: Vec<RouteTarget> = targets
+                            .into_iter()
+                            .map(|target| {
+                                if gather_nodes.contains(&target) {
+                                    RouteTarget::Node(target.into())
+                                } else {
+                                    let envelope = lane_envelope(
+                                        &lane.origin,
+                                        lane.index,
+                                        lane.count,
+                                        routed_items,
+                                    )
+                                    .unwrap_or(Value::Null);
+                                    RouteTarget::Send(crate::graph::Send::new(target, envelope))
+                                }
+                            })
+                            .collect();
+                        return NodeResult::Command(
+                            Command::route(routed).with_update(update),
+                        );
+                    }
+
                     match &routing {
                     HandlerRouting::Plain => NodeResult::Update(update),
                     HandlerRouting::FanOut(targets) => {
@@ -1105,7 +1367,7 @@ fn build_graph(
                 if is_trigger {
                     // The trigger payload is pre-seeded into the state; no-op update
                     // (still fanning out if the trigger has parallel successors).
-                    return Ok(emit(json!({}), None));
+                    return Ok(emit(json!({}), None, &[]));
                 }
 
                 // Human-in-the-loop approval gate. A node whose config sets
@@ -1157,8 +1419,9 @@ fn build_graph(
                             // edge falls back to a plain update the conditional-edge
                             // router consumes.
                             return Ok(emit(
-                                items_update(&node.id, &[item], Some("error"))?,
+                                items_update(&node.id, std::slice::from_ref(&item), Some("error"))?,
                                 Some("error"),
+                                std::slice::from_ref(&item),
                             ));
                         }
                         // No error branch to route to — fail the run so the denial
@@ -1170,14 +1433,21 @@ fn build_graph(
                     }
                     let approved = state
                         .get("run")
-                        .and_then(|run| run.get("trigger"))
-                        .and_then(|trigger| trigger.get("approvals"))
-                        .and_then(Value::as_array)
-                        .is_some_and(|approvals| {
-                            approvals
-                                .iter()
-                                .filter_map(Value::as_str)
-                                .any(|id| id == node.id)
+                        .is_some_and(|run| {
+                            // Two places, because approvals reach a run two
+                            // ways: inside an object trigger payload (the
+                            // original spelling, kept working) and through
+                            // `RunInput::with_approvals`, which is the only one
+                            // available when the trigger is not an object.
+                            let listed = |approvals: Option<&Value>| {
+                                approvals.and_then(Value::as_array).is_some_and(|ids| {
+                                    ids.iter().filter_map(Value::as_str).any(|id| id == node.id)
+                                })
+                            };
+                            listed(run.get("approvals"))
+                                || listed(
+                                    run.get("trigger").and_then(|trigger| trigger.get("approvals")),
+                                )
                         });
                     // `approved_by_resume` is set when a checkpointed resume
                     // delivered an approval (bare `true`, or this gate listed in
@@ -1208,7 +1478,13 @@ fn build_graph(
                         .get("nodes")
                         .and_then(|nodes| nodes.get(&node.id))
                         .is_some_and(|slot| !slot.is_null());
-                let input = if re_entry {
+                // A lane activation carries its own work. It must not read
+                // predecessor slots: every branch of a super-step sees the same
+                // committed snapshot, so `collect_input` would hand all N lanes
+                // the identical items.
+                let input = if let Some(lane_arg) = lane_send_arg.as_ref() {
+                    lane_input(Some(lane_arg))
+                } else if re_entry {
                     let latest_step = back_incoming
                         .iter()
                         .filter_map(|(pred, _)| {
@@ -1293,6 +1569,9 @@ fn build_graph(
                         // `sub_workflow` node) can thread this run's cancellation
                         // into its child; a plain executor never reads it.
                         token: token.clone(),
+                        lane: lane.clone(),
+                        resume: resume_value.clone(),
+                        step: activation_step,
                     };
                     // BUG-8: bound THIS attempt (not the whole retry loop) to
                     // `node_timeout`. Race the attempt future against a
@@ -1386,15 +1665,127 @@ fn build_graph(
                         steps.lock().expect("steps mutex poisoned").push(step.clone());
                         observer.on_step_finish(&step);
                         let port = output.port.as_deref();
-                        Ok(emit(
-                            items_update_with_meta(
+
+                        // A node that asked for something other than plain data
+                        // flow. Handled before `emit` because both variants
+                        // bypass ordinary routing.
+                        match output.control {
+                            // Pause the run. The update is deliberately dropped:
+                            // the underlying executor discards an interrupting
+                            // activation's state write, so returning one here
+                            // would be a silent lie about what got committed.
+                            // The node re-runs from the top on resume.
+                            Some(crate::nodes::NodeControl::Interrupt { id, payload }) => {
+                                tracing::info!(node = %node.id, gate = %id, "node paused the run");
+                                return Ok(NodeResult::Interrupt(Interrupt {
+                                    id,
+                                    node: node.id.clone().into(),
+                                    payload,
+                                }));
+                            }
+                            // Ask to be run again. The update *is* committed, so
+                            // the node can leave itself notes (a poll count, a
+                            // ticket) and read them back on the next activation.
+                            //
+                            // `goto`-ing ourselves re-activates this node in the
+                            // next super-step. Each poll costs one super-step and
+                            // one node visit, so the caller's own bounded poll
+                            // count is what stops this — not the run-level
+                            // backstop, which cannot say which node span.
+                            Some(crate::nodes::NodeControl::Reenter { after_ms }) => {
+                                let update = items_update_with_meta(
+                                    &node.id,
+                                    &output.items,
+                                    port,
+                                    output.meta.as_ref(),
+                                )?;
+                                if after_ms > 0 {
+                                    // Chopped into slices so a cancel during a
+                                    // long poll interval is seen promptly, the
+                                    // same way retry backoff is drained above.
+                                    let mut remaining = after_ms;
+                                    while remaining > 0 {
+                                        if token.is_cancelled() {
+                                            tracing::info!(node = %node.id, "run cancelled while waiting to re-enter");
+                                            return Ok(NodeResult::Update(items_update(
+                                                &node.id,
+                                                &[],
+                                                None,
+                                            )?));
+                                        }
+                                        let slice = remaining.min(BACKOFF_POLL_MS);
+                                        futures_timer::Delay::new(
+                                            std::time::Duration::from_millis(slice),
+                                        )
+                                        .await;
+                                        remaining -= slice;
+                                    }
+                                }
+                                return Ok(NodeResult::Command(
+                                    Command::goto(vec![node.id.clone()]).with_update(update),
+                                ));
+                            }
+                            // Open a lane per entry: schedule every successor
+                            // once for each, each carrying its own work.
+                            //
+                            // This is the one routing decision a node makes that
+                            // the graph's edges cannot express. `Send` packets
+                            // are the reason it works at all — plain
+                            // activations dedupe by node id, so repeating a
+                            // target would collapse back to one.
+                            Some(crate::nodes::NodeControl::Scatter { lanes }) => {
+                                let count = lanes.len();
+                                let mut routed: Vec<RouteTarget> = Vec::new();
+                                for (index, lane_items) in lanes.iter().enumerate() {
+                                    for target in &plain_targets {
+                                        let envelope = lane_envelope(
+                                            &node.id, index, count, lane_items,
+                                        )
+                                        .unwrap_or(Value::Null);
+                                        routed.push(RouteTarget::Send(
+                                            crate::graph::Send::new(target.clone(), envelope),
+                                        ));
+                                    }
+                                }
+                                // The scatter's own slot records how many lanes
+                                // it opened; a gather counts arrivals against it
+                                // rather than guessing from what turned up.
+                                let mut update = items_update_with_meta(
+                                    &node.id,
+                                    &output.items,
+                                    port,
+                                    output.meta.as_ref(),
+                                )?;
+                                stamp_activation_step(&mut update, &node.id, ctx.step);
+                                tracing::debug!(
+                                    node = %node.id, lanes = count, "scatter: opened lanes"
+                                );
+                                return Ok(NodeResult::Command(
+                                    Command::route(routed).with_update(update),
+                                ));
+                            }
+                            None => {}
+                        }
+
+                        // A lane activation writes its own lane slot; only a
+                        // non-lane activation owns the node's top-level slot.
+                        let update = match lane.as_ref() {
+                            Some(lane) => lane_items_update(
+                                &node.id,
+                                lane,
+                                &output.items,
+                                port,
+                                "ok",
+                                output.meta.as_ref(),
+                            )?,
+                            None => items_update_with_meta(
                                 &node.id,
                                 &output.items,
                                 port,
                                 output.meta.as_ref(),
                             )?,
-                            port,
-                        ))
+                        };
+                        Ok(emit(update, port, &output.items))
                     }
                     None => {
                         tracing::warn!(node = %node.id, "node failed after retries");
@@ -1416,6 +1807,9 @@ fn build_graph(
                                 agents: &agents,
                                 observer: observer.as_ref(),
                                 token: token.clone(),
+                                lane: lane.clone(),
+                                resume: resume_value.clone(),
+                                step: activation_step,
                             };
                             let scope = crate::nodes::expr_scope(&ctx);
                             crate::expr::resolve_traced(&node.config, &scope).1
@@ -1433,19 +1827,21 @@ fn build_graph(
                         // ran (`max_attempts >= 1`); the `None` arm is unreachable
                         // but handled defensively — emit an empty update, never panic.
                         let Some(err) = last_err else {
-                            return Ok(emit(items_update(&node.id, &[], None)?, None));
+                            return Ok(emit(items_update(&node.id, &[], None)?, None, &[]));
                         };
                         match on_error {
                             // Turn the failure into data on the default port.
                             "continue" => Ok(emit(
                                 items_update(&node.id, &[error_item(&node.id, &err)], None)?,
                                 None,
+                                &[error_item(&node.id, &err)],
                             )),
                             // Turn the failure into data on the `error` port so the
                             // graph can route it to a recovery sub-graph.
                             "route" => Ok(emit(
                                 items_update(&node.id, &[error_item(&node.id, &err)], Some("error"))?,
                                 Some("error"),
+                                &[error_item(&node.id, &err)],
                             )),
                             // "stop" (default) and any unknown policy fail the run.
                             //
@@ -1505,10 +1901,19 @@ fn build_graph(
         match handler_routing(graph, &node.id) {
             HandlerRouting::FanOut(dests) => {
                 // Parallel fan-out: the node's handler drives every successor with
-                // a `Command::goto`, so we only declare the destination hints here.
+                // a `Command::goto`, so we only declare the destinations here.
                 // A command-routing node may not also carry static/conditional
                 // edges, so nothing else is wired for it.
-                builder = builder.with_command_destinations(node.id.clone(), dests);
+                //
+                // Declared as *unconditional*, which is a promise the routing
+                // layer relies on rather than a hint: all of these successors run
+                // whenever this node runs (they share one port — that is what
+                // makes this a fan-out rather than a choice). Barrier relief
+                // walks through this node on the strength of it, and would
+                // otherwise treat the fan-out as an unresolvable decision, decide
+                // a branch behind it went untaken, and clear a downstream barrier
+                // early.
+                builder = builder.with_unconditional_fanout(node.id.clone(), dests);
             }
             HandlerRouting::PortCommand(groups) => {
                 // Mixed-port node (e.g. `main->a, main->b, error->h`): the handler
@@ -1750,7 +2155,11 @@ async fn build_and_run(
     // caller that gets an `Input` error can therefore be certain nothing ran and
     // nothing was observed, which is what lets a host reject a bad call without
     // recording a phantom run.
-    let RunInput { trigger, inputs } = input.into();
+    let RunInput {
+        trigger,
+        inputs,
+        approvals,
+    } = input.into();
     let resolved_inputs = crate::model::resolve_inputs(&workflow.graph.inputs, &inputs)?;
 
     // Process-local, monotonic run id — no time/random source.
@@ -1786,7 +2195,8 @@ async fn build_and_run(
     // declaration, defaults already applied. `expr_scope_for` lifts it to the
     // top-level `inputs` scope key, so node config addresses it as
     // `=inputs.<name>` (and jq programs walking `run` still see it too).
-    let mut initial = json!({ "run": { "trigger": trigger, "inputs": resolved_inputs } });
+    let mut initial =
+        json!({ "run": { "trigger": trigger, "inputs": resolved_inputs, "approvals": approvals } });
     merge(&mut initial, seed_items);
     // The nesting cap for `sub_workflow` chains, read off the trigger config
     // like every other run-level knob and seeded into the run state so the
@@ -1846,12 +2256,18 @@ async fn build_and_run(
         }
     };
 
-    // Nodes that paused the run awaiting approval, surfaced from the interrupts
+    // Gates that paused the run awaiting approval, surfaced from the interrupts
     // the runtime returned at the boundary.
+    //
+    // Keyed by the interrupt's `id`, not by the node that raised it. For an
+    // ordinary `requires_approval` gate the two are the same string. They differ
+    // where one node speaks for gates that are not its own — a `sub_workflow`
+    // node reports its child's gates as `<node>::<child gate>`, because parent
+    // and child are separate graphs whose ids would otherwise collide.
     let pending_approvals: Vec<String> = execution
         .interrupts
         .iter()
-        .map(|interrupt| interrupt.node.as_str().to_string())
+        .map(|interrupt| interrupt.id.clone())
         .collect();
 
     tracing::info!(
@@ -1942,6 +2358,7 @@ fn merge_approvals(input: impl Into<RunInput>, newly_approved: Vec<String>) -> R
     let RunInput {
         mut trigger,
         inputs,
+        approvals: prior,
     } = input.into();
 
     let mut approvals: Vec<String> = trigger
@@ -1961,13 +2378,25 @@ fn merge_approvals(input: impl Into<RunInput>, newly_approved: Vec<String>) -> R
         }
     }
 
-    if let Value::Object(map) = &mut trigger {
-        map.insert("approvals".to_string(), json!(approvals));
-    } else {
-        trigger = json!({ "approvals": approvals });
+    // Carry forward approvals delivered through the explicit channel too, so a
+    // resume of a run started with `with_approvals` does not silently drop them.
+    for id in prior {
+        if !approvals.contains(&id) {
+            approvals.push(id);
+        }
     }
 
-    RunInput { trigger, inputs }
+    if let Value::Object(map) = &mut trigger {
+        map.insert("approvals".to_string(), json!(approvals.clone()));
+    } else {
+        trigger = json!({ "approvals": approvals.clone() });
+    }
+
+    RunInput {
+        trigger,
+        inputs,
+        approvals,
+    }
 }
 
 /// Like [`resume`], but observes `token`: cancelling it winds the resumed run
@@ -2053,7 +2482,7 @@ impl ResumableRun {
         let pending_approvals: Vec<String> = execution
             .interrupts
             .iter()
-            .map(|interrupt| interrupt.node.as_str().to_string())
+            .map(|interrupt| interrupt.id.clone())
             .collect();
 
         Ok(RunOutcome {
@@ -2430,7 +2859,7 @@ async fn resume_with_checkpointer_inner(
     let pending_approvals: Vec<String> = execution
         .interrupts
         .iter()
-        .map(|interrupt| interrupt.node.as_str().to_string())
+        .map(|interrupt| interrupt.id.clone())
         .collect();
 
     let graph_run_ids = GraphRunIds {
@@ -2448,6 +2877,140 @@ async fn resume_with_checkpointer_inner(
         },
         graph_run_ids,
     ))
+}
+
+#[cfg(test)]
+mod merge_tests {
+    use super::*;
+
+    /// The plain behaviour the sentinel sits alongside: objects gain keys.
+    #[test]
+    fn objects_merge_key_by_key_and_scalars_overwrite() {
+        let mut base = json!({ "a": 1, "nested": { "x": 1 } });
+        merge(&mut base, json!({ "b": 2, "nested": { "y": 2 } }));
+        assert_eq!(
+            base,
+            json!({ "a": 1, "b": 2, "nested": { "x": 1, "y": 2 } })
+        );
+    }
+
+    /// The problem the sentinel solves: without it, a key can never be dropped.
+    #[test]
+    fn a_plain_merge_cannot_remove_a_key_but_replace_can() {
+        let mut base = json!({ "attempts": [1], "err": "boom" });
+        merge(&mut base, json!({ "attempts": [1, 2] }));
+        assert_eq!(
+            base["err"], "boom",
+            "a plain merge leaves the key it did not mention"
+        );
+
+        let mut base = json!({ "attempts": [1], "err": "boom" });
+        merge(&mut base, replace(json!({ "attempts": [1, 2] })));
+        assert_eq!(
+            base,
+            json!({ "attempts": [1, 2] }),
+            "replace assigns wholesale, so the dropped key is gone"
+        );
+    }
+
+    #[test]
+    fn replace_works_at_every_nesting_depth() {
+        let mut base = json!({ "nodes": { "l": { "state": { "a": 1, "b": 2 } } } });
+        merge(
+            &mut base,
+            json!({ "nodes": { "l": { "state": replace(json!({ "a": 9 })) } } }),
+        );
+        assert_eq!(base["nodes"]["l"]["state"], json!({ "a": 9 }));
+
+        let mut base = json!({ "x": 1 });
+        merge(&mut base, replace(json!("scalar")));
+        assert_eq!(base, json!("scalar"), "replace works at the root too");
+    }
+
+    /// The soundness argument, as a test: `merge` never walks into an items
+    /// array, so a workflow whose *data* contains a `$replace` key is never
+    /// examined by the sentinel check and cannot trigger it.
+    #[test]
+    fn a_replace_key_inside_item_data_is_left_alone() {
+        let payload = json!({ REPLACE: "user data, not a sentinel" });
+        let mut base = json!({ "nodes": { "n": { "items": [] } } });
+        merge(
+            &mut base,
+            json!({ "nodes": { "n": { "items": [ { "json": payload.clone() } ] } } }),
+        );
+        assert_eq!(
+            base["nodes"]["n"]["items"][0]["json"], payload,
+            "item payloads ride inside an array and are copied verbatim"
+        );
+    }
+
+    /// Only an update that is *exactly* the sentinel assigns. An object that
+    /// merely contains the key alongside others is ordinary data.
+    #[test]
+    fn only_a_lone_replace_key_is_treated_as_the_sentinel() {
+        let mut base = json!({ "keep": 1 });
+        merge(&mut base, json!({ REPLACE: "x", "other": 2 }));
+        assert_eq!(
+            base,
+            json!({ "keep": 1, REPLACE: "x", "other": 2 }),
+            "a two-key object is data, and merges normally"
+        );
+    }
+}
+
+#[cfg(test)]
+mod lane_context_tests {
+    use super::*;
+
+    fn envelope(lane: Value) -> Value {
+        json!({ LANE_KEY: lane, "items": [] })
+    }
+
+    #[test]
+    fn a_well_formed_envelope_decodes() {
+        let lane = lane_context(Some(&envelope(json!({
+            "id": "fan#2", "origin": "fan", "index": 2, "count": 5
+        }))))
+        .expect("a complete envelope should decode");
+        assert_eq!(lane.id, "fan#2");
+        assert_eq!(lane.origin, "fan");
+        assert_eq!(lane.index, 2);
+        assert_eq!(lane.count, 5);
+    }
+
+    /// The ordinary case, and the only one that occurs until a fan-out node
+    /// exists: an activation scheduled by a plain route carries no arg at all.
+    #[test]
+    fn an_activation_without_a_send_arg_has_no_lane() {
+        assert!(lane_context(None).is_none());
+    }
+
+    /// A `send_arg` that is not a lane envelope belongs to something else and
+    /// must not be read as a lane.
+    #[test]
+    fn a_send_arg_without_the_lane_key_has_no_lane() {
+        assert!(lane_context(Some(&json!({ "items": [] }))).is_none());
+    }
+
+    /// Decoding is total: a malformed envelope degrades to "no lane" rather
+    /// than panicking or failing the run, so a bad packet cannot take the run
+    /// down. Each case drops or corrupts exactly one required field.
+    #[test]
+    fn a_malformed_envelope_degrades_to_no_lane() {
+        for broken in [
+            json!({ "origin": "fan", "index": 0, "count": 1 }), // no id
+            json!({ "id": "fan#0", "index": 0, "count": 1 }),   // no origin
+            json!({ "id": "fan#0", "origin": "fan", "count": 1 }), // no index
+            json!({ "id": "fan#0", "origin": "fan", "index": 0 }), // no count
+            json!({ "id": 7, "origin": "fan", "index": 0, "count": 1 }), // id not a string
+            json!({ "id": "fan#0", "origin": "fan", "index": -1, "count": 1 }), // negative index
+        ] {
+            assert!(
+                lane_context(Some(&envelope(broken.clone()))).is_none(),
+                "malformed envelope should not decode: {broken}"
+            );
+        }
+    }
 }
 
 #[cfg(test)]
@@ -4434,17 +4997,23 @@ mod tests {
         let compiled = compile(&graph).expect("compile");
         let caps = mock_capabilities();
 
-        // The engine serializes interrupts across the fan-out: g1 is the first
-        // gate to pend; g2 pends only once g1 is resolved. The invariant this test
-        // guards is that approving g1 must NOT also approve g2 — a bare `true`
-        // resume value would blanket-approve every interrupted gate.
+        // Both gates pend at once. They run concurrently in the same superstep,
+        // and the whole active set is folded before the run pauses, so there is
+        // no reason to surface one and hide the other behind a resume round-trip
+        // — a host can present both for approval immediately.
+        //
+        // The invariant this test guards is unchanged by that: approving g1 must
+        // NOT also approve g2. A bare `true` resume value would blanket-approve
+        // every interrupted gate, which is precisely what naming them prevents.
         let rr = run_resumable(&compiled, json!({}), &caps)
             .await
             .expect("run_resumable");
+        let mut pending = rr.outcome().pending_approvals.clone();
+        pending.sort();
         assert_eq!(
-            rr.outcome().pending_approvals,
-            vec!["g1".to_string()],
-            "g1 is the first parallel gate to pend"
+            pending,
+            vec!["g1".to_string(), "g2".to_string()],
+            "both parallel gates pend together"
         );
 
         let after_g1 = rr.resume(vec!["g1".to_string()]).await.expect("resume g1");

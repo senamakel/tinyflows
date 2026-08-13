@@ -226,7 +226,7 @@ impl NodeExecutor for MemoryNode {
         if per_item {
             // `config.concurrency` decides how many provider calls are in flight
             // at once (default 1 — sequential, as before).
-            let opts = crate::nodes::map::map_options(&ctx.node.config, &ctx.node.id);
+            let opts = crate::nodes::map::map_options(&ctx.node.config, &ctx.node.id, ctx.run);
             let ctx = &ctx;
             let (items, diagnostics) = crate::nodes::map::map_items(
                 ctx.input.len(),
@@ -412,6 +412,9 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            resume: None,
+            step: 0,
         };
         let out = MemoryNode.execute(ctx).await.expect("execute");
         assert_eq!(out.items.len(), 2, "per_item default maps over input");
@@ -469,6 +472,9 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            resume: None,
+            step: 0,
         };
         let out = MemoryNode.execute(ctx).await.expect("execute");
         assert_eq!(out.items[0].json["json"]["opts"]["operation"], "search");
@@ -490,6 +496,9 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            resume: None,
+            step: 0,
         };
         let err = MemoryNode
             .execute(ctx)
@@ -518,6 +527,9 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            resume: None,
+            step: 0,
         };
         let err = MemoryNode
             .execute(ctx)
@@ -563,6 +575,9 @@ mod tests {
                 agents: &[],
                 observer: &crate::observability::NoopObserver,
                 token: crate::engine::CancellationToken::new(),
+                lane: None,
+                resume: None,
+                step: 0,
             };
             let err = MemoryNode
                 .execute(ctx)
@@ -590,6 +605,9 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            resume: None,
+            step: 0,
         };
         let err = MemoryNode
             .execute(ctx)
@@ -617,6 +635,9 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            resume: None,
+            step: 0,
         };
         let err = MemoryNode
             .execute(ctx)
@@ -648,6 +669,9 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            resume: None,
+            step: 0,
         };
         let out = MemoryNode.execute(ctx).await.expect("execute");
         assert_eq!(out.items.len(), 1, "once mode emits a single item");

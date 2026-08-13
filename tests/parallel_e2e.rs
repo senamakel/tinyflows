@@ -211,3 +211,94 @@ async fn diamond_every_branch_contributes_to_merge() {
         );
     }
 }
+
+/// `trigger.config.max_concurrency` bounds how many branches of a super-step
+/// run at once, without changing what the run computes.
+///
+/// Eight branches fan out from one node. With the dial set to 2, at most two may
+/// ever be in flight — measured as observed overlap, since a bound that silently
+/// failed to apply would produce the identical final state.
+///
+/// This is admission control, not backpressure: the engine cannot block a
+/// branch mid-step, only decide how many are allowed to start.
+#[tokio::test]
+async fn max_concurrency_bounds_how_many_branches_run_at_once() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// A tool that reports the peak number of concurrent invocations it saw.
+    struct OverlapProbe {
+        in_flight: AtomicUsize,
+        peak: AtomicUsize,
+    }
+
+    #[async_trait::async_trait]
+    impl tinyflows::caps::ToolInvoker for OverlapProbe {
+        async fn invoke(
+            &self,
+            _slug: &str,
+            _args: Value,
+            _conn: Option<&str>,
+        ) -> tinyflows::error::Result<Value> {
+            let now = self.in_flight.fetch_add(1, Ordering::SeqCst) + 1;
+            self.peak.fetch_max(now, Ordering::SeqCst);
+            // Yield enough that unbounded branches would visibly overlap.
+            for _ in 0..8 {
+                tokio::task::yield_now().await;
+            }
+            self.in_flight.fetch_sub(1, Ordering::SeqCst);
+            Ok(json!({ "ok": true }))
+        }
+    }
+
+    async fn peak_overlap(max_concurrency: Option<u64>) -> usize {
+        let probe = Arc::new(OverlapProbe {
+            in_flight: AtomicUsize::new(0),
+            peak: AtomicUsize::new(0),
+        });
+        let mut caps = mock_capabilities();
+        caps.tools = probe.clone();
+
+        let mut trigger_config = json!({});
+        if let Some(limit) = max_concurrency {
+            trigger_config["max_concurrency"] = json!(limit);
+        }
+
+        let branches: Vec<String> = (0..8).map(|i| format!("b{i}")).collect();
+        let mut nodes = vec![
+            node("t", NodeKind::Trigger, trigger_config),
+            node("apex", NodeKind::OutputParser, Value::Null),
+        ];
+        let mut edges = vec![edge("t", "main", "apex")];
+        for id in &branches {
+            nodes.push(node(id, NodeKind::ToolCall, json!({ "slug": "probe.run" })));
+            edges.push(edge("apex", "main", id));
+        }
+
+        let graph = WorkflowGraph {
+            name: "concurrency_dial".to_string(),
+            nodes,
+            edges,
+            ..Default::default()
+        };
+        let compiled = compile(&graph).expect("compile");
+        run(&compiled, json!({}), &caps).await.expect("run");
+        probe.peak.load(Ordering::SeqCst)
+    }
+
+    let bounded = peak_overlap(Some(2)).await;
+    assert!(
+        bounded <= 2,
+        "max_concurrency: 2 must bound in-flight branches, observed peak {bounded}"
+    );
+
+    // Without the dial the same graph genuinely overlaps more, which is what
+    // makes the assertion above meaningful rather than vacuously true.
+    let unbounded = peak_overlap(None).await;
+    assert!(
+        unbounded > 2,
+        "the same graph should overlap more without the dial, observed peak \
+         {unbounded} — if this is low the probe is not actually concurrent and \
+         the bounded assertion proves nothing"
+    );
+}

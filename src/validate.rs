@@ -424,6 +424,7 @@ pub fn validate_all(graph: &WorkflowGraph) -> Vec<ValidationError> {
     }
 
     validate_loops(graph, &mut errors);
+    validate_scatter_regions(graph, &mut errors);
     // Declared-input checks. These are author-time mistakes that would otherwise
     // surface as a confusing runtime `null`: a name that `=inputs.<name>` cannot
     // address, two declarations racing for the same key, a default the input's
@@ -803,6 +804,42 @@ fn validate_loops(graph: &WorkflowGraph, errors: &mut Vec<ValidationError>) {
                 }),
             }
         }
+        if let Some(state) = node.config.get("state")
+            && !state.is_object()
+        {
+            errors.push(ValidationError::InvalidNodeConfig {
+                node: node.id.clone(),
+                reason: "loop `state` must be an object with `init` and/or `update`".to_string(),
+            });
+        }
+        if let Some(emit) = node.config.get("emit")
+            && !matches!(emit.as_str(), Some("items") | Some("state") | Some("both"))
+        {
+            errors.push(ValidationError::InvalidNodeConfig {
+                node: node.id.clone(),
+                reason: format!("loop `emit` must be \"items\", \"state\" or \"both\", got {emit}"),
+            });
+        }
+        // A `success` exit that goes nowhere strands the converged case: the
+        // run would simply end there, which looks like the loop never finished.
+        if node
+            .config
+            .get("success_port")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+            && !graph
+                .edges
+                .iter()
+                .any(|e| e.from_node == node.id && e.from_port == "success")
+        {
+            errors.push(ValidationError::InvalidNodeConfig {
+                node: node.id.clone(),
+                reason: "loop sets `success_port: true` but nothing is wired to its `success` \
+                         port, so a converged loop would strand the run; wire `success` or drop \
+                         the flag"
+                    .to_string(),
+            });
+        }
         if let Some(policy) = node.config.get("on_exceeded")
             && !matches!(policy.as_str(), Some("error") | Some("continue"))
         {
@@ -835,9 +872,7 @@ fn validate_loops(graph: &WorkflowGraph, errors: &mut Vec<ValidationError>) {
         return;
     }
 
-    // Every node that sits on some cycle, and the loop heads (back-edge
-    // targets) those cycles close on.
-    let heads: HashSet<&str> = loop_edges.iter().map(|(_, to)| to.as_str()).collect();
+    // Every node that sits on some cycle.
     let on_a_cycle: HashSet<&str> = loop_edges
         .iter()
         .flat_map(|(from, to)| nodes_on_cycle(graph, to, from))
@@ -845,53 +880,88 @@ fn validate_loops(graph: &WorkflowGraph, errors: &mut Vec<ValidationError>) {
 
     // A real fan-in `merge` inside the loop body deadlocks it. A single-input
     // merge is a passthrough and is not lowered as a waiting barrier.
+    //
+    // The rule is narrower than "any fan-in merge on a cycle", and both halves
+    // of it are load bearing.
+    //
+    // Why an all-on-the-cycle merge is fine: barrier arrivals refill. The
+    // arrival set is *removed* when the barrier fires (see
+    // `graph::compiled::routing::route_completed`), so it re-arms for the next
+    // pass. Every predecessor on the cycle runs again on every pass, so the set
+    // completes again on every pass and the merge fires once per iteration.
+    //
+    // Why an off-cycle predecessor still hangs: it runs once, on the seeding
+    // pass, and never activates again. From the second iteration the required
+    // set can never be completed and the loop stops dead at the merge.
+    //
+    // This lift also depended on a fix elsewhere, worth recording because the
+    // symptom pointed away from the cause. Loop-body arms are reachable only
+    // through the head's `body` port, so relief is registered for them; relief
+    // decides whether a branch was taken by walking forward through
+    // deterministic routing, and that walk used to stop at a fan-out (a command
+    // node has no static edge). It therefore concluded the arms were untaken
+    // and injected phantom arrivals, firing the merge *before* its arms ran —
+    // activation order `head, apex, join, arm_a, arm_b, …`, the join reading the
+    // previous pass's data. The walk now crosses unconditional fan-outs, which
+    // is what makes a diamond in a loop body correct rather than merely legal.
     for id in &on_a_cycle {
         let is_merge = graph
             .nodes
             .iter()
             .any(|n| n.id == *id && n.kind == NodeKind::Merge);
-        let forward_predecessors = graph
+        if !is_merge {
+            continue;
+        }
+        let forward_predecessors: Vec<&str> = graph
             .edges
             .iter()
             .filter(|edge| {
                 edge.to_node == **id
                     && !loop_edges.contains(&(edge.from_node.clone(), edge.to_node.clone()))
             })
-            .count();
-        if is_merge && forward_predecessors > 1 {
+            .map(|edge| edge.from_node.as_str())
+            .collect();
+        let waits_on_something_off_the_cycle = forward_predecessors
+            .iter()
+            .any(|pred| !on_a_cycle.contains(pred));
+        if forward_predecessors.len() > 1 && waits_on_something_off_the_cycle {
             errors.push(ValidationError::IllegalCycle((*id).to_string()));
         }
     }
 
-    for head in &heads {
-        // A loop head that is also a fan-in cannot iterate: its forward
-        // predecessors are lowered as waiting edges, and that barrier is
-        // per-node, so it swallows the re-entry the back-edge delivers. The fix
-        // is to join *before* the head — a `merge` outside the cycle — which
-        // leaves the head with a single forward predecessor.
-        let forward_predecessors = graph
-            .edges
-            .iter()
-            .filter(|e| {
-                e.to_node == **head
-                    && !loop_edges.contains(&(e.from_node.clone(), e.to_node.clone()))
-            })
-            .count();
-        if forward_predecessors > 1 {
-            errors.push(ValidationError::IllegalCycle((*head).to_string()));
-        }
-    }
+    // A loop head that is *also* a fan-in used to be refused here.
+    //
+    // It was refused because the barrier gate is keyed on the target node
+    // rather than on the edge, so the re-entry a back-edge delivered was tested
+    // against the head's forward predecessors, failed, and was dropped — the
+    // loop ran once and stopped. The gate now ignores arrivals from
+    // predecessors outside the barrier's required set (see
+    // `graph::compiled::routing::route_completed`), and a back-edge's source is
+    // never in that set, so the re-entry lands and the loop iterates.
+    //
+    // Joining before the head — a `merge` outside the cycle — is still the
+    // clearer way to write it, and is what the catalog recommends. It is no
+    // longer the only way that works.
 
     // An unbounded cycle. Without a `loop` node to count passes, the only thing
     // standing between this graph and a run that spins until the host's wall
     // clock kills it is the trigger's `recursion_limit`. Requiring one of the
     // two makes the bound an authoring decision rather than an accident.
-    let has_recursion_limit = graph
-        .trigger()
-        .and_then(|t| t.config.get("recursion_limit"))
-        .and_then(Value::as_u64)
-        .is_some_and(|n| n > 0);
-    if !has_recursion_limit {
+    // Either run-level bound counts. `max_node_visits` is enforced just as
+    // firmly as `recursion_limit` and gives the *better* failure — it names the
+    // node that ran away, where `recursion_limit` can only say the run did — so
+    // refusing a graph bounded solely by it was refusing a graph that was in
+    // fact bounded, and pushing authors toward the less informative knob.
+    let has_run_level_bound = graph.trigger().is_some_and(|trigger| {
+        ["recursion_limit", "max_node_visits"].iter().any(|key| {
+            trigger
+                .config
+                .get(*key)
+                .and_then(Value::as_u64)
+                .is_some_and(|n| n > 0)
+        })
+    });
+    if !has_run_level_bound {
         for (from, to) in &loop_edges {
             let bounded = nodes_on_cycle(graph, to, from).into_iter().any(|id| {
                 graph
@@ -903,6 +973,175 @@ fn validate_loops(graph: &WorkflowGraph, errors: &mut Vec<ValidationError>) {
                 errors.push(ValidationError::IllegalCycle(to.clone()));
             }
         }
+    }
+}
+
+/// Checks the structural rules a `scatter`/`gather` region has to satisfy.
+///
+/// A lane is created by routing, not by an edge, so most of what makes a region
+/// work cannot be seen in the graph at run time — the engine just propagates a
+/// lane envelope to every successor that is not a gather. These rules are what
+/// keep that propagation *total*: if a lane can leak out of the region, or end
+/// somewhere that is not a gather, the envelope is silently dropped and the
+/// activation writes the node's top-level slot as though it were not in a lane
+/// at all. That is a wrong answer rather than a failure, so it is refused here.
+fn validate_scatter_regions(graph: &WorkflowGraph, errors: &mut Vec<ValidationError>) {
+    let scatters: Vec<&str> = graph
+        .nodes
+        .iter()
+        .filter(|n| n.kind == NodeKind::Scatter)
+        .map(|n| n.id.as_str())
+        .collect();
+    let gathers: HashSet<&str> = graph
+        .nodes
+        .iter()
+        .filter(|n| n.kind == NodeKind::Gather)
+        .map(|n| n.id.as_str())
+        .collect();
+
+    // A gather with no scatter waits on lanes nobody will ever open.
+    for gather in &gathers {
+        let reached_by_a_scatter = scatters
+            .iter()
+            .any(|scatter| path_exists(graph, scatter, gather));
+        if !reached_by_a_scatter {
+            errors.push(ValidationError::InvalidNodeConfig {
+                node: (*gather).to_string(),
+                reason: "gather is not downstream of any `scatter`, so no lane can ever reach \
+                         it and the run would wait until its poll budget ran out"
+                    .to_string(),
+            });
+        }
+    }
+
+    for scatter in &scatters {
+        // Every path out of a scatter has to end at a gather. A lane that runs
+        // off the end of the graph is work whose results nothing collects.
+        let members = region_members(graph, scatter, &gathers);
+        if members.is_empty() {
+            errors.push(ValidationError::InvalidNodeConfig {
+                node: (*scatter).to_string(),
+                reason: "scatter has no `gather` downstream; every lane it opens would run with \
+                         nothing to collect it. Wire the end of the lane body to a `gather`"
+                    .to_string(),
+            });
+            continue;
+        }
+
+        for member in &members {
+            // A nested scatter needs composed lane ids and a gather that knows
+            // which level it closes. Refused rather than mis-collected.
+            if scatters.contains(member) {
+                errors.push(ValidationError::InvalidNodeConfig {
+                    node: (*member).to_string(),
+                    reason: format!(
+                        "nested `scatter` inside the region opened by {scatter:?} is not \
+                         supported"
+                    ),
+                });
+            }
+            // A loop head inside a lane: re-entry detection keys on the node's
+            // top-level slot, which a lane activation deliberately never writes.
+            if graph
+                .nodes
+                .iter()
+                .any(|n| n.id == **member && n.kind == NodeKind::Loop)
+            {
+                errors.push(ValidationError::InvalidNodeConfig {
+                    node: (*member).to_string(),
+                    reason: format!(
+                        "`loop` inside the lane body of {scatter:?} is not supported: loop \
+                         re-entry is tracked in the node's own slot, which a lane does not write"
+                    ),
+                });
+            }
+            // An approval gate inside a lane: the resume map is keyed by node
+            // id, so N lanes of one node would share a single approval.
+            if graph.nodes.iter().any(|n| {
+                n.id == **member
+                    && n.config
+                        .get("requires_approval")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false)
+            }) {
+                errors.push(ValidationError::InvalidNodeConfig {
+                    node: (*member).to_string(),
+                    reason: format!(
+                        "`requires_approval` inside the lane body of {scatter:?} is not \
+                         supported: a resume is addressed by node id, so every lane would share \
+                         one approval"
+                    ),
+                });
+            }
+            // A lane that dead-ends: every node inside the region must have a
+            // path onward to a gather. One that does not is running in a lane
+            // whose results nothing collects — and because a lane activation
+            // deliberately never writes the node's top-level slot, its output
+            // is not merely uncollected, it is invisible. Wrong answer, not a
+            // failure, which is why this is refused rather than warned about.
+            let reaches_a_gather = gathers
+                .iter()
+                .any(|gather| path_exists(graph, member, gather));
+            if !reaches_a_gather {
+                errors.push(ValidationError::InvalidNodeConfig {
+                    node: (*member).to_string(),
+                    reason: format!(
+                        "node is inside the lane region opened by {scatter:?} but has no path \
+                         onward to a `gather`, so its lane output would be stranded; route it \
+                         through the gather"
+                    ),
+                });
+            }
+        }
+    }
+}
+
+/// The nodes strictly between `scatter` and the gathers it reaches.
+///
+/// Forward reachability from the scatter, stopping at any gather — the gather
+/// itself is the boundary, not a member, because it is the one node a lane
+/// reaches as a plain activation rather than as a lane.
+fn region_members<'a>(
+    graph: &'a WorkflowGraph,
+    scatter: &str,
+    gathers: &HashSet<&str>,
+) -> HashSet<&'a str> {
+    let mut members = HashSet::new();
+    let mut reached_a_gather = false;
+    let mut stack: Vec<&str> = graph
+        .edges
+        .iter()
+        .filter(|e| e.from_node == scatter)
+        .map(|e| e.to_node.as_str())
+        .collect();
+    while let Some(node) = stack.pop() {
+        if gathers.contains(node) {
+            reached_a_gather = true;
+            continue;
+        }
+        let Some(id) = graph
+            .nodes
+            .iter()
+            .find(|n| n.id == node)
+            .map(|n| n.id.as_str())
+        else {
+            continue;
+        };
+        if !members.insert(id) {
+            continue;
+        }
+        stack.extend(
+            graph
+                .edges
+                .iter()
+                .filter(|e| e.from_node == node)
+                .map(|e| e.to_node.as_str()),
+        );
+    }
+    if reached_a_gather {
+        members
+    } else {
+        HashSet::new()
     }
 }
 

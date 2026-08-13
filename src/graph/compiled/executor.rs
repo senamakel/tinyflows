@@ -582,7 +582,8 @@ where
             let StepRun {
                 updates,
                 goto_map,
-                interrupt,
+                completed: completed_indices,
+                interrupts,
                 failure,
             } = match run_result {
                 Ok(step_run) => step_run,
@@ -712,7 +713,7 @@ where
             // members of this step (interrupted node first). Each pending branch
             // keeps its `Send` arg; accumulated barrier arrivals are persisted
             // too. Then return control to the caller.
-            if let Some((index, emitted)) = interrupt {
+            if !interrupts.is_empty() {
                 if let Err(err) = self.require_interrupt_durability(&thread_id) {
                     return self
                         .fail_and_return(
@@ -725,9 +726,26 @@ where
                         )
                         .await;
                 }
+                // Split the step three ways: branches that ran to a result,
+                // branches that interrupted, and — under sequential execution —
+                // branches that were never started at all.
+                //
+                // A branch that ran keeps its result and has its successors
+                // routed now, so a resume never runs it again. Only the
+                // interrupted and never-started ones are rescheduled.
+                //
+                // Position is not the discriminator. Under parallel execution the
+                // whole active set runs before anything is folded, so "after the
+                // interrupt" and "did not run" are different sets; rescheduling
+                // by position would re-run completed work and fire its side
+                // effects a second time. Under sequential execution they happen
+                // to coincide, which is exactly why `completed_indices` is
+                // reported by the runner rather than inferred here.
+                let (completed, completed_goto) =
+                    Self::partition_completed(&active, &goto_map, &completed_indices);
                 let successors = match self.route_completed(
-                    &active[..index],
-                    &goto_map,
+                    &completed,
+                    &completed_goto,
                     &state,
                     &mut barrier_arrivals,
                 ) {
@@ -745,10 +763,41 @@ where
                             .await;
                     }
                 };
+                // Rescheduled: the interrupted branches, plus any branch that was
+                // never started (sequential execution stops at the interrupt).
+                // The branches that ran are represented by their successors
+                // instead, so they are not run twice.
+                let interrupted_nodes: Vec<NodeId> = interrupts
+                    .iter()
+                    .map(|(index, _)| active[*index].node.clone())
+                    .collect();
+                let ran: HashSet<usize> = completed_indices
+                    .iter()
+                    .copied()
+                    .chain(interrupts.iter().map(|(index, _)| *index))
+                    .collect();
                 let mut pending = successors;
-                pending.extend(active[index..].iter().cloned());
+                pending.extend(
+                    interrupts
+                        .iter()
+                        .map(|(index, _)| active[*index].clone())
+                        .chain(
+                            active
+                                .iter()
+                                .enumerate()
+                                .filter(|(index, _)| !ran.contains(index))
+                                .map(|(_, activation)| activation.clone()),
+                        ),
+                );
                 let pending_nodes = activation_nodes(&pending);
-                let interrupt_id = InterruptId::new(emitted.id.clone());
+                let interrupt_ids: Vec<InterruptId> = interrupts
+                    .iter()
+                    .map(|(_, emitted)| InterruptId::new(emitted.id.clone()))
+                    .collect();
+                let emitted_interrupts: Vec<Interrupt> = interrupts
+                    .iter()
+                    .map(|(_, emitted)| emitted.clone())
+                    .collect();
                 // An interrupt hands control back to the caller expecting a
                 // fully durable pause point: settle any in-flight Async
                 // background writes first, failing the run if one was lost
@@ -771,9 +820,9 @@ where
                         &run_id,
                         &state,
                         &pending,
-                        &active[..index],
-                        vec![emitted.clone()],
-                        std::slice::from_ref(&active[index].node),
+                        &completed,
+                        emitted_interrupts.clone(),
+                        &interrupted_nodes,
                         &barrier_arrivals,
                         parent_checkpoint.clone(),
                         steps,
@@ -802,7 +851,7 @@ where
                 status.status = ExecutionStatus::Interrupted;
                 status.current_step = steps;
                 status.active_nodes = pending_nodes;
-                status.pending_interrupts = vec![interrupt_id];
+                status.pending_interrupts = interrupt_ids;
                 status.checkpoint_id = checkpoint_id.clone();
                 self.save_status(status.clone()).await;
 
@@ -815,7 +864,7 @@ where
                     child_runs: all_child_runs,
                     visited,
                     steps,
-                    interrupts: vec![emitted],
+                    interrupts: emitted_interrupts,
                     status,
                     checkpoint_id,
                 });
@@ -1240,7 +1289,8 @@ where
     ) -> Result<StepRun<Update>> {
         let mut updates: Vec<Update> = Vec::new();
         let mut goto_map: HashMap<usize, Vec<RouteTarget>> = HashMap::new();
-        let mut interrupt: Option<(usize, Interrupt)> = None;
+        let mut interrupts: Vec<(usize, Interrupt)> = Vec::new();
+        let mut completed: Vec<usize> = Vec::new();
         let mut failure: Option<StepFailure> = None;
 
         for (index, activation) in active.iter().enumerate() {
@@ -1303,15 +1353,19 @@ where
                 &mut goto_map,
                 visited,
             ) {
-                interrupt = Some(found);
+                interrupts.push(found);
+                // Sequential execution stops here: the rest of the step is never
+                // started, so those branches stay absent from `completed`.
                 break;
             }
+            completed.push(index);
         }
 
         Ok(StepRun {
             updates,
             goto_map,
-            interrupt,
+            completed,
+            interrupts,
             failure,
         })
     }
@@ -1407,27 +1461,78 @@ where
         // which pending future completed; a parallel index Vec maps it back to
         // the branch's active-set position, so results are re-ordered into
         // deterministic order for the fold below.
-        let results = match self.max_concurrency {
-            Some(limit) if limit < futures.len() => {
+        // A per-node cap binds only when this step activates one node more times
+        // than its cap allows — which needs `Send` fanout, since plain activations
+        // are deduplicated by node.
+        let node_caps_bind = !self.node_concurrency.is_empty() && {
+            let mut counts: HashMap<&NodeId, usize> = HashMap::new();
+            active.iter().any(|activation| {
+                let seen = counts.entry(&activation.node).or_default();
+                *seen += 1;
+                self.node_concurrency
+                    .get(&activation.node)
+                    .is_some_and(|cap| *seen > *cap)
+            })
+        };
+        let global_binds = self
+            .max_concurrency
+            .is_some_and(|limit| limit < futures.len());
+
+        let results = match (global_binds || node_caps_bind).then_some(()) {
+            Some(()) => {
+                // Admission is governed by two independent ceilings: the
+                // graph-wide in-flight count, and how many activations of one
+                // *node* may be in flight. A branch starts only when both allow
+                // it, so throttling a wide fanout of one node does not also
+                // throttle the unrelated branches sharing its step.
+                let limit = self.max_concurrency.unwrap_or(futures.len()).max(1);
                 let total = futures.len();
                 let mut slots: Vec<Option<Result<NodeResult<Update>>>> =
                     (0..total).map(|_| None).collect();
-                let mut source = futures.into_iter().enumerate();
+                // Queued branches, in active-set order, each tagged with its node
+                // so admission can consult that node's cap.
+                let mut queue: std::collections::VecDeque<(usize, _)> =
+                    futures.into_iter().enumerate().collect();
+                let mut in_flight_per_node: HashMap<NodeId, usize> = HashMap::new();
                 let mut running = Vec::with_capacity(limit);
                 let mut running_index = Vec::with_capacity(limit);
-                for (index, fut) in source.by_ref().take(limit) {
-                    running.push(fut);
-                    running_index.push(index);
+
+                // Admits as many queued branches as both ceilings currently
+                // allow, preserving active-set order among those admitted.
+                macro_rules! admit {
+                    () => {
+                        while running.len() < limit {
+                            let Some(position) = queue.iter().position(|(index, _)| {
+                                let node = &active[*index].node;
+                                self.node_concurrency.get(node).is_none_or(|cap| {
+                                    in_flight_per_node.get(node).copied().unwrap_or(0) < *cap
+                                })
+                            }) else {
+                                // Every queued branch is blocked by its node's
+                                // cap; the next completion frees one.
+                                break;
+                            };
+                            let (index, fut) =
+                                queue.remove(position).expect("position is in range");
+                            *in_flight_per_node
+                                .entry(active[index].node.clone())
+                                .or_default() += 1;
+                            running.push(fut);
+                            running_index.push(index);
+                        }
+                    };
                 }
+
+                admit!();
                 while !running.is_empty() {
                     let (result, completed, rest) = futures_util::future::select_all(running).await;
                     let index = running_index.remove(completed);
+                    if let Some(count) = in_flight_per_node.get_mut(&active[index].node) {
+                        *count = count.saturating_sub(1);
+                    }
                     slots[index] = Some(result);
                     running = rest;
-                    if let Some((index, fut)) = source.next() {
-                        running.push(fut);
-                        running_index.push(index);
-                    }
+                    admit!();
                 }
                 slots
                     .into_iter()
@@ -1440,7 +1545,8 @@ where
         // Fold in deterministic active-set index order.
         let mut updates: Vec<Update> = Vec::new();
         let mut goto_map: HashMap<usize, Vec<RouteTarget>> = HashMap::new();
-        let mut interrupt: Option<(usize, Interrupt)> = None;
+        let mut interrupts: Vec<(usize, Interrupt)> = Vec::new();
+        let mut completed: Vec<usize> = Vec::new();
         let mut failure: Option<StepFailure> = None;
 
         for (index, (activation, result)) in active.iter().zip(results).enumerate() {
@@ -1465,6 +1571,15 @@ where
                 }
             };
 
+            // Deliberately no `break` here, unlike the sequential path.
+            //
+            // Every branch in this step has already *run* — they were driven
+            // concurrently above — so stopping the fold at the first interrupt
+            // would discard work that genuinely completed and re-schedule it, and
+            // resuming would run those branches a second time. For a node with
+            // side effects that means firing them twice. Fold every non-
+            // interrupting branch and let the caller schedule only the
+            // interrupted ones for resume.
             if let Some(found) = self.fold_result(
                 index,
                 node_id,
@@ -1474,17 +1589,46 @@ where
                 &mut goto_map,
                 visited,
             ) {
-                interrupt = Some(found);
-                break;
+                interrupts.push(found);
+            } else {
+                completed.push(index);
             }
         }
 
         Ok(StepRun {
             updates,
             goto_map,
-            interrupt,
+            completed,
+            interrupts,
             failure,
         })
+    }
+
+    /// Splits a step's active set into the branches that completed, paired with
+    /// their routing re-keyed to the compacted set.
+    ///
+    /// [`Self::route_completed`] keys `goto_map` by position within the slice it
+    /// is handed, so dropping the interrupted branches from the middle would
+    /// silently misattribute every later branch's routing to the wrong node —
+    /// a `Send` packet would end up delivered on someone else's behalf. The
+    /// re-keying is the whole reason this is a function rather than a `filter`.
+    fn partition_completed(
+        active: &[Activation],
+        goto_map: &HashMap<usize, Vec<RouteTarget>>,
+        completed_indices: &[usize],
+    ) -> (Vec<Activation>, HashMap<usize, Vec<RouteTarget>>) {
+        let mut completed = Vec::with_capacity(completed_indices.len());
+        let mut routing = HashMap::new();
+        for index in completed_indices {
+            let Some(activation) = active.get(*index) else {
+                continue;
+            };
+            if let Some(targets) = goto_map.get(index) {
+                routing.insert(completed.len(), targets.clone());
+            }
+            completed.push(activation.clone());
+        }
+        (completed, routing)
     }
 
     /// Routes a set of completed activations into their successor activations.

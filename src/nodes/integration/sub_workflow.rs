@@ -1,7 +1,7 @@
 //! The `sub_workflow` node: runs another workflow as a nested sub-graph.
 
 use async_trait::async_trait;
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use crate::engine::MAX_SUB_WORKFLOW_DEPTH;
 use crate::error::{EngineError, Result};
@@ -86,6 +86,63 @@ use crate::nodes::{NodeContext, NodeExecutor, NodeOutput};
 /// rather than unwinding the full depth budget.
 #[derive(Debug, Default, Clone)]
 pub struct SubWorkflowNode;
+
+/// Separates a `sub_workflow` node's id from a gate id inside its child.
+///
+/// Parent and child are separate graphs with separate id spaces, so a child's
+/// gate `approve` and a parent's gate `approve` are different gates that would
+/// otherwise be indistinguishable in one pending set.
+const GATE_NAMESPACE: &str = "::";
+
+/// Qualifies a child gate id with the node that ran the child.
+fn namespaced_gate(node_id: &str, gate: &str) -> String {
+    format!("{node_id}{GATE_NAMESPACE}{gate}")
+}
+
+/// The child-gate ids approved for `node_id`, taken from the parent run's
+/// accumulated approvals with the namespace stripped.
+///
+/// This is how an approval crosses the boundary. `engine::resume` unions newly
+/// approved ids into `run.trigger.approvals`, so on the re-run this node finds
+/// the ones addressed to it and hands them to the child as *its* approvals.
+/// Ids belonging to the parent or to a different `sub_workflow` node are left
+/// alone.
+fn approvals_for_child(ctx: &NodeContext<'_>) -> Vec<String> {
+    let prefix = format!("{}{GATE_NAMESPACE}", ctx.node.id);
+    let strip = |ids: &Value| -> Vec<String> {
+        ids.as_array()
+            .map(|ids| {
+                ids.iter()
+                    .filter_map(Value::as_str)
+                    .filter_map(|id| id.strip_prefix(prefix.as_str()))
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+
+    // Two channels, because the engine has two resume paths and they deliver
+    // approvals differently.
+    //
+    // `engine::resume` re-executes the workflow with the approvals merged into
+    // the run input, so they arrive in `run.trigger.approvals`. The checkpointed
+    // path replays from the checkpoint instead and hands the resume value
+    // straight to the node that interrupted — this node — so they arrive in
+    // `ctx.resume`. Reading only one of the two makes cross-boundary approval
+    // work on one path and silently hang on the other.
+    let mut approved: Vec<String> = ctx
+        .run
+        .get("trigger")
+        .and_then(|trigger| trigger.get("approvals"))
+        .map(&strip)
+        .unwrap_or_default();
+    if let Some(resume) = ctx.resume.as_ref().and_then(|value| value.get("approved")) {
+        approved.extend(strip(resume));
+    }
+    approved.sort();
+    approved.dedup();
+    approved
+}
 
 /// Reads the current nesting depth from the run metadata (`0` at the top level).
 fn current_depth(run: &Value) -> u64 {
@@ -175,7 +232,7 @@ impl NodeExecutor for SubWorkflowNode {
                 && !ctx.input.is_empty();
 
         if per_item {
-            let opts = crate::nodes::map::map_options(&ctx.node.config, &ctx.node.id);
+            let opts = crate::nodes::map::map_options(&ctx.node.config, &ctx.node.id, ctx.run);
             let ctx = &ctx;
             let (items, _) = crate::nodes::map::map_items(
                 ctx.input.len(),
@@ -193,9 +250,17 @@ impl NodeExecutor for SubWorkflowNode {
                     // exactly one output per input index, so stand in with an
                     // empty item — the whole node's output is discarded by the
                     // token check below, so this placeholder never surfaces.
-                    let child = run_child(ctx, &scope, std::slice::from_ref(item))
-                        .await?
-                        .unwrap_or_else(|| crate::data::Item::new(Value::Null));
+                    // A paused child is reported as a marker item rather than
+                    // an error: the map slots exactly one output per input
+                    // index, and the gates are collected across the whole batch
+                    // below so one pause does not hide the others.
+                    let child = match run_child(ctx, &scope, std::slice::from_ref(item)).await? {
+                        ChildOutcome::Finished(item) => item,
+                        ChildOutcome::Cancelled => crate::data::Item::new(Value::Null),
+                        ChildOutcome::Paused(gates) => {
+                            crate::data::Item::new(json!({ PAUSED_MARKER: gates }))
+                        }
+                    };
                     Ok((child, vec![]))
                 },
             )
@@ -208,18 +273,82 @@ impl NodeExecutor for SubWorkflowNode {
             if ctx.token.is_cancelled() {
                 return Ok(NodeOutput::empty());
             }
+            // Any child that paused pauses the whole node. Gates from every
+            // paused child are unioned, so a host sees all of them at once
+            // rather than discovering them one fan-out element at a time.
+            let paused: Vec<String> = items
+                .iter()
+                .filter_map(|item| item.json.get(PAUSED_MARKER))
+                .filter_map(Value::as_array)
+                .flatten()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect();
+            if !paused.is_empty() {
+                return Ok(pause_for_child_gates(&ctx.node.id, paused));
+            }
             return Ok(NodeOutput::main(items));
         }
 
         let scope = crate::nodes::expr_scope(&ctx);
         match run_child(&ctx, &scope, ctx.input).await? {
-            Some(item) => Ok(NodeOutput::main(vec![item])),
+            ChildOutcome::Finished(item) => Ok(NodeOutput::main(vec![item])),
             // Parent-initiated cancel wound the child down: emit nothing, the
             // same clean wind-down a top-level cancelled node performs. The
             // parent's next boundary check settles `cancelled = true`.
-            None => Ok(NodeOutput::empty()),
+            ChildOutcome::Cancelled => Ok(NodeOutput::empty()),
+            ChildOutcome::Paused(gates) => Ok(pause_for_child_gates(&ctx.node.id, gates)),
         }
     }
+}
+
+/// Marks a per-item child result that paused rather than finished.
+///
+/// Underscore-prefixed so it cannot collide with a child's own output keys. It
+/// never reaches downstream: the fan-out collects these, pauses the node, and
+/// the interrupt discards the items.
+const PAUSED_MARKER: &str = "_sub_workflow_paused";
+
+/// Builds the parent-side pause for a child that stopped at approval gates.
+///
+/// The interrupt id is the first gate, because a run's pending set is keyed by
+/// interrupt id and a node emits one interrupt. The payload carries the full
+/// list, and a host may approve several at once — the next re-run seeds all of
+/// them into the child, so a child with N gates need not cost N round trips.
+fn pause_for_child_gates(node_id: &str, gates: Vec<String>) -> NodeOutput {
+    tracing::info!(
+        node = %node_id,
+        ?gates,
+        "sub_workflow: child paused awaiting approval; pausing the parent"
+    );
+    let first = gates
+        .first()
+        .cloned()
+        .unwrap_or_else(|| node_id.to_string());
+    NodeOutput::interrupt(
+        first,
+        json!({
+            "kind": "sub_workflow_approval",
+            "node": node_id,
+            "pending": gates,
+        }),
+    )
+}
+
+/// What one child run produced, from the parent node's point of view.
+///
+/// Three outcomes rather than two: a child can finish, wind down because the
+/// parent cancelled, or **pause** at an approval gate. The last one is not a
+/// failure and not a result — it has to travel up as its own case so the parent
+/// node can pause too, rather than being flattened into an item or an error.
+enum ChildOutcome {
+    /// The child ran to completion; its final state is this item.
+    Finished(crate::data::Item),
+    /// The parent cancelled mid-child. A clean cooperative wind-down.
+    Cancelled,
+    /// The child stopped at one or more approval gates, named here with the
+    /// parent-facing namespace already applied.
+    Paused(Vec<String>),
 }
 
 /// Resolves this node's child graph and runs it once, returning the child's
@@ -229,7 +358,7 @@ impl NodeExecutor for SubWorkflowNode {
 /// input for `once`, the current element for `per_item`), and `child_input` is
 /// the item array seeded into the child run.
 ///
-/// Returns `Ok(None)` when the parent run cancelled this child mid-flight
+/// Returns [`ChildOutcome::Cancelled`] when the parent run cancelled this child mid-flight
 /// (`ctx.token` is set): the child is a clean cooperative wind-down, not a
 /// failure, so it emits no item and lets the parent settle as cancelled. A child
 /// that stops for any *other* reason (a `requires_approval` pause, or a cancel
@@ -238,7 +367,7 @@ async fn run_child(
     ctx: &NodeContext<'_>,
     scope: &Value,
     child_input: &[crate::data::Item],
-) -> Result<Option<crate::data::Item>> {
+) -> Result<ChildOutcome> {
     // The inline `workflow` graph carries its *own* `=`-expressions, scoped
     // to the CHILD run — it must pass through untouched. Only the fields the
     // sub_workflow node itself reads (here `workflow_id`) are resolved
@@ -296,6 +425,14 @@ async fn run_child(
     let compiled = crate::compiler::compile(&child)?;
     let trigger =
         serde_json::to_value(child_input).map_err(|e| EngineError::Capability(e.to_string()))?;
+    // Approvals the parent has accumulated for *this* node's child gates. Empty
+    // on a first run; populated after a resume, which is what lets the re-run
+    // get past the gate that paused it.
+    //
+    // Delivered through `RunInput::with_approvals` rather than written into the
+    // trigger payload: a child is seeded with its input *items*, so its trigger
+    // is an array and has nowhere to carry an `approvals` key.
+    let child_approvals = approvals_for_child(ctx);
     // Resolved against the same `scope` as `workflow_id`, so a `per_item` run
     // forwards values derived from *its* element (`"=item.repo"`) rather than
     // from the batch — the whole point of resolving inputs in here rather than
@@ -308,7 +445,9 @@ async fn run_child(
     // nesting chain shares one cancellation signal.
     let outcome = Box::pin(crate::engine::run_sub_workflow(
         &compiled,
-        crate::engine::RunInput::new(trigger).with_inputs(child_inputs),
+        crate::engine::RunInput::new(trigger)
+            .with_inputs(child_inputs)
+            .with_approvals(child_approvals),
         ctx.caps,
         child_depth,
         depth_cap,
@@ -320,33 +459,32 @@ async fn run_child(
     //
     // The child run is a *separate* engine invocation whose non-completion is
     // reported on its [`RunOutcome`], not on the [`NodeOutput`] this node
-    // returns. A node executor has no channel to inject a graph interrupt
-    // into the *parent* run (the parent's `pending_approvals` are collected
-    // solely from its own boundary interrupts), so we cannot yet transparently
-    // pause the parent and resume the child at its gate. What we MUST NOT do is
-    // keep only `outcome.output` and report success — that silently treats a
-    // child that paused at a `requires_approval` gate (or was cancelled) as if
-    // it had run to completion, making approval gating unenforceable across the
-    // boundary.
+    // returns. What must never happen is keeping only `outcome.output` and
+    // reporting success — that would silently treat a child paused at a
+    // `requires_approval` gate as if it had run to completion, making approval
+    // gating unenforceable across the boundary.
     //
-    // Until full cross-boundary resume exists, fail loudly: a child that did
-    // not fully complete halts the parent with an error rather than letting it
-    // falsely complete. With the default `on_error: stop` policy this stops the
-    // parent run; with `continue`/`route` it becomes a routable error item —
-    // either way the gated child is never silently treated as completed.
+    // A paused child now **pauses the parent** rather than failing it, via
+    // [`NodeControl::Interrupt`]. The child's gate ids are namespaced by this
+    // node's id (`<node>::<child gate>`) so they cannot collide with the
+    // parent's own gates, and so this node can recognise its own approvals when
+    // it re-runs.
     //
-    // Follow-up for full cross-boundary resume: surface the child's
-    // `pending_approvals` (namespaced by this node's id) into the parent's
-    // pending set via a real interrupt at this node's boundary, and teach
-    // `engine::resume` to re-enter the child at its paused gate. That needs
-    // engine-level interrupt plumbing this node cannot express today.
+    // Resume works the way `engine::resume` already works everywhere else: by
+    // re-executing with the merged approval set rather than replaying a
+    // checkpoint. The approvals accumulate in the parent's
+    // `run.trigger.approvals`; on the re-run this node reads back the ones
+    // addressed to it, strips the namespace, and seeds them into the child's
+    // trigger — so the child gets past the gate that stopped it. Nothing needs
+    // to share a checkpointer, and the child is deterministic, so re-running it
+    // reaches the same place.
     if !outcome.pending_approvals.is_empty() {
-        return Err(EngineError::Capability(format!(
-            "sub_workflow node {:?}: child run paused awaiting approval at {:?}; \
-             cross-boundary approval resume is not yet supported, so the parent run is \
-             halted rather than falsely completed",
-            ctx.node.id, outcome.pending_approvals
-        )));
+        let namespaced: Vec<String> = outcome
+            .pending_approvals
+            .iter()
+            .map(|gate| namespaced_gate(&ctx.node.id, gate))
+            .collect();
+        return Ok(ChildOutcome::Paused(namespaced));
     }
     if outcome.cancelled {
         // Two cancellations look the same on the child's `RunOutcome` but mean
@@ -369,7 +507,7 @@ async fn run_child(
                 node = %ctx.node.id,
                 "sub_workflow: child wound down under the parent's cancellation; emitting no output"
             );
-            return Ok(None);
+            return Ok(ChildOutcome::Cancelled);
         }
         return Err(EngineError::Capability(format!(
             "sub_workflow node {:?}: child run was cancelled before completing; the parent \
@@ -378,7 +516,9 @@ async fn run_child(
         )));
     }
 
-    Ok(Some(crate::data::Item::new(outcome.output)))
+    Ok(ChildOutcome::Finished(crate::data::Item::new(
+        outcome.output,
+    )))
 }
 
 #[cfg(test)]
@@ -423,6 +563,9 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            resume: None,
+            step: 0,
         };
         SubWorkflowNode
             .execute(ctx)
@@ -448,6 +591,9 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            resume: None,
+            step: 0,
         };
         SubWorkflowNode.execute(ctx).await.expect("execute")
     }
@@ -714,6 +860,9 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            resume: None,
+            step: 0,
         };
         SubWorkflowNode.execute(ctx).await
     }

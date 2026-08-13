@@ -9,6 +9,7 @@
 pub mod control_flow;
 pub mod integration;
 pub(crate) mod map;
+pub(crate) mod release;
 
 use async_trait::async_trait;
 use serde_json::Value;
@@ -60,6 +61,49 @@ pub struct NodeContext<'a> {
     /// outside world within a single node need not consult it; the engine
     /// already checks it at the node boundary before this node runs.
     pub token: CancellationToken,
+    /// The parallel lane this activation belongs to, when it is one of several
+    /// concurrent activations of the *same* node produced by a fan-out.
+    ///
+    /// `None` for an ordinary activation, which is every activation today. A
+    /// lane activation takes its input from the lane envelope rather than from
+    /// its predecessors' run-state slots, because every lane sees the same
+    /// committed state snapshot and would otherwise all read identical items.
+    pub lane: Option<LaneContext>,
+    /// The value a checkpointed resume delivered to this node, when this
+    /// activation is the re-run of a node that had interrupted.
+    ///
+    /// `None` on an ordinary activation. A node that pauses the run with
+    /// [`NodeControl::Interrupt`] reads this on its re-run to learn what the
+    /// host decided — which is the only channel on the checkpointed resume path,
+    /// since that path replays from the checkpoint rather than re-executing with
+    /// a merged run input.
+    pub resume: Option<Value>,
+    /// The super-step that is running this activation, counting from 0.
+    ///
+    /// A monotonic tick that does not depend on the wall clock, so it stays
+    /// meaningful across a checkpointed resume. A node that must recognise its
+    /// own earlier activations (a poll budget, a fold that must not re-apply)
+    /// compares against a step it recorded in its slot.
+    pub step: usize,
+}
+
+/// Which lane of a fan-out an activation belongs to.
+///
+/// Travels with the activation itself rather than through the run state, so N
+/// concurrent activations of one node id are told apart without any of them
+/// having to write a shared slot.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LaneContext {
+    /// Unique across the run; conventionally `"<fan-out node id>#<index>"`.
+    pub id: String,
+    /// The node whose fan-out created this lane.
+    pub origin: String,
+    /// This lane's position in the fan-out, from 0. Output is ordered by this
+    /// rather than by completion, so a run is deterministic under any timing.
+    pub index: usize,
+    /// How many lanes the fan-out created, which is what a collector counts
+    /// arrivals against.
+    pub count: usize,
 }
 
 /// Builds the expression scope for a node from its runtime [`NodeContext`].
@@ -200,10 +244,19 @@ pub(crate) fn nodes_scope(nodes: &Value) -> Value {
             let mut entry = serde_json::json!({ "item": first, "items": jsons });
             // Slot state a node recorded about itself via `NodeOutput::meta`,
             // promoted so expressions can read it the same way they read items.
-            // Currently just the `loop` node's pass counter, which is what makes
-            // `=nodes.<loop id>.iteration` resolve from anywhere in the graph.
-            if let Some(iteration) = slot.get("iteration") {
-                entry["iteration"] = iteration.clone();
+            // This is what makes `=nodes.<loop id>.iteration` and
+            // `=nodes.<loop id>.state` resolve from anywhere in the graph.
+            //
+            // Promoted by exclusion rather than by an allow-list: `items` and
+            // `port` are the slot's own structure and are already projected
+            // above, and `_`-prefixed keys are engine bookkeeping. Everything
+            // else is something a node chose to record about itself, and a list
+            // naming each one would need a line per new meta key.
+            for (key, value) in slot.as_object().into_iter().flatten() {
+                if key == "items" || key == "port" || key.starts_with('_') {
+                    continue;
+                }
+                entry[key.as_str()] = value.clone();
             }
             scope.insert(id.clone(), entry);
         }
@@ -284,6 +337,66 @@ pub struct NodeOutput {
     ///
     /// Must be a JSON object; anything else is ignored when the slot is built.
     pub meta: Option<Value>,
+    /// A request to the engine for something other than "emit and move on".
+    /// `None` — the overwhelmingly common case — means ordinary data flow.
+    ///
+    /// This is the channel that lets an executor return *control* rather than
+    /// only data. Without it a node can express "here are my items" and "I
+    /// failed", but not "pause the run here" or "ask me again shortly" — which
+    /// is why, before this existed, a `sub_workflow` whose child paused at an
+    /// approval gate had to fail the parent outright rather than pause it.
+    pub control: Option<NodeControl>,
+}
+
+/// What a node asks the engine to do instead of simply emitting its items.
+///
+/// Both variants are lowered in [`crate::engine`]'s node handler, which is the
+/// only place that can speak to the underlying super-step executor.
+#[derive(Debug, Clone, PartialEq)]
+pub enum NodeControl {
+    /// Pause the whole run here, surfacing `id` on the run's pending set.
+    ///
+    /// The engine turns this into a `tinyagents` interrupt, which **discards
+    /// this activation's state update** — the node re-runs from the top when
+    /// the run is resumed. An executor using this must therefore be safe to
+    /// re-enter: record what it needs to recognise the resume (a ticket, a
+    /// child thread id) in its slot on an *earlier* activation, not this one.
+    Interrupt {
+        /// Identifies the pause to the host, and addresses the resume value
+        /// back to this node. Conventionally the node id.
+        id: String,
+        /// Host-facing description of what is being waited on.
+        payload: Value,
+    },
+    /// Re-activate this same node in the next super-step, after a delay.
+    ///
+    /// State-driven waiting: the node's update *is* committed, so it can leave
+    /// itself notes, and it is then re-run to look at the world again. This is
+    /// how a gather or gate waits for lanes and tickets that settle in
+    /// different super-steps.
+    ///
+    /// Each poll costs one super-step and one node visit against the run's
+    /// budgets, so **every** user of this must carry its own bounded poll count
+    /// rather than relying on the run-level backstop to stop it.
+    Reenter {
+        /// How long to wait before the next activation, in milliseconds.
+        after_ms: u64,
+    },
+    /// Fan this node's successors out into `lanes` **parallel copies**, one per
+    /// entry, each carrying its own slice of the work.
+    ///
+    /// The difference from an ordinary fan-out is what gets duplicated. A
+    /// fan-out runs each *successor* once; a scatter runs the *whole downstream
+    /// path* once per lane, so a five-node pipeline becomes N concurrent
+    /// five-node pipelines. That is only expressible as a routing decision —
+    /// the engine schedules one activation per (lane × successor), each with its
+    /// own input — so it comes back through this channel rather than as items.
+    Scatter {
+        /// The work for each lane, in lane order. Emission downstream is
+        /// ordered by this index rather than by completion, so a run is
+        /// reproducible whatever the timing.
+        lanes: Vec<Vec<Item>>,
+    },
 }
 
 impl NodeOutput {
@@ -326,6 +439,42 @@ impl NodeOutput {
     pub fn with_meta(mut self, meta: Value) -> Self {
         self.meta = Some(meta);
         self
+    }
+
+    /// Attaches a control request to this output (see [`NodeOutput::control`]).
+    #[must_use]
+    pub fn with_control(mut self, control: NodeControl) -> Self {
+        self.control = Some(control);
+        self
+    }
+
+    /// Builds an output that pauses the run, surfacing `id` on its pending set.
+    ///
+    /// Carries no items: an interrupt discards this activation's update, so
+    /// anything set here would be thrown away.
+    #[must_use]
+    pub fn interrupt(id: impl Into<String>, payload: Value) -> Self {
+        Self::empty().with_control(NodeControl::Interrupt {
+            id: id.into(),
+            payload,
+        })
+    }
+
+    /// Builds an output that commits `meta` and asks to be re-run after
+    /// `after_ms` milliseconds.
+    #[must_use]
+    pub fn reenter_after(after_ms: u64, meta: Value) -> Self {
+        Self::empty()
+            .with_meta(meta)
+            .with_control(NodeControl::Reenter { after_ms })
+    }
+
+    /// Builds an output that fans the downstream path out into parallel lanes.
+    #[must_use]
+    pub fn scatter(lanes: Vec<Vec<Item>>, meta: Value) -> Self {
+        Self::empty()
+            .with_meta(meta)
+            .with_control(NodeControl::Scatter { lanes })
     }
 }
 
@@ -371,6 +520,10 @@ pub(crate) fn executor_for(kind: &NodeKind) -> Box<dyn NodeExecutor> {
         NodeKind::SplitOut => Box::new(control_flow::SplitOutNode),
         NodeKind::Transform => Box::new(control_flow::TransformNode),
         NodeKind::Dedup => Box::new(control_flow::DedupNode),
+        NodeKind::Scatter => Box::new(control_flow::ScatterNode),
+        NodeKind::Gather => Box::new(control_flow::GatherNode),
+        NodeKind::Spawn => Box::new(integration::SpawnNode),
+        NodeKind::Gate => Box::new(integration::GateNode),
         NodeKind::Loop => Box::new(control_flow::LoopNode),
     }
 }
@@ -455,6 +608,9 @@ mod tests {
                     agents: &[],
                     observer: &crate::observability::NoopObserver,
                     token: crate::engine::CancellationToken::new(),
+                    lane: None,
+                    resume: None,
+                    step: 0,
                 })
                 .await;
             assert!(
@@ -481,6 +637,9 @@ mod tests {
                 agents: &[],
                 observer: &crate::observability::NoopObserver,
                 token: crate::engine::CancellationToken::new(),
+                lane: None,
+                resume: None,
+                step: 0,
             })
             .await
             .expect("execute");
@@ -512,6 +671,9 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            resume: None,
+            step: 0,
         };
         let scope = expr_scope(&ctx);
         // Existing keys unchanged (back-compat).
@@ -544,6 +706,9 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            resume: None,
+            step: 0,
         };
         let scope = expr_scope(&ctx);
         assert_eq!(scope["nodes"], json!({}));

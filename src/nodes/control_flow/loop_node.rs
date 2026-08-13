@@ -15,13 +15,32 @@
 //! see [`crate::engine`]. This node then decides, on each activation, whether to
 //! send its input round the `body` again or let it out through `done`.
 //!
-//! **Why the counter lives in run state.** The iteration count is written to
-//! this node's own slot via [`NodeOutput::meta`], so it is part of the state the
-//! engine checkpoints. A loop therefore resumes mid-iteration with its count
-//! intact, and the count is addressable from any expression in the graph as
-//! `=nodes.<loop id>.iteration`. Holding it in the executor instead would lose
-//! it on every pause, and threading it through the items would lose it to the
-//! first node in the body that reshapes them.
+//! **Why the counter and the accumulator live in run state.** Both are written
+//! to this node's own slot via [`NodeOutput::meta`], so they are part of the
+//! state the engine checkpoints. A loop therefore resumes mid-iteration with
+//! both intact, and both are addressable from any expression in the graph as
+//! `=nodes.<loop id>.iteration` / `=nodes.<loop id>.state`. Holding them in the
+//! executor instead would lose them on every pause, and threading them through
+//! the items would lose them to the first node in the body that reshapes them.
+//!
+//! **The accumulator is a fold.** `state.init` seeds it once; `state.update`
+//! folds each pass's body output into it, so `acc_next = f(acc_prev, output)`.
+//! This node is the *sole writer* of that slot, which is what keeps it simple:
+//! no reducer collision, no question of which branch wrote last, no interaction
+//! with the staleness stamping that loop re-entry uses.
+//!
+//! Because the reducer merges objects key-by-key, an accumulator written
+//! plainly could only ever *gain* keys — an error recorded on pass 1 would
+//! haunt every later pass. The accumulator is therefore written through
+//! [`crate::engine::replace`], which assigns the slot wholesale.
+//!
+//! **The fold is at-least-once.** If an activation is replayed after a resume,
+//! the update applies twice. This is not new — `iteration + 1` has always had
+//! the same property — but an accumulator makes it visible, as a duplicated
+//! append. Fixing it properly means stamping the fold with the super-step that
+//! produced it and skipping a repeat, which should be done for the counter and
+//! the accumulator together. Until then, an idempotent `update` (assign the
+//! next value rather than appending to the previous one) is immune.
 
 use async_trait::async_trait;
 use serde_json::{Value, json};
@@ -78,6 +97,164 @@ fn current_iteration(ctx: &NodeContext) -> u64 {
         .unwrap_or(0)
 }
 
+/// What the exit ports carry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EmitMode {
+    /// The last pass's items (the default, and what a loop without an
+    /// accumulator has always emitted).
+    Items,
+    /// One item holding the accumulator.
+    State,
+    /// The last pass's items, with the accumulator appended.
+    Both,
+}
+
+impl EmitMode {
+    fn from_config(config: &Value) -> Self {
+        match config.get("emit").and_then(Value::as_str) {
+            Some("state") => Self::State,
+            Some("both") => Self::Both,
+            _ => Self::Items,
+        }
+    }
+
+    /// Builds the items an exit port carries.
+    fn items(self, items: &[crate::data::Item], state: &Value) -> Vec<crate::data::Item> {
+        match self {
+            Self::Items => items.to_vec(),
+            Self::State => vec![crate::data::Item::new(state.clone())],
+            Self::Both => {
+                let mut out = items.to_vec();
+                out.push(crate::data::Item::new(state.clone()));
+                out
+            }
+        }
+    }
+}
+
+/// Whether an `until` exit should leave on its own `success` port.
+fn success_port(config: &Value) -> bool {
+    config
+        .get("success_port")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+}
+
+/// The accumulator this node recorded on its previous activation.
+fn current_state(ctx: &NodeContext) -> Option<Value> {
+    ctx.nodes
+        .get(&ctx.node.id)
+        .and_then(|slot| slot.get("state"))
+        .cloned()
+}
+
+/// The accumulator's starting value, from `config.state.init`.
+///
+/// Resolved on the seeding activation only, so an expression in `init` sees the
+/// run as it was when the loop began rather than being re-evaluated per pass.
+fn initial_state(ctx: &NodeContext) -> Result<Value> {
+    let Some(init) = ctx
+        .node
+        .config
+        .get("state")
+        .and_then(|state| state.get("init"))
+    else {
+        return Ok(Value::Null);
+    };
+    Ok(if init.as_str().is_some_and(expr::is_expression) {
+        expr::evaluate(init, &expr_scope(ctx))
+    } else {
+        init.clone()
+    })
+}
+
+/// Applies `config.state.update` to the accumulator, given the body's output.
+///
+/// The scope is the node's usual one plus a `state` key holding the *previous*
+/// accumulator, so an update reads `state` and the body's items together:
+/// `acc_next = f(acc_prev, body_output)`.
+///
+/// Two spellings, both supported because they suit different authors: a single
+/// jq program folding the whole accumulator, or an object of per-key
+/// expressions (mirroring `transform.set`), which is what someone who does not
+/// write jq will reach for.
+fn fold_state(ctx: &NodeContext) -> Result<Value> {
+    let previous = match current_state(ctx) {
+        Some(state) => state,
+        // No recorded accumulator: this loop either declares none, or is being
+        // re-entered after its slot was never written. Fall back to `init`
+        // rather than folding into null.
+        None => initial_state(ctx)?,
+    };
+    let Some(update) = ctx
+        .node
+        .config
+        .get("state")
+        .and_then(|state| state.get("update"))
+    else {
+        return Ok(previous);
+    };
+
+    let mut scope = expr_scope(ctx);
+    if let Some(map) = scope.as_object_mut() {
+        map.insert("state".to_string(), previous.clone());
+    }
+
+    match update {
+        // Object form: each key is resolved independently and merged over the
+        // previous accumulator, so an update naming one key leaves the rest.
+        Value::Object(fields) => {
+            let mut next = previous;
+            let entries: Vec<(String, Value)> = fields
+                .iter()
+                .map(|(key, raw)| {
+                    let value = if raw.as_str().is_some_and(expr::is_expression) {
+                        expr::evaluate(raw, &scope)
+                    } else {
+                        raw.clone()
+                    };
+                    (key.clone(), value)
+                })
+                .collect();
+            if !next.is_object() {
+                next = json!({});
+            }
+            if let Some(map) = next.as_object_mut() {
+                for (key, value) in entries {
+                    map.insert(key, value);
+                }
+            }
+            Ok(next)
+        }
+        // Program form: one jq expression producing the whole next accumulator.
+        raw if raw.as_str().is_some_and(expr::is_expression) => Ok(expr::evaluate(raw, &scope)),
+        // A literal: the accumulator simply becomes it.
+        raw => Ok(raw.clone()),
+    }
+}
+
+/// Whether the node's optional `config.until` expression is truthy against the
+/// **post-fold** accumulator.
+///
+/// Opposite polarity to `condition`, deliberately: `condition` says *keep going
+/// while*, `until` says *stop when*. Both are supported because a real loop
+/// often has both a work-remaining test and a success test.
+fn until_holds(ctx: &NodeContext, state: &Value) -> bool {
+    let Some(until) = ctx.node.config.get("until") else {
+        return false;
+    };
+    let mut scope = expr_scope(ctx);
+    if let Some(map) = scope.as_object_mut() {
+        map.insert("state".to_string(), state.clone());
+    }
+    let resolved = if until.as_str().is_some_and(expr::is_expression) {
+        expr::evaluate(until, &scope)
+    } else {
+        until.clone()
+    };
+    is_truthy(&resolved)
+}
+
 /// Whether the node's optional `config.condition` expression is truthy.
 ///
 /// Returns `true` when no condition is configured, so a loop bounded only by
@@ -120,18 +297,49 @@ impl NodeExecutor for LoopNode {
             .and_then(Value::as_u64)
             .unwrap_or(DEFAULT_MAX_ITERATIONS);
         let items = ctx.input.to_vec();
-        // The count is recorded on every path, including the exits, so a host
-        // reading the finished run can see how many passes actually happened.
-        let done = |iteration: u64| {
-            Ok(NodeOutput::routed(items.clone(), "done")
-                .with_meta(json!({ "iteration": iteration })))
+
+        // Fold the body's output into the accumulator, before any exit is
+        // considered — so `until` tests the state *including* the pass that just
+        // finished, which is what "stop when the check passes" has to mean.
+        //
+        // Only on re-entry: on the seeding activation the body has not run, so
+        // there is nothing to fold and `init` stands.
+        let state = if iteration > 0 {
+            fold_state(&ctx)?
+        } else {
+            initial_state(&ctx)?
         };
+        let emit_mode = EmitMode::from_config(&ctx.node.config);
+
+        // Every path records the count and the accumulator, so a host reading a
+        // finished run sees both how many passes happened and what they built.
+        let exit = |iteration: u64, reason: &str, port: &str| {
+            Ok(
+                NodeOutput::routed(emit_mode.items(&items, &state), port).with_meta(json!({
+                    "iteration": iteration,
+                    "state": crate::engine::replace(state.clone()),
+                    "exit_reason": reason,
+                })),
+            )
+        };
+
+        // `until` is the accumulator's own exit: truthy means the check passed.
+        // Checked first because converging is a better outcome than either
+        // running out of work or running out of tries.
+        if until_holds(&ctx, &state) {
+            let port = if success_port(&ctx.node.config) {
+                "success"
+            } else {
+                "done"
+            };
+            return exit(iteration, "until", port);
+        }
 
         // The condition is checked before the cap so a loop that finishes early
         // on its own terms never trips the limit, and checked before the
         // iteration is consumed so `condition: false` exits without a pass.
         if !condition_holds(&ctx) {
-            return done(iteration);
+            return exit(iteration, "condition", "done");
         }
 
         if iteration >= max_iterations {
@@ -140,11 +348,14 @@ impl NodeExecutor for LoopNode {
                     node: ctx.node.id.clone(),
                     limit: max_iterations,
                 }),
-                OnExceeded::Continue => done(iteration),
+                OnExceeded::Continue => exit(iteration, "max_iterations", "done"),
             };
         }
 
-        Ok(NodeOutput::routed(items, "body").with_meta(json!({ "iteration": iteration + 1 })))
+        Ok(NodeOutput::routed(items, "body").with_meta(json!({
+            "iteration": iteration + 1,
+            "state": crate::engine::replace(state),
+        })))
     }
 }
 
@@ -183,6 +394,9 @@ mod tests {
                 agents: &[],
                 observer: &crate::observability::NoopObserver,
                 token: crate::engine::CancellationToken::new(),
+                lane: None,
+                resume: None,
+                step: 0,
             })
             .await
     }
@@ -193,7 +407,10 @@ mod tests {
             .await
             .expect("execute");
         assert_eq!(out.port.as_deref(), Some("body"));
-        assert_eq!(out.meta, Some(json!({ "iteration": 1 })));
+        assert_eq!(
+            out.meta.as_ref().and_then(|m| m.get("iteration")),
+            Some(&json!(1))
+        );
         assert_eq!(out.items.len(), 1, "input passes through to the body");
     }
 
@@ -206,7 +423,10 @@ mod tests {
         .await
         .expect("execute");
         assert_eq!(out.port.as_deref(), Some("body"));
-        assert_eq!(out.meta, Some(json!({ "iteration": 3 })));
+        assert_eq!(
+            out.meta.as_ref().and_then(|m| m.get("iteration")),
+            Some(&json!(3))
+        );
     }
 
     #[tokio::test]
@@ -235,7 +455,10 @@ mod tests {
         .await
         .expect("execute");
         assert_eq!(out.port.as_deref(), Some("done"));
-        assert_eq!(out.meta, Some(json!({ "iteration": 3 })));
+        assert_eq!(
+            out.meta.as_ref().and_then(|m| m.get("iteration")),
+            Some(&json!(3))
+        );
         assert_eq!(out.items.len(), 1, "the last pass's items reach downstream");
     }
 
@@ -265,7 +488,10 @@ mod tests {
             Some("done"),
             "no `keep_going` field resolves null, which is falsey"
         );
-        assert_eq!(out.meta, Some(json!({ "iteration": 0 })));
+        assert_eq!(
+            out.meta.as_ref().and_then(|m| m.get("iteration")),
+            Some(&json!(0))
+        );
     }
 
     #[tokio::test]

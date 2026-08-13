@@ -45,7 +45,7 @@ impl NodeExecutor for ToolCallNode {
             // `=item.x` binds to the current item) and invoke once per item.
             // `config.concurrency` decides how many of those invocations are in
             // flight at once (default 1 — sequential, as before).
-            let opts = crate::nodes::map::map_options(&ctx.node.config, &ctx.node.id);
+            let opts = crate::nodes::map::map_options(&ctx.node.config, &ctx.node.id, ctx.run);
             let ctx = &ctx;
             let (items, diagnostics) = crate::nodes::map::map_items(
                 ctx.input.len(),
@@ -182,6 +182,9 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            resume: None,
+            step: 0,
         };
         let err = ToolCallNode
             .execute(ctx)
@@ -210,6 +213,9 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            resume: None,
+            step: 0,
         };
         let out = ToolCallNode.execute(ctx).await.expect("execute");
         assert_eq!(out.items[0].json["json"]["tool"], "x.y");
@@ -237,6 +243,9 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            resume: None,
+            step: 0,
         };
         let out = ToolCallNode.execute(ctx).await.expect("execute");
         assert_eq!(out.items[0].json["json"]["args"]["to"], Value::Null);
@@ -260,6 +269,9 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            resume: None,
+            step: 0,
         };
         let out = ToolCallNode.execute(ctx).await.expect("execute");
         assert_eq!(out.items.len(), 1);
@@ -289,6 +301,9 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            resume: None,
+            step: 0,
         };
         let out = ToolCallNode.execute(ctx).await.expect("execute");
         assert_eq!(out.items.len(), 3, "one output per input item");
@@ -319,6 +334,9 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            resume: None,
+            step: 0,
         };
         let out = ToolCallNode.execute(ctx).await.expect("execute");
         assert_eq!(out.items.len(), 1, "once mode emits a single item");

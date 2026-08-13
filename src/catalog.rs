@@ -22,7 +22,7 @@ use serde_json::{Value, json};
 
 /// The node kinds, in the canonical order used wherever the DSL is enumerated
 /// (matches [`NodeKind`](crate::model::NodeKind)'s serde discriminators).
-pub const NODE_KINDS: [&str; 16] = [
+pub const NODE_KINDS: [&str; 20] = [
     "trigger",
     "agent",
     "tool_call",
@@ -39,6 +39,10 @@ pub const NODE_KINDS: [&str; 16] = [
     "memory",
     "dedup",
     "loop",
+    "spawn",
+    "gate",
+    "scatter",
+    "gather",
 ];
 
 /// One config field a node of a given kind reads at run time.
@@ -212,6 +216,16 @@ pub fn contract_for(kind: &str) -> Option<NodeKindContract> {
                     "How many times any single node may be activated in one run. Bounds a cycle \
                      that has no `loop` node and, unlike recursion_limit, names the node that ran \
                      away.",
+                ),
+                ConfigField::optional(
+                    "max_concurrency",
+                    "number",
+                    "How many branches of one super-step may run at once, across the whole graph                      (default: unbounded, clamped to 256). This is ADMISSION CONTROL, not                      backpressure: a super-step engine cannot block a producer mid-step, so the                      only lever is how many activations are allowed to start.",
+                ),
+                ConfigField::optional(
+                    "max_item_concurrency",
+                    "number",
+                    "A run-level ceiling on every node's per-item `concurrency`, declared once                      here instead of edited into each node. It only ever LOWERS a node's own                      value. Note the dials MULTIPLY: peak in-flight work is roughly                      min(max_concurrency, active branches) x per-node concurrency.",
                 ),
                 ConfigField::optional(
                     "node_timeout_secs",
@@ -591,11 +605,15 @@ pub fn contract_for(kind: &str) -> Option<NodeKindContract> {
         "loop" => NodeKindContract {
             kind: "loop".to_string(),
             summary: "Repeat a section of the workflow a bounded number of times.".to_string(),
-            description: "Emits its input on the `body` port until either config.max_iterations \
-                is reached or config.condition goes falsey, then emits on `done`. Close the loop \
-                by wiring the last node of the body back to this node; that back-edge is what \
-                makes the section repeat. The current pass number is readable anywhere in the \
-                graph as \"=nodes.<loop id>.iteration\"."
+            description: "Repeats a section, optionally CARRYING STATE across the passes. Emits \
+                its input on `body` until an exit fires, then on `done` (or `success`). Close the \
+                loop by wiring the last node of the body back to this node; that back-edge is \
+                what makes the section repeat.\n\n\
+                With config.state the loop becomes a fold: `init` seeds an accumulator and \
+                `update` folds each pass's output into it, so a refinement loop can remember what \
+                it already tried. The accumulator and the pass number are readable anywhere in \
+                the graph as \"=nodes.<loop id>.state\" and \"=nodes.<loop id>.iteration\"; \
+                inside this node's own `update`/`until` the accumulator is just \"state\"."
                 .to_string(),
             config_fields: vec![
                 ConfigField::optional(
@@ -619,8 +637,40 @@ pub fn contract_for(kind: &str) -> Option<NodeKindContract> {
                      falsey result routes to `done` without consuming an iteration. Checked \
                      before the cap, so a loop that finishes on its own terms never errors.",
                 ),
+                ConfigField::optional(
+                    "state",
+                    "object",
+                    "{init, update} — the accumulator. `init` is a literal or \"=expr\" resolved \
+                     once when the loop starts; `update` folds each pass into it and is either a \
+                     jq program producing the whole next accumulator, or an object of per-key \
+                     \"=expr\" merged over it (like transform.set). Inside `update` the previous \
+                     accumulator is \"state\" and the body's output is \"item\"/\"items\".",
+                ),
+                ConfigField::optional(
+                    "until",
+                    "\"=expr\"",
+                    "Stop when this goes truthy — the OPPOSITE polarity to `condition` (which \
+                     means keep going while). Evaluated against the accumulator AFTER the pass \
+                     is folded in, so \"=.state.score > 0.9\" tests the pass that just ran. \
+                     Checked before `condition` and before the cap, so converging beats both \
+                     running out of work and running out of tries.",
+                ),
+                ConfigField::optional(
+                    "emit",
+                    "enum",
+                    "What the exit port carries: \"items\" (default, the last pass's items) | \
+                     \"state\" (one item holding the accumulator) | \"both\".",
+                )
+                .with_enum(&["items", "state", "both"]),
+                ConfigField::optional(
+                    "success_port",
+                    "boolean",
+                    "Route an `until` exit to a separate `success` port instead of `done`, so a \
+                     loop that CONVERGED can be handled differently from one that ran out of \
+                     tries. Requires an edge on `success`, or the graph is refused.",
+                ),
             ],
-            ports: PortSpec::new(&["main"], &["body", "done"]),
+            ports: PortSpec::new(&["main"], &["body", "done", "success"]),
             example: json!({
                 "id": "retry_until_clean", "kind": "loop", "name": "Until tests pass",
                 "config": {
@@ -633,8 +683,20 @@ pub fn contract_for(kind: &str) -> Option<NodeKindContract> {
                 "The body must route back to this node or it runs once and stops — the \
                  back-edge is the loop."
                     .to_string(),
-                "A `merge` node inside the loop body deadlocks it: a merge is a fan-in barrier \
-                 that waits for every predecessor, which on a second pass never all arrive."
+                "A fan-in `merge` inside the loop body deadlocks it ONLY when one of the inputs \
+                 it waits for comes from OUTSIDE the cycle: that arm runs once, on the seeding \
+                 pass, and never again, so from the second iteration the barrier can never \
+                 complete. A merge whose arms are all on the cycle is fine — they all re-run \
+                 every pass."
+                    .to_string(),
+                "`exit_reason` is recorded alongside `iteration` and `state` (\"until\" | \
+                 \"condition\" | \"max_iterations\"), which is how downstream tells a loop that \
+                 CONVERGED from one that merely ran out of tries under on_exceeded:\"continue\"."
+                    .to_string(),
+                "The fold is at-least-once: if an activation is replayed after a resume the \
+                 update applies again. The iteration counter has always behaved this way; the \
+                 accumulator just makes it visible (a duplicated append). Prefer an idempotent \
+                 `update` — assign the next value rather than appending — where that matters."
                     .to_string(),
             ],
         },
@@ -825,6 +887,226 @@ pub fn contract_for(kind: &str) -> Option<NodeKindContract> {
                     .to_string(),
             ],
         },
+        "spawn" => NodeKindContract {
+            kind: "spawn".to_string(),
+            summary: "Starts work WITHOUT waiting for it and emits a ticket; a downstream `gate` \
+                      collects the result."
+                .to_string(),
+            description: "Every other node blocks its branch until it has an answer. This one \
+                          starts the work and immediately emits a ticket, so the branch carries \
+                          on while the work runs, and a downstream `gate` turns tickets back \
+                          into results. Use it when a slow call has no downstream dependency \
+                          until later in the graph."
+                .to_string(),
+            config_fields: vec![
+                ConfigField::required(
+                    "target",
+                    "enum",
+                    "What to start: workflow | tool | http.",
+                )
+                .with_enum(&["workflow", "tool", "http"]),
+                ConfigField::optional("workflow", "WorkflowGraph", "Child graph, when target=workflow."),
+                ConfigField::optional("input", "any", "Trigger payload for the child, when target=workflow."),
+                ConfigField::optional("slug", "string", "Tool identifier, when target=tool."),
+                ConfigField::optional("args", "object", "Tool arguments, when target=tool."),
+                ConfigField::optional("request", "object", "Request description, when target=http."),
+            ],
+            ports: PortSpec::new(&["main"], &["main", "error"]),
+            example: json!({
+                "id": "kick_off", "kind": "spawn", "name": "Start the scan",
+                "config": { "target": "tool", "slug": "scanner.run", "args": { "repo": "=item.repo" } }
+            }),
+            notes: vec![
+                "Emits one item per started task shaped {ticket, spawn, started_at_step}. The \
+                 ticket is opaque — pass it to a `gate`, do not interpret it."
+                    .to_string(),
+                "Needs the host's TaskRunner capability to actually overlap. With NONE injected \
+                 the work runs INLINE and the ticket comes back already settled: the answer is \
+                 the same, the concurrency is not. That is a silent performance cliff, so check \
+                 the host wires a TaskRunner before relying on overlap."
+                    .to_string(),
+                "Fire-and-forget is legal — a spawn no gate ever collects simply runs. If that \
+                 is not what you meant, wire a `gate`."
+                    .to_string(),
+            ],
+        },
+        "gate" => NodeKindContract {
+            kind: "gate".to_string(),
+            summary: "Waits for spawned work and emits results once its release policy is \
+                      satisfied (all / any / first_n / quorum / timeout_partial)."
+                .to_string(),
+            description: "The collecting half of `spawn`. More than a barrier because of the \
+                          release policy: a gate can proceed on the first result, on a quorum, \
+                          or on whatever arrived before its deadline, rather than only on all of \
+                          them. Waiting is counted in POLLS — each costs a super-step — unless \
+                          `wait_mode: \"suspend\"` interrupts the run instead."
+                .to_string(),
+            config_fields: vec![
+                ConfigField::optional(
+                    "from",
+                    "array",
+                    "Ids of upstream `spawn` nodes whose tickets to wait on. The usual spelling; \
+                     mutually exclusive with `tickets`.",
+                ),
+                ConfigField::optional(
+                    "tickets",
+                    "\"=expr\"",
+                    "Expression yielding a ticket id or array of them, for a graph that carries \
+                     tickets some other way.",
+                ),
+                ConfigField::optional(
+                    "release",
+                    "enum",
+                    "When to proceed: all (default) | any | first_n | quorum | timeout_partial.",
+                )
+                .with_enum(&["all", "any", "first_n", "quorum", "timeout_partial"]),
+                ConfigField::optional("n", "number", "Required (and must be > 0) for first_n and quorum."),
+                ConfigField::optional("poll_interval_ms", "number", "Gap between polls (default 250)."),
+                ConfigField::optional(
+                    "max_polls",
+                    "number",
+                    "Poll budget before the wait is called spent (default 200). EVERY poll costs \
+                     a super-step and a node visit, so this interacts with recursion_limit and \
+                     max_node_visits.",
+                ),
+                ConfigField::optional(
+                    "wait_mode",
+                    "enum",
+                    "poll (default) re-activates the node each interval; suspend interrupts the \
+                     run so the host resumes it when the work lands — right for long waits.",
+                )
+                .with_enum(&["poll", "suspend"]),
+                ConfigField::optional(
+                    "on_timeout",
+                    "enum",
+                    "error (default) | partial (emit what arrived) | route (use the `timeout` port).",
+                )
+                .with_enum(&["error", "partial", "route"]),
+            ],
+            ports: PortSpec::new(&["main"], &["main", "timeout", "error"]),
+            example: json!({
+                "id": "collect", "kind": "gate", "name": "Best two of three",
+                "config": { "from": ["kick_off"], "release": "quorum", "n": 2, "on_timeout": "partial" }
+            }),
+            notes: vec![
+                "Output is ordered by TICKET INDEX, not by which finished first, and each item \
+                 keeps its `paired_item`. Two runs therefore emit the same order regardless of \
+                 timing."
+                    .to_string(),
+                "A partial release (any / first_n / quorum) leaves the stragglers running. Their \
+                 results are simply not collected."
+                    .to_string(),
+                "A failed task is emitted as an item shaped {failed: true, error} rather than \
+                 failing the node, so it can be branched on with \"=item.failed\"."
+                    .to_string(),
+            ],
+        },
+        "scatter" => NodeKindContract {
+            kind: "scatter".to_string(),
+            summary: "Fans the DOWNSTREAM PATH out into parallel lanes — every node between here \
+                      and the matching `gather` runs once per lane."
+                .to_string(),
+            description: "Different from an ordinary fan-out, which runs each SUCCESSOR once. \
+                          Drawing two edges from one port runs both successors concurrently; a \
+                          scatter runs the whole pipeline once per lane, so \
+                          scatter -> enrich -> score -> gather over 8 items becomes 8 concurrent \
+                          three-node pipelines. Use it when per-item work spans several nodes; \
+                          for per-item work inside ONE node, that node's own `concurrency` is \
+                          simpler."
+                .to_string(),
+            config_fields: vec![
+                ConfigField::optional(
+                    "path",
+                    "string",
+                    "Dotted path to an array in the first input item to fan out over (like \
+                     split_out). Without it, the node's own input items are the lanes.",
+                ),
+                ConfigField::optional(
+                    "lanes",
+                    "number",
+                    "Chunk the work into at most this many lanes instead of one per item \
+                     (clamped to 256). A 1000-item input can then run 8 wide rather than 1000 \
+                     wide without pre-chunking.",
+                ),
+            ],
+            ports: PortSpec::new(&["main"], &["main"]),
+            example: json!({
+                "id": "fan", "kind": "scatter", "name": "One lane per repo",
+                "config": { "path": "repos", "lanes": 8 }
+            }),
+            notes: vec![
+                "Must reach a `gather`, and every node in between must have a path onward to it. \
+                 A lane that dead-ends is not merely uncollected — a lane activation never \
+                 writes the node's top-level slot, so its output is invisible."
+                    .to_string(),
+                "Lane workers expose \"=nodes.<id>.lanes.<lane>\", NOT \"=nodes.<id>.item\": \
+                 inside a region there is no single value for that node. Read the gather's \
+                 aggregated output instead."
+                    .to_string(),
+                "Not supported inside a lane (each refused by validation): a nested `scatter`, a \
+                 `loop` head, or `requires_approval`. The last because a resume is addressed by \
+                 node id, so every lane would share one approval."
+                    .to_string(),
+                "`max_node_visits` is charged PER LANE ACTIVATION, so a wide scatter needs \
+                 headroom on that and on `recursion_limit`."
+                    .to_string(),
+            ],
+        },
+        "gather" => NodeKindContract {
+            kind: "gather".to_string(),
+            summary: "Collects the lanes a `scatter` opened, on a release policy.".to_string(),
+            description: "Not a topological barrier. A `merge` waits for its declared \
+                          predecessors — a static fact about the graph — but how many lanes exist \
+                          is decided at run time from data, so a gather counts arrivals against \
+                          the lane count the scatter recorded and re-checks until its release \
+                          policy is satisfied. That is also why it supports the same policies as \
+                          `gate`: once waiting is a decision rather than a topological fact, \
+                          \"proceed on a quorum\" becomes expressible."
+                .to_string(),
+            config_fields: vec![
+                ConfigField::required(
+                    "from",
+                    "array",
+                    "Ids of the lane-terminal nodes whose lane slots to collect — the last node \
+                     of the lane body.",
+                ),
+                ConfigField::optional(
+                    "release",
+                    "enum",
+                    "When to proceed: all (default) | any | first_n | quorum | timeout_partial.",
+                )
+                .with_enum(&["all", "any", "first_n", "quorum", "timeout_partial"]),
+                ConfigField::optional("n", "number", "Required (and > 0) for first_n and quorum."),
+                ConfigField::optional(
+                    "on_lane_error",
+                    "enum",
+                    "collect (default: a failed lane becomes an item with {failed, error, lane}) \
+                     | skip (drop it) | fail_fast (fail the gather).",
+                )
+                .with_enum(&["collect", "skip", "fail_fast"]),
+                ConfigField::optional("poll_interval_ms", "number", "Gap between checks (default 5)."),
+                ConfigField::optional(
+                    "max_polls",
+                    "number",
+                    "Check budget before the wait is called spent (default 500). Each check costs \
+                     a super-step.",
+                ),
+            ],
+            ports: PortSpec::new(&["main"], &["main", "error"]),
+            example: json!({
+                "id": "collect", "kind": "gather", "name": "Collect the lanes",
+                "config": { "from": ["score"], "release": "all", "on_lane_error": "collect" }
+            }),
+            notes: vec![
+                "Output is ordered by LANE INDEX, not by which lane finished first, and each \
+                 item keeps its lane index as `paired_item`. Two runs therefore emit the same \
+                 order whatever the timing."
+                    .to_string(),
+                "A partial release (any / first_n / quorum) leaves the remaining lanes running; \
+                 their results are simply not collected."
+                    .to_string(),
+            ],
+        },
         _ => return None,
     };
     Some(with_fan_out_fields(c))
@@ -929,7 +1211,7 @@ mod tests {
                 }
             }
         }
-        assert_eq!(all_contracts().len(), 16);
+        assert_eq!(all_contracts().len(), 20);
     }
 
     #[test]
@@ -956,16 +1238,25 @@ mod tests {
     }
 
     #[test]
-    fn node_kinds_has_16_entries_including_shell_memory_dedup_and_loop() {
-        assert_eq!(NODE_KINDS.len(), 16);
+    fn node_kinds_has_20_entries_including_the_async_and_lane_pairs() {
+        assert_eq!(NODE_KINDS.len(), 20);
         assert!(NODE_KINDS.contains(&"shell"));
         assert!(NODE_KINDS.contains(&"memory"));
         assert!(NODE_KINDS.contains(&"dedup"));
         assert!(NODE_KINDS.contains(&"loop"));
-        // The PR's shell node precedes the three sequenced-last node kinds.
+        assert!(NODE_KINDS.contains(&"spawn"));
+        assert!(NODE_KINDS.contains(&"gate"));
+        // New kinds are appended, never inserted: a host that pins a position
+        // (or renders the list in order) must not have entries shift under it.
         assert_eq!(NODE_KINDS[13], "memory");
         assert_eq!(NODE_KINDS[14], "dedup");
         assert_eq!(NODE_KINDS[15], "loop");
+        assert!(NODE_KINDS.contains(&"scatter"));
+        assert!(NODE_KINDS.contains(&"gather"));
+        assert_eq!(NODE_KINDS[16], "spawn");
+        assert_eq!(NODE_KINDS[17], "gate");
+        assert_eq!(NODE_KINDS[18], "scatter");
+        assert_eq!(NODE_KINDS[19], "gather");
     }
 
     #[test]

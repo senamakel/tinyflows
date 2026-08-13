@@ -146,8 +146,25 @@ struct StepRun<Update> {
     /// [`Command::goto`] — a node-keyed map would let a later activation's
     /// command clobber an earlier one's routing.
     goto_map: HashMap<usize, Vec<RouteTarget>>,
-    /// The lowest-index branch interrupt, if any (its active-set index + value).
-    interrupt: Option<(usize, Interrupt)>,
+    /// Active-set indices of the branches that actually ran to a result and were
+    /// folded, in ascending order. Excludes interrupted branches.
+    ///
+    /// Not the same as "everything that did not interrupt". Sequential execution
+    /// stops at the first interrupt and never starts the rest of the step, so
+    /// those branches have no result — treating them as completed would route
+    /// successors for work that never happened. Parallel execution runs the whole
+    /// set before folding, so there every non-interrupting branch is here.
+    completed: Vec<usize>,
+    /// Every branch that interrupted this step, as `(active-set index, value)`,
+    /// in ascending index order.
+    ///
+    /// More than one is possible only under parallel execution, where the whole
+    /// active set runs before any result is folded — so two concurrent gates
+    /// can both pause in the same step, and reporting only the first would
+    /// leave the second invisible until an extra resume round-trip. Sequential
+    /// execution short-circuits at the first interrupt and never starts the
+    /// rest, so it contributes at most one.
+    interrupts: Vec<(usize, Interrupt)>,
     /// A node-handler failure that survived the node-retry policy, if any. When
     /// set, `updates` still carries the updates of the branches that completed
     /// *before* the failing branch, so the executor can fold that partial
@@ -291,6 +308,7 @@ impl<State, Update> CompiledGraph<State, Update> {
         recursion_limit: usize,
         parallel: bool,
         max_concurrency: Option<usize>,
+        node_concurrency: HashMap<NodeId, usize>,
         node_timeout: Option<Duration>,
         node_meta: HashMap<NodeId, NodeMeta>,
         barrier_reliefs: Vec<BarrierRelief>,
@@ -318,6 +336,7 @@ impl<State, Update> CompiledGraph<State, Update> {
             namespace: Vec::new(),
             parallel,
             max_concurrency,
+            node_concurrency: Arc::new(node_concurrency),
             node_timeout,
             run_deadline: None,
             durability: crate::graph::checkpoint::DurabilityMode::default(),

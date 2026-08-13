@@ -2702,10 +2702,16 @@ async fn attributed_update_to_sink_node_keeps_other_pending_branches() {
 
 #[tokio::test]
 async fn attributed_update_preserves_pending_send_args_of_other_branches() {
-    // Three `Send` activations of `worker` are pending behind an interrupt. A
-    // write attributed to an unrelated node must carry them over *with* their
-    // args — dropping them loses the fanout, and re-scheduling them by node id
-    // alone loses each packet's payload.
+    // Three `Send` activations of `worker` run concurrently; the one carrying
+    // arg 1 interrupts, the other two finish. A write attributed to an unrelated
+    // node must carry the still-pending packet over *with* its arg — dropping it
+    // loses the fanout, and re-scheduling by node id alone loses the payload.
+    //
+    // Only the interrupted packet is pending. Workers 2 and 3 ran to completion
+    // in this same superstep (parallel execution folds the whole active set), so
+    // their updates are already committed and rescheduling them would run them a
+    // second time. Their work is asserted against the state below rather than
+    // against the pending set.
     let cp = Arc::new(InMemoryCheckpointer::<Counter>::new());
     let graph = GraphBuilder::<Counter, i32>::new()
         .with_parallel(true)
@@ -2781,7 +2787,16 @@ async fn attributed_update_preserves_pending_send_args_of_other_branches() {
         })
         .collect();
     args.sort_unstable();
-    assert_eq!(args, vec![1, 2, 3], "every pending Send packet survives");
+    assert_eq!(
+        args,
+        vec![1],
+        "only the interrupted packet is pending, and it keeps its arg"
+    );
+    assert_eq!(
+        paused.state.value, 5,
+        "workers 2 and 3 completed in the interrupted step, so their updates are \
+         already folded (2 + 3) — a lower value means completed work was thrown away"
+    );
     assert!(
         pending.iter().any(|a| a.node.as_str() == "tail"),
         "the attributed node's successor is scheduled alongside them"
@@ -3095,5 +3110,93 @@ async fn async_durability_skips_a_write_whose_predecessor_failed() {
     assert!(
         cp.list("t-async-orphan").await.unwrap().is_empty(),
         "no orphaned checkpoint may be appended after a broken lineage"
+    );
+}
+
+/// A per-node concurrency cap bounds how many activations of that node run at
+/// once, without throttling the rest of the step.
+///
+/// Six `Send` packets fan `worker` out six ways alongside an unrelated `other`
+/// branch. With `worker` capped at 2, at most two workers may ever be in flight
+/// — but `other` must not be made to wait behind them, which is the whole reason
+/// this is a per-node bound rather than the graph-wide one.
+///
+/// The assertion is on observed *overlap*, tracked by incrementing a counter on
+/// entry and decrementing on exit, because a cap that silently failed to bind
+/// would still produce the same final state.
+#[tokio::test]
+async fn a_per_node_cap_bounds_one_node_without_throttling_the_step() {
+    let in_flight = Arc::new(AtomicUsize::new(0));
+    let peak = Arc::new(AtomicUsize::new(0));
+    let other_ran_early = Arc::new(AtomicBool::new(false));
+
+    let worker_in_flight = in_flight.clone();
+    let worker_peak = peak.clone();
+    let other_flag = other_ran_early.clone();
+
+    let graph = GraphBuilder::<i32, i32>::new()
+        .with_parallel(true)
+        .with_node_concurrency("worker", 2)
+        .set_reducer(ClosureStateReducer::new(|s: i32, u: i32| Ok(s + u)))
+        .add_node("dispatch", |_s: i32, _c: NodeContext| async move {
+            Ok(NodeResult::Command(Command::send(
+                (1..=6).map(|n| Send::new("worker", json!(n))),
+            )))
+        })
+        .add_node("worker", move |_s: i32, _c: NodeContext| {
+            let in_flight = worker_in_flight.clone();
+            let peak = worker_peak.clone();
+            async move {
+                let now = in_flight.fetch_add(1, AtomicOrdering::SeqCst) + 1;
+                peak.fetch_max(now, AtomicOrdering::SeqCst);
+                // Yield enough times that any un-capped sibling would overlap.
+                for _ in 0..8 {
+                    tokio::task::yield_now().await;
+                }
+                in_flight.fetch_sub(1, AtomicOrdering::SeqCst);
+                Ok(NodeResult::Update(1))
+            }
+        })
+        .add_node("other", move |_s: i32, _c: NodeContext| {
+            let flag = other_flag.clone();
+            async move {
+                flag.store(true, AtomicOrdering::SeqCst);
+                Ok(NodeResult::Update(100))
+            }
+        })
+        .set_entry("dispatch")
+        .mark_command_routing("dispatch")
+        .set_finish("worker")
+        .set_finish("other")
+        .compile()
+        .unwrap();
+
+    // `dispatch` sends six workers; `other` is seeded alongside them so the step
+    // contains both.
+    let done = graph
+        .run_with_inputs(
+            0,
+            [
+                crate::graph::GraphInput::start(json!(null)),
+                crate::graph::GraphInput::node("other"),
+            ],
+        )
+        .await
+        .unwrap();
+
+    assert!(
+        peak.load(AtomicOrdering::SeqCst) <= 2,
+        "worker is capped at 2 concurrent activations, observed peak {}",
+        peak.load(AtomicOrdering::SeqCst)
+    );
+    assert!(
+        other_ran_early.load(AtomicOrdering::SeqCst),
+        "the unrelated branch must still run — a per-node cap must not throttle \
+         the whole step"
+    );
+    assert_eq!(
+        done.state, 106,
+        "all six workers plus `other` still ran: capping concurrency must not \
+         drop work"
     );
 }

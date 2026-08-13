@@ -84,7 +84,7 @@ impl NodeExecutor for AgentNode {
             // Fan out: `config.concurrency` decides how many turns run at once
             // (default 1 — sequential, as this node has always behaved), and
             // `config.on_item_error` what a failing turn does to the batch.
-            let opts = crate::nodes::map::map_options(&ctx.node.config, &ctx.node.id);
+            let opts = crate::nodes::map::map_options(&ctx.node.config, &ctx.node.id, ctx.run);
             let ctx = &ctx;
             let (items, diagnostics) = crate::nodes::map::map_items(
                 ctx.input.len(),
@@ -437,6 +437,9 @@ mod tests {
                 agents: &[],
                 observer: &crate::observability::NoopObserver,
                 token: crate::engine::CancellationToken::new(),
+                lane: None,
+                resume: None,
+                step: 0,
             })
             .await
             .expect("execute");
@@ -455,6 +458,9 @@ mod tests {
                 agents: &[],
                 observer: &crate::observability::NoopObserver,
                 token: crate::engine::CancellationToken::new(),
+                lane: None,
+                resume: None,
+                step: 0,
             })
             .await
             .expect("execute");
@@ -479,6 +485,9 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            resume: None,
+            step: 0,
         };
         let out = AgentNode.execute(ctx).await.expect("execute");
         assert_eq!(out.items.len(), 1);
@@ -507,6 +516,9 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            resume: None,
+            step: 0,
         };
         let out = AgentNode.execute(ctx).await.expect("execute");
         assert_eq!(out.items[0].json["json"]["completion"]["prompt"], "X");
@@ -527,6 +539,9 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            resume: None,
+            step: 0,
         };
         let out = AgentNode.execute(ctx).await.expect("execute");
         assert_eq!(out.items[0].json["json"]["connection"], Value::Null);
@@ -553,6 +568,9 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            resume: None,
+            step: 0,
         };
         let out = AgentNode.execute(ctx).await.expect("execute");
         assert_eq!(out.items.len(), 1);
@@ -583,6 +601,9 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            resume: None,
+            step: 0,
         };
         AgentNode
             .execute(ctx)
@@ -746,6 +767,9 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            resume: None,
+            step: 0,
         };
         let err = AgentNode
             .execute(ctx)
@@ -886,6 +910,9 @@ mod tests {
                     agents,
                     observer: &crate::observability::NoopObserver,
                     token: crate::engine::CancellationToken::new(),
+                    lane: None,
+                    resume: None,
+                    step: 0,
                 })
                 .await
                 .expect("execute");
@@ -1050,6 +1077,9 @@ mod tests {
                     agents: &[],
                     observer: &crate::observability::NoopObserver,
                     token: crate::engine::CancellationToken::new(),
+                    lane: None,
+                    resume: None,
+                    step: 0,
                 })
                 .await
                 .expect_err("an unresolved required block must fail the node");
@@ -1125,6 +1155,9 @@ mod tests {
                     agents: &[],
                     observer: &crate::observability::NoopObserver,
                     token: crate::engine::CancellationToken::new(),
+                    lane: None,
+                    resume: None,
+                    step: 0,
                 })
                 .await
                 .expect_err("a pause must not be reported as a finished answer");

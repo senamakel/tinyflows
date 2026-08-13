@@ -43,7 +43,26 @@ where
                 });
                 // Barrier gating: hold a waiting node until every required
                 // predecessor has arrived (possibly across supersteps).
-                if let Some(required) = self.waiting.get(&tnode) {
+                //
+                // Only arrivals from a **required** predecessor are gated. An
+                // arrival from anywhere else was never part of this barrier's
+                // contract, so holding it would be waiting for a rendezvous it
+                // is not attending.
+                //
+                // That distinction is what lets a barrier node also be the head
+                // of a cycle. A back-edge is registered as a plain edge, not a
+                // waiting one, so its source is absent from `required` — but the
+                // gate is keyed on the *target*, so without this check the
+                // re-entry would be swallowed on every pass: `arrived` would
+                // gain the body's id, still fail the `is_subset` test against
+                // the forward predecessors, and `continue`. The loop would run
+                // its first pass and then silently stop. Barrier relief cannot
+                // rescue that either, since it only fires for a predecessor
+                // whose branch was *not* taken, and a fan-in head's forward
+                // predecessors did run.
+                if let Some(required) = self.waiting.get(&tnode)
+                    && required.contains(node_id)
+                {
                     let arrived = barrier_arrivals.entry(tnode.clone()).or_default();
                     arrived.insert(node_id.clone());
                     if !required.is_subset(arrived) {
@@ -123,6 +142,47 @@ where
             let Some(required) = self.waiting.get(&relief.barrier_node) else {
                 continue;
             };
+            // Is this barrier participating in the current pass at all?
+            //
+            // Relief exists to unblock a barrier that is holding real data while
+            // one of its predecessors can no longer arrive. It must never be the
+            // reason a barrier fires with *nothing* behind it. So before
+            // phantoming anything, check that the route actually taken still
+            // leads to at least one of the barrier's predecessors — or that one
+            // has already arrived.
+            //
+            // The two cases this separates look identical from a single relief
+            // registration, which is why the check is per barrier rather than
+            // per predecessor:
+            //
+            // - A conditional join where one arm was chosen: the taken route
+            //   reaches that arm, so the barrier is engaged and the *other* arm
+            //   is correctly phantomed. The phantom is needed here before any
+            //   real arrival, since the chosen arm has not run yet.
+            // - A loop body's join on the pass where the head leaves through
+            //   `done`: the taken route reaches neither arm. Nothing will ever
+            //   arrive, so the barrier is simply not part of this pass. Firing it
+            //   anyway would activate it on empty input and — because its
+            //   back-edge re-enters the head, which exits and relieves again —
+            //   ping-pong the run forever instead of letting it finish.
+            let already_arrived = barrier_arrivals
+                .get(&relief.barrier_node)
+                .is_some_and(|arrived| !arrived.is_empty());
+            let barrier_engaged = already_arrived
+                || required.iter().any(|predecessor| {
+                    source_indices.iter().any(|index| {
+                        resolved[*index].iter().any(|target| {
+                            self.reaches_deterministically(
+                                target.node(),
+                                predecessor,
+                                &relief.barrier_node,
+                            )
+                        })
+                    })
+                });
+            if !barrier_engaged {
+                continue;
+            }
             let arrived = barrier_arrivals
                 .entry(relief.barrier_node.clone())
                 .or_default();
@@ -154,24 +214,57 @@ where
     /// eventually leads to a barrier's conditional predecessor is a static
     /// property of the compiled topology for any chain of plain pass-through
     /// nodes — it does not depend on when each hop happens to run. A further
-    /// conditional/command node along the way (no `self.edges` entry) is a
-    /// second runtime decision this walk cannot resolve ahead of time, so it
-    /// conservatively reports unreachable there (falling back to the
+    /// conditional node along the way is a second runtime decision this walk
+    /// cannot resolve ahead of time, so it stops there (falling back to the
     /// same-superstep check).
+    ///
+    /// An **unconditional fan-out** is the one command node the walk does cross.
+    /// It has no `self.edges` entry, because its successors come from the
+    /// `Command` it emits rather than from a static edge — but every one of its
+    /// declared destinations runs whenever it runs, so "does this lead to `to`"
+    /// is still a static question. Stopping there instead is not the safe
+    /// default it looks like: reporting unreachable is what *fires* relief, so a
+    /// fan-out on the path would clear a barrier before its real predecessors
+    /// had run and the join would read the previous pass's data. Erring toward
+    /// "reachable" costs at worst a barrier that waits, which is loud; erring
+    /// the other way is silently wrong output.
+    ///
+    /// Because a fan-out has several successors this is a search over a DAG
+    /// rather than a walk down a chain.
     fn reaches_deterministically(&self, from: &NodeId, to: &NodeId, stop: &NodeId) -> bool {
         if from == to {
             return true;
         }
-        let mut current = from;
         let mut seen: HashSet<&NodeId> = HashSet::new();
-        while let Some(next) = self.edges.get(current) {
-            if next == to {
-                return true;
+        let mut frontier: Vec<&NodeId> = vec![from];
+        while let Some(current) = frontier.pop() {
+            if !seen.insert(current) {
+                continue;
             }
-            if next == stop || !seen.insert(next) {
-                return false;
+            // A plain/waiting edge: exactly one successor, no decision.
+            if let Some(next) = self.edges.get(current) {
+                if next == to {
+                    return true;
+                }
+                if next != stop {
+                    frontier.push(next);
+                }
             }
-            current = next;
+            // An unconditional fan-out: every declared destination runs.
+            if self
+                .node_meta
+                .get(current)
+                .is_some_and(|meta| meta.command_fanout)
+            {
+                for next in &self.node_meta[current].command_destinations {
+                    if next == to {
+                        return true;
+                    }
+                    if next != stop {
+                        frontier.push(next);
+                    }
+                }
+            }
         }
         false
     }

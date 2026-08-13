@@ -120,8 +120,25 @@ impl Default for MapOptions {
 /// Unrecognized values fall back to the defaults rather than erroring;
 /// [`crate::validate`] rejects them at author time, where the message can point
 /// at the offending node.
+/// The run-level per-item concurrency ceiling, from
+/// `trigger.config.max_item_concurrency`.
+///
+/// `None` when unset or not a positive integer, meaning each node is bounded
+/// only by its own `concurrency` and [`MAX_CONCURRENCY`].
+fn run_item_cap(run: &Value) -> Option<usize> {
+    run.get("trigger")
+        .and_then(|trigger| trigger.get("max_item_concurrency"))
+        .and_then(Value::as_u64)
+        .filter(|n| *n > 0)
+        .map(|n| {
+            usize::try_from(n)
+                .unwrap_or(MAX_CONCURRENCY)
+                .min(MAX_CONCURRENCY)
+        })
+}
+
 #[must_use]
-pub(crate) fn map_options(config: &Value, node_id: &str) -> MapOptions {
+pub(crate) fn map_options(config: &Value, node_id: &str, run: &Value) -> MapOptions {
     let concurrency = match config.get("concurrency") {
         Some(Value::Number(n)) => n
             .as_u64()
@@ -140,6 +157,26 @@ pub(crate) fn map_options(config: &Value, node_id: &str) -> MapOptions {
         MAX_CONCURRENCY
     } else {
         concurrency
+    };
+
+    // A run-level ceiling the whole workflow shares, declared once on the
+    // trigger instead of edited into every node. It only ever lowers a node's
+    // own `concurrency`, so a node asking for less keeps its own number.
+    //
+    // `0` (the "all" spelling) means unbounded, which is exactly what a run-level
+    // cap is for, so it is clamped like any other value rather than treated as
+    // already-satisfied.
+    let concurrency = match run_item_cap(run) {
+        Some(cap) if concurrency == 0 || concurrency > cap => {
+            tracing::debug!(
+                node = %node_id,
+                requested = concurrency,
+                cap,
+                "per-item concurrency lowered by the run-level cap"
+            );
+            cap
+        }
+        _ => concurrency,
     };
 
     // The default follows the execution shape: a fan-out collects (one bad item
@@ -586,7 +623,7 @@ mod tests {
     fn options_default_to_sequential_and_fail_fast() {
         // The pre-fan-out behaviour, unchanged: one at a time, and a failure
         // reaches the node's own `on_error` / retry policy.
-        let o = map_options(&json!({}), "n");
+        let o = map_options(&json!({}), "n", &Value::Null);
         assert_eq!(o.concurrency, 1, "unset concurrency stays sequential");
         assert_eq!(o.on_item_error, ItemErrorPolicy::FailFast);
     }
@@ -596,7 +633,7 @@ mod tests {
         // Opting into concurrency opts into batch semantics: one bad item must
         // not discard the other results.
         for concurrency in [0, 2, 8] {
-            let o = map_options(&json!({ "concurrency": concurrency }), "n");
+            let o = map_options(&json!({ "concurrency": concurrency }), "n", &Value::Null);
             assert_eq!(
                 o.on_item_error,
                 ItemErrorPolicy::Collect,
@@ -605,7 +642,7 @@ mod tests {
         }
         // ...but an explicit `concurrency: 1` is not a fan-out.
         assert_eq!(
-            map_options(&json!({ "concurrency": 1 }), "n").on_item_error,
+            map_options(&json!({ "concurrency": 1 }), "n", &Value::Null).on_item_error,
             ItemErrorPolicy::FailFast
         );
     }
@@ -613,14 +650,15 @@ mod tests {
     #[test]
     fn an_explicit_policy_overrides_the_shape_derived_default() {
         assert_eq!(
-            map_options(&json!({ "on_item_error": "collect" }), "n").on_item_error,
+            map_options(&json!({ "on_item_error": "collect" }), "n", &Value::Null).on_item_error,
             ItemErrorPolicy::Collect,
             "sequential can opt into collecting"
         );
         assert_eq!(
             map_options(
                 &json!({ "concurrency": 8, "on_item_error": "fail_fast" }),
-                "n"
+                "n",
+                &Value::Null
             )
             .on_item_error,
             ItemErrorPolicy::FailFast,
@@ -631,23 +669,72 @@ mod tests {
     #[test]
     fn options_read_numeric_and_all_concurrency() {
         assert_eq!(
-            map_options(&json!({ "concurrency": 8 }), "n").concurrency,
+            map_options(&json!({ "concurrency": 8 }), "n", &Value::Null).concurrency,
             8
         );
         assert_eq!(
-            map_options(&json!({ "concurrency": 0 }), "n").concurrency,
+            map_options(&json!({ "concurrency": 0 }), "n", &Value::Null).concurrency,
             0
         );
         assert_eq!(
-            map_options(&json!({ "concurrency": "all" }), "n").concurrency,
+            map_options(&json!({ "concurrency": "all" }), "n", &Value::Null).concurrency,
             0,
             "`\"all\"` is the readable spelling of unbounded"
         );
     }
 
+    /// The run-level cap lowers a node that asked for more, and leaves alone a
+    /// node that asked for less — it is a ceiling, not an assignment.
+    #[test]
+    fn the_run_level_cap_only_lowers_a_nodes_own_concurrency() {
+        let run = json!({ "trigger": { "max_item_concurrency": 4 } });
+        assert_eq!(
+            map_options(&json!({ "concurrency": 16 }), "n", &run).concurrency,
+            4,
+            "a node above the run cap is lowered to it"
+        );
+        assert_eq!(
+            map_options(&json!({ "concurrency": 2 }), "n", &run).concurrency,
+            2,
+            "a node below the run cap keeps its own smaller value"
+        );
+    }
+
+    /// `"all"` / `0` means unbounded, which is exactly the case a run-level cap
+    /// exists to bound — so it is capped rather than treated as satisfied.
+    #[test]
+    fn the_run_level_cap_bounds_an_unbounded_node() {
+        let run = json!({ "trigger": { "max_item_concurrency": 3 } });
+        assert_eq!(
+            map_options(&json!({ "concurrency": "all" }), "n", &run).concurrency,
+            3
+        );
+        assert_eq!(
+            map_options(&json!({ "concurrency": 0 }), "n", &run).concurrency,
+            3
+        );
+    }
+
+    /// An absent, zero, or malformed cap leaves node concurrency untouched.
+    #[test]
+    fn a_missing_or_invalid_run_level_cap_changes_nothing() {
+        for run in [
+            json!({}),
+            json!({ "trigger": {} }),
+            json!({ "trigger": { "max_item_concurrency": 0 } }),
+            json!({ "trigger": { "max_item_concurrency": "lots" } }),
+        ] {
+            assert_eq!(
+                map_options(&json!({ "concurrency": 8 }), "n", &run).concurrency,
+                8,
+                "cap {run} should not change the node's own concurrency"
+            );
+        }
+    }
+
     #[test]
     fn options_clamp_an_absurd_concurrency_instead_of_failing_the_run() {
-        let o = map_options(&json!({ "concurrency": 10_000 }), "n");
+        let o = map_options(&json!({ "concurrency": 10_000 }), "n", &Value::Null);
         assert_eq!(o.concurrency, MAX_CONCURRENCY);
     }
 
@@ -656,23 +743,29 @@ mod tests {
         // `validate` rejects these at author time; at run time they must not
         // silently become unbounded.
         assert_eq!(
-            map_options(&json!({ "concurrency": "lots" }), "n").concurrency,
+            map_options(&json!({ "concurrency": "lots" }), "n", &Value::Null).concurrency,
             1
         );
         assert_eq!(
-            map_options(&json!({ "concurrency": -3 }), "n").concurrency,
+            map_options(&json!({ "concurrency": -3 }), "n", &Value::Null).concurrency,
             1
         );
         assert_eq!(
-            map_options(&json!({ "concurrency": true }), "n").concurrency,
+            map_options(&json!({ "concurrency": true }), "n", &Value::Null).concurrency,
             1
         );
     }
 
     #[test]
     fn options_read_every_item_error_policy() {
-        let policy =
-            |v| map_options(&json!({ "concurrency": 4, "on_item_error": v }), "n").on_item_error;
+        let policy = |v| {
+            map_options(
+                &json!({ "concurrency": 4, "on_item_error": v }),
+                "n",
+                &Value::Null,
+            )
+            .on_item_error
+        };
         assert_eq!(policy("fail_fast"), ItemErrorPolicy::FailFast);
         assert_eq!(policy("skip"), ItemErrorPolicy::Skip);
         assert_eq!(policy("collect"), ItemErrorPolicy::Collect);

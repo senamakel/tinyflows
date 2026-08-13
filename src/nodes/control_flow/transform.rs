@@ -89,6 +89,9 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            resume: None,
+            step: 0,
         };
         TransformNode.execute(ctx).await.expect("execute").items
     }
@@ -116,6 +119,9 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            resume: None,
+            step: 0,
         };
         let out = TransformNode.execute(ctx).await.expect("execute").items;
         assert_eq!(out[0].json["who"], json!("a@b.com"));

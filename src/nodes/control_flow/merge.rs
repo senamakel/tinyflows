@@ -56,6 +56,9 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            resume: None,
+            step: 0,
         };
 
         let output = MergeNode.execute(ctx).await.expect("execute");
@@ -77,6 +80,9 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            resume: None,
+            step: 0,
         };
         MergeNode.execute(ctx).await.expect("execute").items
     }

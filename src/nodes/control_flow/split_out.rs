@@ -91,6 +91,9 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            resume: None,
+            step: 0,
         };
 
         let output = SplitOutNode.execute(ctx).await.expect("execute");
@@ -116,6 +119,9 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            resume: None,
+            step: 0,
         };
 
         let output = SplitOutNode.execute(ctx).await.expect("execute");
@@ -140,6 +146,9 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            resume: None,
+            step: 0,
         };
 
         let output = SplitOutNode.execute(ctx).await.expect("execute");
@@ -161,6 +170,9 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            resume: None,
+            step: 0,
         };
         SplitOutNode.execute(ctx).await.expect("execute").items
     }
