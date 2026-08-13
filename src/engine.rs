@@ -1261,7 +1261,7 @@ fn build_graph(
                 // port-command node drives only the successors of the port it
                 // emitted on (`port`, defaulting to `main`); everything else emits
                 // a plain update and follows its static/conditional edge.
-                let emit = |mut update: Value, port: Option<&str>| {
+                let emit = |mut update: Value, port: Option<&str>, routed_items: &[Item]| {
                     stamp_activation_step(&mut update, &node.id, ctx.step);
 
                     // Inside a lane, routing carries the lane onward. Every
@@ -1291,7 +1291,13 @@ fn build_graph(
                                 if gather_nodes.contains(&target) {
                                     RouteTarget::Node(target.into())
                                 } else {
-                                    let envelope = lane_envelope_for(lane, &lane_items);
+                                    let envelope = lane_envelope(
+                                        &lane.origin,
+                                        lane.index,
+                                        lane.count,
+                                        routed_items,
+                                    )
+                                    .unwrap_or(Value::Null);
                                     RouteTarget::Send(crate::graph::Send::new(target, envelope))
                                 }
                             })
@@ -1336,7 +1342,7 @@ fn build_graph(
                 if is_trigger {
                     // The trigger payload is pre-seeded into the state; no-op update
                     // (still fanning out if the trigger has parallel successors).
-                    return Ok(emit(json!({}), None));
+                    return Ok(emit(json!({}), None, &[]));
                 }
 
                 // Human-in-the-loop approval gate. A node whose config sets
@@ -1746,7 +1752,7 @@ fn build_graph(
                         // ran (`max_attempts >= 1`); the `None` arm is unreachable
                         // but handled defensively — emit an empty update, never panic.
                         let Some(err) = last_err else {
-                            return Ok(emit(items_update(&node.id, &[], None)?, None));
+                            return Ok(emit(items_update(&node.id, &[], None)?, None, &[]));
                         };
                         match on_error {
                             // Turn the failure into data on the default port.
