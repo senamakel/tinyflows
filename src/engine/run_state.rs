@@ -17,6 +17,48 @@ pub(super) fn default_thread_id(workflow: &CompiledWorkflow) -> Result<String> {
         .clone())
 }
 
+/// Cancels background tasks that a cancelled run started.
+async fn cancel_spawned_tasks(
+    workflow: &CompiledWorkflow,
+    state: &Value,
+    capabilities: &Capabilities,
+) {
+    let Some(runner) = capabilities.tasks.as_ref() else {
+        return;
+    };
+    for spawn in workflow
+        .graph
+        .nodes
+        .iter()
+        .filter(|node| node.kind == NodeKind::Spawn)
+    {
+        let Some(slot) = state.get("nodes").and_then(|nodes| nodes.get(&spawn.id)) else {
+            continue;
+        };
+        let mut item_lists: Vec<&Vec<Value>> = slot
+            .get("items")
+            .and_then(Value::as_array)
+            .into_iter()
+            .collect();
+        item_lists.extend(
+            slot.get("lanes")
+                .and_then(Value::as_object)
+                .into_iter()
+                .flat_map(|lanes| lanes.values())
+                .filter_map(|lane| lane.get("items").and_then(Value::as_array)),
+        );
+        for ticket in item_lists.into_iter().flatten().filter_map(|item| {
+            item.get("json")
+                .and_then(|json| json.get("ticket"))
+                .and_then(Value::as_str)
+        }) {
+            if let Err(error) = runner.cancel(ticket).await {
+                tracing::warn!(%ticket, %error, "failed to cancel spawned task");
+            }
+        }
+    }
+}
+
 /// Builds the graph-runtime graph for `workflow` under the supplied
 /// `checkpointer`, drives the first run keyed under `thread_id`, and returns the
 /// still-live compiled graph, that `thread_id`, and the [`RunOutcome`].
@@ -159,6 +201,10 @@ pub(super) async fn build_and_run(
         .iter()
         .map(|interrupt| interrupt.id.clone())
         .collect();
+
+    if token.is_cancelled() {
+        cancel_spawned_tasks(workflow, &execution.state, capabilities).await;
+    }
 
     tracing::info!(
         steps = execution.steps,

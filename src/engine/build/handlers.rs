@@ -60,11 +60,10 @@ pub(super) fn register_handlers(
         // Successors on the emitted port, needed only inside a lane: `Plain`
         // routing normally rides static edges, but a lane has to re-schedule
         // every successor as a `Send`, so it needs the target list explicitly.
-        let plain_targets: Vec<String> = graph
-            .edges
+        let plain_targets_by_port = outgoing_by_port(graph, &node.id);
+        let plain_targets: Vec<String> = plain_targets_by_port
             .iter()
-            .filter(|e| e.from_node == node.id)
-            .map(|e| e.to_node.clone())
+            .flat_map(|(_, targets)| targets.iter().cloned())
             .collect();
         // Which successors end a lane. Routing to one of these is a plain
         // activation, so the lanes converge on it instead of each running their
@@ -95,6 +94,7 @@ pub(super) fn register_handlers(
             token,
             routing,
             plain_targets,
+            plain_targets_by_port,
             gather_nodes,
             has_error_edge,
             is_trigger,

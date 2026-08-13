@@ -202,18 +202,38 @@ where
             };
             match on_error {
                 // Turn the failure into data on the default port.
-                "continue" => Ok(emit(
-                    items_update(&node.id, &[error_item(&node.id, &err)], None)?,
-                    None,
-                    &[error_item(&node.id, &err)],
-                )),
+                "continue" => {
+                    let item = error_item(&node.id, &err);
+                    let update = match lane.as_ref() {
+                        Some(lane) => lane_items_update(
+                            &node.id,
+                            lane,
+                            std::slice::from_ref(&item),
+                            None,
+                            "ok",
+                            None,
+                        )?,
+                        None => items_update(&node.id, std::slice::from_ref(&item), None)?,
+                    };
+                    Ok(emit(update, None, std::slice::from_ref(&item)))
+                }
                 // Turn the failure into data on the `error` port so the
                 // graph can route it to a recovery sub-graph.
-                "route" => Ok(emit(
-                    items_update(&node.id, &[error_item(&node.id, &err)], Some("error"))?,
-                    Some("error"),
-                    &[error_item(&node.id, &err)],
-                )),
+                "route" => {
+                    let item = error_item(&node.id, &err);
+                    let update = match lane.as_ref() {
+                        Some(lane) => lane_items_update(
+                            &node.id,
+                            lane,
+                            std::slice::from_ref(&item),
+                            Some("error"),
+                            "ok",
+                            None,
+                        )?,
+                        None => items_update(&node.id, std::slice::from_ref(&item), Some("error"))?,
+                    };
+                    Ok(emit(update, Some("error"), std::slice::from_ref(&item)))
+                }
                 // "stop" (default) and any unknown policy fail the run.
                 //
                 // Stash the structured error before handing
@@ -228,6 +248,15 @@ where
                 // may produce several.
                 _ => {
                     let message = err.to_string();
+                    // A lane failure belongs to its gather, whose
+                    // `on_lane_error` policy decides whether to collect, skip,
+                    // or fail the overall run.
+                    if let Some(lane) = lane.as_ref() {
+                        let meta = json!({ "error": message });
+                        let update =
+                            lane_items_update(&node.id, lane, &[], None, "failed", Some(&meta))?;
+                        return Ok(emit(update, None, &[]));
+                    }
                     let mut slot = terminal_error
                         .lock()
                         .expect("terminal error mutex poisoned");

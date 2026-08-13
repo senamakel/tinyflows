@@ -54,13 +54,20 @@ pub(super) fn merge(base: &mut Value, update: Value) {
         *base = value.clone();
         return;
     }
-    match (base, update) {
-        (Value::Object(base), Value::Object(update)) => {
+    match update {
+        Value::Object(update) => {
+            // Recurse even when this subtree does not exist yet. Assigning the
+            // incoming object wholesale would leave any nested `$replace`
+            // sentinel as literal state on its first write.
+            if !base.is_object() {
+                *base = Value::Object(Map::new());
+            }
+            let base = base.as_object_mut().expect("object created above");
             for (key, value) in update {
                 merge(base.entry(key).or_insert(Value::Null), value);
             }
         }
-        (base, update) => *base = update,
+        update => *base = update,
     }
 }
 

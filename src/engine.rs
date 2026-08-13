@@ -235,7 +235,7 @@ mod routing;
 pub use routing::back_edges;
 use routing::{
     HandlerRouting, conditional_predecessors, error_item, find_conditional_brancher,
-    handler_routing, items_update, items_update_with_meta,
+    handler_routing, items_update, items_update_with_meta, outgoing_by_port,
 };
 
 mod api;
@@ -258,6 +258,10 @@ pub use resumable::*;
 #[cfg(test)]
 #[path = "merge_tests.rs"]
 mod merge_tests;
+
+#[cfg(test)]
+#[path = "engine_merge_tests.rs"]
+mod merge_property_tests;
 
 #[cfg(test)]
 #[path = "lane_context_tests.rs"]

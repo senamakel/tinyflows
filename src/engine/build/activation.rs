@@ -14,6 +14,7 @@ pub(super) struct HandlerData {
     pub(super) token: CancellationToken,
     pub(super) routing: HandlerRouting,
     pub(super) plain_targets: Vec<String>,
+    pub(super) plain_targets_by_port: Vec<(String, Vec<String>)>,
     pub(super) gather_nodes: std::collections::HashSet<String>,
     pub(super) has_error_edge: bool,
     pub(super) is_trigger: bool,
@@ -38,6 +39,7 @@ impl HandlerData {
             token,
             routing,
             plain_targets,
+            plain_targets_by_port,
             gather_nodes,
             has_error_edge,
             is_trigger,
@@ -101,7 +103,11 @@ impl HandlerData {
             if let Some(lane) = lane.as_ref() {
                 let emitted = port.unwrap_or("main");
                 let targets: Vec<String> = match &routing {
-                    HandlerRouting::Plain => plain_targets.clone(),
+                    HandlerRouting::Plain => plain_targets_by_port
+                        .iter()
+                        .find(|(port, _)| port == emitted)
+                        .map(|(_, targets)| targets.clone())
+                        .unwrap_or_default(),
                     HandlerRouting::FanOut(targets) => targets.clone(),
                     HandlerRouting::PortCommand(groups) => groups
                         .iter()
