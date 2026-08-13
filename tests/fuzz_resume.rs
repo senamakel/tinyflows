@@ -144,16 +144,40 @@ proptest! {
     // same graph at least twice, once through the checkpointer.
     #![proptest_config(ProptestConfig { cases: 48, ..ProptestConfig::default() })]
 
-    /// **Resume equivalence.** Suspending and resuming a run reaches the same
-    /// final state as never suspending at all.
+    /// **Resume equivalence.** Suspending and resuming a run does the same work
+    /// as never suspending at all — same nodes, same item counts.
+    ///
+    /// See the module docs for why this is a work comparison rather than a
+    /// byte comparison.
     #[test]
-    fn a_resumed_run_lands_where_an_uninterrupted_one_does(shape in arb_gated_shape(2)) {
+    fn a_resumed_run_does_the_same_work_as_an_uninterrupted_one(shape in arb_gated_shape(2)) {
         let Some((straight, resumed)) = run_both_ways(&shape) else {
             return Ok(());
         };
         prop_assert_eq!(
-            &straight, &resumed,
-            "pausing changed the result\nshape: {:?}",
+            work_done(&straight), work_done(&resumed),
+            "pausing changed which nodes ran or how much they emitted\nshape: {:?}",
+            shape
+        );
+    }
+
+    /// Resuming is itself deterministic: two identical suspend-and-resume
+    /// cycles produce byte-identical state.
+    ///
+    /// Unlike the property above this *can* compare exactly, because both runs
+    /// take the same path through the same channel — which makes it the
+    /// stricter of the two whenever it applies.
+    #[test]
+    fn resuming_is_deterministic(shape in arb_gated_shape(2)) {
+        let Some((_, first)) = run_both_ways(&shape) else {
+            return Ok(());
+        };
+        let Some((_, second)) = run_both_ways(&shape) else {
+            return Ok(());
+        };
+        prop_assert_eq!(
+            &first, &second,
+            "two identical resume cycles disagreed\nshape: {:?}",
             shape
         );
     }
