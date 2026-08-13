@@ -2510,7 +2510,7 @@ mod loop_tests {
                 "limits": { "max_steps": 8, "tool_timeout_secs": 30 }
             }))
             .unwrap();
-            let graph = graph(
+            let graph = agent_graph(
                 vec![agent],
                 json!({
                     "agent_ref": "triager",
@@ -2524,7 +2524,7 @@ mod loop_tests {
 
         #[test]
         fn duplicate_agent_ids_are_rejected() {
-            let graph = graph(
+            let graph = agent_graph(
                 vec![AgentDefinition::new("dup"), AgentDefinition::new("dup")],
                 json!({}),
             );
@@ -2558,7 +2558,7 @@ mod loop_tests {
             let by_slug = agent_graph(vec![], json!({ "tools": [{ "slug": "=item.tool" }] }));
             assert!(reasons(&by_slug).iter().any(|r| r.contains("`slug` must be a literal")));
 
-            let by_conn = graph(
+            let by_conn = agent_graph(
                 vec![],
                 json!({ "tools": [{ "slug": "ok", "connection_ref": "=item.acct" }] }),
             );
@@ -2587,7 +2587,7 @@ mod loop_tests {
         fn a_node_may_not_widen_its_agents_tool_grants() {
             let mut agent = AgentDefinition::new("triager");
             agent.tools = vec![crate::model::ToolGrant::new("github.search")];
-            let graph = graph(
+            let graph = agent_graph(
                 vec![agent],
                 json!({ "agent_ref": "triager", "tools": [{ "slug": "shell.exec" }] }),
             );
@@ -2602,7 +2602,7 @@ mod loop_tests {
 
         #[test]
         fn an_unknown_memory_scope_is_rejected() {
-            let graph = graph(
+            let graph = agent_graph(
                 vec![],
                 json!({ "context": [{ "kind": "memory", "scope": "=item.scope", "query": "q" }] }),
             );
@@ -2640,7 +2640,7 @@ mod loop_tests {
                 vec![("a".to_string(), "host_side".to_string())]
             );
 
-            let declared = graph(
+            let declared = agent_graph(
                 vec![AgentDefinition::new("host_side")],
                 json!({ "agent_ref": "host_side" }),
             );
