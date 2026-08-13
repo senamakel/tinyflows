@@ -195,12 +195,20 @@ async fn a_plain_back_edge_onto_a_mid_graph_node_iterates() {
     );
 }
 
-/// A loop head may not itself be a fan-in, and validation says so rather than
-/// letting the graph run once and stop. The barrier the graph runtime installs for a
-/// node's forward predecessors is per-node, so it swallows the re-entry the
-/// back-edge delivers — the loop would silently iterate exactly once.
+/// A loop head that is **also** a fan-in iterates properly.
+///
+/// This used to be refused. The barrier a fan-in installs is keyed on the
+/// target node rather than on the edge, so the re-entry the back-edge delivered
+/// was tested against the head's *forward* predecessors, failed that test, and
+/// was dropped — the loop ran exactly one pass and stopped. The gate now
+/// ignores arrivals from predecessors outside its required set, and a
+/// back-edge's source is never in that set, so the re-entry lands.
+///
+/// The assertion that matters is the iteration count: a passing run that
+/// stopped after one pass would still reach `out`, so only the count
+/// distinguishes a fixed loop from the old silent failure.
 #[tokio::test]
-async fn a_loop_head_that_is_also_a_fan_in_is_refused() {
+async fn a_loop_head_that_is_also_a_fan_in_iterates() {
     let graph = WorkflowGraph {
         name: "fan_in_loop".to_string(),
         nodes: vec![
