@@ -764,3 +764,101 @@ async fn a_loop_without_an_accumulator_is_unchanged() {
         "downstream still receives the last pass's items"
     );
 }
+
+/// A cycle bounded only by `max_node_visits` validates.
+///
+/// It used to be refused: only `recursion_limit` counted as proof of
+/// boundedness, so a graph that genuinely could not run away was rejected — and
+/// the author was pushed toward the *less* informative knob, since
+/// `recursion_limit` can only report that the run looped while
+/// `max_node_visits` names the node that did.
+#[tokio::test]
+async fn a_cycle_bounded_only_by_max_node_visits_is_legal() {
+    let graph = WorkflowGraph {
+        name: "visits_bounded".to_string(),
+        nodes: vec![
+            node("t", NodeKind::Trigger, json!({ "max_node_visits": 4 })),
+            node("a", NodeKind::OutputParser, Value::Null),
+            node("b", NodeKind::OutputParser, Value::Null),
+        ],
+        edges: vec![edge("t", "a"), edge("a", "b"), edge("b", "a")],
+        ..Default::default()
+    };
+
+    let errors = tinyflows::validate::validate_all(&graph);
+    assert!(
+        errors.is_empty(),
+        "max_node_visits bounds the cycle, so the graph is legal, got: {errors:?}"
+    );
+
+    // And the bound really is enforced, naming the runaway node.
+    let err = run_guarded(&graph)
+        .await
+        .expect_err("the visit cap should stop the cycle");
+    let message = err.to_string();
+    assert!(
+        message.contains('a') && message.to_lowercase().contains("visit"),
+        "the failure should name the node and its visit cap, got: {message}"
+    );
+}
+
+/// A cycle with neither run-level bound nor a `loop` node is still refused —
+/// the lift widened what counts as a bound, it did not remove the requirement.
+#[tokio::test]
+async fn an_unbounded_cycle_is_still_refused_after_the_lift() {
+    let graph = WorkflowGraph {
+        name: "still_unbounded".to_string(),
+        nodes: vec![
+            node("t", NodeKind::Trigger, Value::Null),
+            node("a", NodeKind::OutputParser, Value::Null),
+            node("b", NodeKind::OutputParser, Value::Null),
+        ],
+        edges: vec![edge("t", "a"), edge("a", "b"), edge("b", "a")],
+        ..Default::default()
+    };
+    let errors = tinyflows::validate::validate_all(&graph);
+    assert!(
+        errors
+            .iter()
+            .any(|e| matches!(e, ValidationError::IllegalCycle(_))),
+        "a cycle with no bound at all must still be refused, got: {errors:?}"
+    );
+}
+
+/// `success_port: true` with nothing wired to `success` is refused, because a
+/// converged loop would otherwise strand the run at an unwired port — which
+/// reads as "the loop never finished" rather than as a wiring mistake.
+#[tokio::test]
+async fn an_unwired_success_port_is_refused() {
+    let graph = loop_graph(json!({
+        "max_iterations": 3,
+        "success_port": true,
+        "until": "=true"
+    }));
+    let errors = tinyflows::validate::validate_all(&graph);
+    assert!(
+        errors.iter().any(|e| matches!(
+            e,
+            ValidationError::InvalidNodeConfig { node, reason }
+                if node == "l" && reason.contains("success")
+        )),
+        "an unwired success port should be refused, got: {errors:?}"
+    );
+}
+
+/// The new config keys are checked at author time rather than silently ignored.
+#[tokio::test]
+async fn malformed_accumulator_config_is_refused() {
+    for bad in [
+        json!({ "max_iterations": 2, "state": "not an object" }),
+        json!({ "max_iterations": 2, "emit": "sideways" }),
+    ] {
+        let errors = tinyflows::validate::validate_all(&loop_graph(bad.clone()));
+        assert!(
+            errors
+                .iter()
+                .any(|e| matches!(e, ValidationError::InvalidNodeConfig { node, .. } if node == "l")),
+            "config {bad} should be refused, got: {errors:?}"
+        );
+    }
+}
