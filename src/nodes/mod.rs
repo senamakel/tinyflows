@@ -39,6 +39,16 @@ pub struct NodeContext<'a> {
     pub nodes: &'a Value,
     /// Host-provided capabilities.
     pub caps: &'a Capabilities,
+    /// The graph's own agent registry
+    /// ([`WorkflowGraph::agents`](crate::model::WorkflowGraph::agents)).
+    ///
+    /// An `agent` node resolves its `agent_ref` here first, before falling back
+    /// to the harness's registry via
+    /// [`AgentRunner::resolve_agent`](crate::caps::AgentRunner::resolve_agent),
+    /// so a workflow carrying its own definitions behaves identically on every
+    /// host. Empty for a graph that declares none. Every other node kind ignores
+    /// it.
+    pub agents: &'a [crate::model::AgentDefinition],
     /// Host observer used to report per-item fan-out progress.
     pub observer: &'a dyn crate::observability::RunObserver,
     /// The run's cooperative-cancellation token (see
