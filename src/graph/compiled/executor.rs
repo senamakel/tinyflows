@@ -1526,6 +1526,33 @@ where
         })
     }
 
+    /// Splits a step's active set into the branches that completed, paired with
+    /// their routing re-keyed to the compacted set.
+    ///
+    /// [`Self::route_completed`] keys `goto_map` by position within the slice it
+    /// is handed, so dropping the interrupted branches from the middle would
+    /// silently misattribute every later branch's routing to the wrong node —
+    /// a `Send` packet would end up delivered on someone else's behalf. The
+    /// re-keying is the whole reason this is a function rather than a `filter`.
+    fn partition_completed(
+        active: &[Activation],
+        goto_map: &HashMap<usize, Vec<RouteTarget>>,
+        interrupted: &HashSet<usize>,
+    ) -> (Vec<Activation>, HashMap<usize, Vec<RouteTarget>>) {
+        let mut completed = Vec::with_capacity(active.len());
+        let mut routing = HashMap::new();
+        for (index, activation) in active.iter().enumerate() {
+            if interrupted.contains(&index) {
+                continue;
+            }
+            if let Some(targets) = goto_map.get(&index) {
+                routing.insert(completed.len(), targets.clone());
+            }
+            completed.push(activation.clone());
+        }
+        (completed, routing)
+    }
+
     /// Routes a set of completed activations into their successor activations.
     ///
     /// Honors per-activation command `goto` (keyed by active-set index), static
