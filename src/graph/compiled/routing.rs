@@ -43,7 +43,26 @@ where
                 });
                 // Barrier gating: hold a waiting node until every required
                 // predecessor has arrived (possibly across supersteps).
-                if let Some(required) = self.waiting.get(&tnode) {
+                //
+                // Only arrivals from a **required** predecessor are gated. An
+                // arrival from anywhere else was never part of this barrier's
+                // contract, so holding it would be waiting for a rendezvous it
+                // is not attending.
+                //
+                // That distinction is what lets a barrier node also be the head
+                // of a cycle. A back-edge is registered as a plain edge, not a
+                // waiting one, so its source is absent from `required` — but the
+                // gate is keyed on the *target*, so without this check the
+                // re-entry would be swallowed on every pass: `arrived` would
+                // gain the body's id, still fail the `is_subset` test against
+                // the forward predecessors, and `continue`. The loop would run
+                // its first pass and then silently stop. Barrier relief cannot
+                // rescue that either, since it only fires for a predecessor
+                // whose branch was *not* taken, and a fan-in head's forward
+                // predecessors did run.
+                if let Some(required) = self.waiting.get(&tnode)
+                    && required.contains(node_id)
+                {
                     let arrived = barrier_arrivals.entry(tnode.clone()).or_default();
                     arrived.insert(node_id.clone());
                     if !required.is_subset(arrived) {
