@@ -2478,7 +2478,7 @@ mod loop_tests {
         use serde_json::json;
 
         /// A one-agent-node graph with the given registry and node config.
-        fn graph(agents: Vec<AgentDefinition>, config: serde_json::Value) -> WorkflowGraph {
+        fn agent_graph(agents: Vec<AgentDefinition>, config: serde_json::Value) -> WorkflowGraph {
             WorkflowGraph {
                 agents,
                 nodes: vec![
@@ -2537,7 +2537,7 @@ mod loop_tests {
 
         #[test]
         fn an_empty_agent_id_is_rejected() {
-            let graph = graph(vec![AgentDefinition::new("")], json!({}));
+            let graph = agent_graph(vec![AgentDefinition::new("")], json!({}));
             assert!(reasons(&graph).iter().any(|r| r.contains("non-empty `id`")));
         }
 
@@ -2545,7 +2545,7 @@ mod loop_tests {
         fn an_expression_agent_ref_is_rejected() {
             // The escalation guard: an expression resolves from run data, which
             // could include model output, and would choose the agent's tools.
-            let graph = graph(vec![], json!({ "agent_ref": "=item.which_agent" }));
+            let graph = agent_graph(vec![], json!({ "agent_ref": "=item.which_agent" }));
             assert!(
                 reasons(&graph).iter().any(|r| r.contains("must be a literal")),
                 "{:?}",
@@ -2555,7 +2555,7 @@ mod loop_tests {
 
         #[test]
         fn an_expression_tool_slug_or_connection_is_rejected() {
-            let by_slug = graph(vec![], json!({ "tools": [{ "slug": "=item.tool" }] }));
+            let by_slug = agent_graph(vec![], json!({ "tools": [{ "slug": "=item.tool" }] }));
             assert!(reasons(&by_slug).iter().any(|r| r.contains("`slug` must be a literal")));
 
             let by_conn = graph(
@@ -2572,14 +2572,14 @@ mod loop_tests {
         #[test]
         fn only_a_trailing_dot_star_is_a_valid_tool_pattern() {
             for bad in ["*", "*.post", "sla*ck"] {
-                let g = graph(vec![], json!({ "tools": [{ "slug": bad }] }));
+                let g = agent_graph(vec![], json!({ "tools": [{ "slug": bad }] }));
                 assert!(
                     reasons(&g).iter().any(|r| r.contains("valid pattern")),
                     "{bad:?} should be rejected: {:?}",
                     reasons(&g)
                 );
             }
-            let good = graph(vec![], json!({ "tools": [{ "slug": "slack.*" }] }));
+            let good = agent_graph(vec![], json!({ "tools": [{ "slug": "slack.*" }] }));
             assert_eq!(validate_all(&good), Vec::new());
         }
 
@@ -2615,7 +2615,7 @@ mod loop_tests {
 
         #[test]
         fn a_zero_limit_is_rejected() {
-            let graph = graph(vec![], json!({ "limits": { "max_steps": 0 } }));
+            let graph = agent_graph(vec![], json!({ "limits": { "max_steps": 0 } }));
             assert!(
                 reasons(&graph).iter().any(|r| r.contains("greater than 0")),
                 "{:?}",
@@ -2625,7 +2625,7 @@ mod loop_tests {
 
         #[test]
         fn a_malformed_context_or_limits_block_reports_the_key() {
-            let graph = graph(vec![], json!({ "context": "not an array" }));
+            let graph = agent_graph(vec![], json!({ "context": "not an array" }));
             assert!(reasons(&graph).iter().any(|r| r.contains("invalid `context`")));
         }
 
@@ -2633,7 +2633,7 @@ mod loop_tests {
         fn an_unresolved_agent_ref_is_deferred_not_an_error() {
             // Validation runs without capabilities and the harness registry is
             // the documented fallback, so this is valid — but reportable.
-            let graph = graph(vec![], json!({ "agent_ref": "host_side" }));
+            let graph = agent_graph(vec![], json!({ "agent_ref": "host_side" }));
             assert_eq!(validate_all(&graph), Vec::new());
             assert_eq!(
                 unresolved_agent_refs(&graph),
