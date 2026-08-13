@@ -276,14 +276,10 @@ impl NodeExecutor for GateNode {
                     ctx.node.id,
                     results.len()
                 ))),
-                OnTimeout::Route => Ok(NodeOutput::routed(
-                    emit_items(results),
-                    "timeout",
-                )
-                .with_meta(meta)),
-                OnTimeout::Partial => {
-                    Ok(NodeOutput::main(emit_items(results)).with_meta(meta))
+                OnTimeout::Route => {
+                    Ok(NodeOutput::routed(emit_items(results), "timeout").with_meta(meta))
                 }
+                OnTimeout::Partial => Ok(NodeOutput::main(emit_items(results)).with_meta(meta)),
             },
             Release::Emit => Ok(NodeOutput::main(emit_items(results)).with_meta(meta)),
         }
@@ -342,12 +338,6 @@ mod tests {
     /// property that keeps a gate deterministic under any timing.
     #[test]
     fn results_are_emitted_in_ticket_order_regardless_of_arrival() {
-        let awaiting: Vec<Awaited> = (0..3)
-            .map(|i| Awaited {
-                ticket: Some(format!("t{i}")),
-                settled: None,
-            })
-            .collect();
         // Deliberately out of order, as a real race would deliver them.
         let results = vec![
             (2, json!("third")),

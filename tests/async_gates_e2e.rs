@@ -201,7 +201,8 @@ async fn a_spawn_does_not_block_its_branch() {
     );
 }
 
-/// `release: "any"` proceeds on the first result and leaves the rest running.
+/// `release: "quorum"` proceeds once `n` results are in and leaves the
+/// stragglers running, rather than waiting for every task.
 #[tokio::test]
 async fn a_quorum_gate_releases_before_every_task_settles() {
     // Three spawns; each settles after a different number of polls, so they
