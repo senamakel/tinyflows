@@ -52,7 +52,7 @@ use std::time::SystemTime;
 
 use async_trait::async_trait;
 
-use crate::error::Result;
+use crate::graph::error::Result;
 use crate::graph::status::GraphRunStatus;
 use crate::graph::stream::{GraphEvent, GraphEventSink};
 use crate::graph::ids::{CheckpointId, EventId, GraphId, NodeId, RunId, ThreadId, now_ms};

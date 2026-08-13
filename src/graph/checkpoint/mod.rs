@@ -14,13 +14,9 @@
 //! node from its start.
 
 mod file;
-#[cfg(feature = "sqlite")]
-mod sqlite;
 mod types;
 
 pub use file::FileCheckpointer;
-#[cfg(feature = "sqlite")]
-pub use sqlite::SqliteCheckpointer;
 pub use types::{
     BarrierArrivals, Checkpoint, CheckpointConfig, CheckpointMetadata, CheckpointSource,
     CheckpointTuple, DurabilityMode, PendingActivation, PendingWrite, WRITES_IDX_ERROR,
