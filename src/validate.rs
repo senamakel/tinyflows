@@ -1073,21 +1073,24 @@ fn validate_scatter_regions(graph: &WorkflowGraph, errors: &mut Vec<ValidationEr
                     ),
                 });
             }
-            // A lane leaking out of the region: an edge from a member to a node
-            // that is neither a member nor the gather carries the lane envelope
-            // somewhere that will never be collected.
-            for edge in graph.edges.iter().filter(|e| e.from_node == **member) {
-                let target = edge.to_node.as_str();
-                if !members.contains(&target) && !gathers.contains(&target) {
-                    errors.push(ValidationError::InvalidNodeConfig {
-                        node: (*member).to_string(),
-                        reason: format!(
-                            "edge to {target:?} leaves the lane region opened by {scatter:?} \
-                             without passing through a `gather`; the lane's results would be \
-                             stranded. Route it through the gather instead"
-                        ),
-                    });
-                }
+            // A lane that dead-ends: every node inside the region must have a
+            // path onward to a gather. One that does not is running in a lane
+            // whose results nothing collects — and because a lane activation
+            // deliberately never writes the node's top-level slot, its output
+            // is not merely uncollected, it is invisible. Wrong answer, not a
+            // failure, which is why this is refused rather than warned about.
+            let reaches_a_gather = gathers
+                .iter()
+                .any(|gather| path_exists(graph, member, gather));
+            if !reaches_a_gather {
+                errors.push(ValidationError::InvalidNodeConfig {
+                    node: (*member).to_string(),
+                    reason: format!(
+                        "node is inside the lane region opened by {scatter:?} but has no path \
+                         onward to a `gather`, so its lane output would be stranded; route it \
+                         through the gather"
+                    ),
+                });
             }
         }
     }
