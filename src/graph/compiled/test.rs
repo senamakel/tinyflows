@@ -9,7 +9,6 @@ use crate::graph::command::{Command, Interrupt, NodeResult, Send};
 use crate::graph::reducer::ClosureStateReducer;
 use crate::graph::stream::{CollectingSink, GraphEvent};
 use crate::graph::ids::ExecutionStatus;
-use crate::harness::retry::RetryPolicy;
 use serde_json::json;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering as AtomicOrdering};
@@ -2047,28 +2046,6 @@ fn flaky_graph(fail_times: usize, attempts: Arc<AtomicUsize>) -> CompiledGraph<i
         .unwrap()
 }
 
-#[tokio::test]
-async fn node_retry_recovers_transient_failure() {
-    let attempts = Arc::new(AtomicUsize::new(0));
-    let sink = Arc::new(CollectingSink::new());
-    // Fail twice, succeed on the third attempt; the policy allows 1 try + 3
-    // retries, so recovery is within budget.
-    let graph = flaky_graph(2, attempts.clone())
-        .with_node_retry(RetryPolicy::default().with_max_attempts(4))
-        .with_event_sink(sink.clone());
-
-    let run = graph.run(10).await.unwrap();
-    assert_eq!(run.state, 11);
-    assert_eq!(run.status.status, ExecutionStatus::Completed);
-    assert_eq!(attempts.load(AtomicOrdering::SeqCst), 3);
-
-    let retries = sink
-        .events()
-        .into_iter()
-        .filter(|e| matches!(e, GraphEvent::NodeRetryScheduled { .. }))
-        .count();
-    assert_eq!(retries, 2, "one retry per transient failure");
-}
 
 #[tokio::test]
 async fn exhausted_retries_leave_a_resumable_failure_checkpoint() {

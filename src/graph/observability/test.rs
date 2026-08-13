@@ -9,7 +9,6 @@ use crate::graph::command::NodeResult;
 use crate::graph::compiled::CompiledGraph;
 use crate::graph::stream::{CollectingSink, GraphEvent, GraphEventSink};
 use crate::graph::ids::{ExecutionStatus, GraphId, NodeId, RunId};
-use crate::harness::store::InMemoryAppendStore;
 use std::sync::Arc;
 
 /// A two-node line graph over `i32` with overwrite semantics: `a -> b`.
