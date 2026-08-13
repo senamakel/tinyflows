@@ -17,6 +17,10 @@ use serde_json::Value;
 
 use crate::error::Result;
 
+pub use self::agent::{
+    AgentInput, AgentModelSelection, AgentRunIdentity, AgentRunOutcome, AgentRunRequest,
+    AgentRunner, AgentUsage, ContextBlock, StopReason, ToolDescriptor,
+};
 pub use self::shell::{ShellInterpreter, ShellOutcome, ShellRequest, ShellRunner, ShellScript};
 
 /// A chat / LLM provider used by `agent` and `output_parser` nodes.
