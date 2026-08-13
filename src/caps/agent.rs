@@ -643,6 +643,7 @@ mod tests {
             context: Vec::new(),
             tools: Vec::new(),
             connection_ref: Some("conn_1".to_string()),
+            working_dir: None,
             identity: AgentRunIdentity::default(),
             metadata: Map::new(),
             output_schema: None,

@@ -95,7 +95,7 @@ pub(crate) async fn resolve_definition(
 /// | field | rule |
 /// |---|---|
 /// | `instructions` | the node's are **appended** to the definition's, never replacing them — a node must not be able to silently neuter a curated agent's standing instructions |
-/// | `model`, `provider` | the node's win when set |
+/// | `model`, `provider`, `working_dir` | the node's win when set |
 /// | `context` | the definition's blocks first, then the node's |
 /// | `tools` | when the definition grants any, the node's list **intersects** them and may not add a tool the definition never granted; when the definition grants none there is nothing to narrow against, so the node's stand |
 /// | `limits` | field-wise, keeping the **lower** of each declared bound |
@@ -354,6 +354,7 @@ pub(crate) async fn assemble(
         context,
         tools,
         connection_ref: conn.map(str::to_string),
+        working_dir: agent.working_dir.clone(),
         identity,
         metadata: agent.metadata.clone(),
         output_schema: cfg
