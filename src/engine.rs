@@ -1286,7 +1286,6 @@ fn build_graph(
                         run: &run_meta,
                         nodes: &nodes_state,
                         caps: &caps,
-                        agents: &[],
                         agents: &agents,
                         observer: observer.as_ref(),
                         // Handed to the executor so a nested engine call (today the
@@ -1413,7 +1412,6 @@ fn build_graph(
                                 run: &run_meta,
                                 nodes: &nodes_state,
                                 caps: &caps,
-                                agents: &[],
                                 agents: &agents,
                                 observer: observer.as_ref(),
                                 token: token.clone(),
