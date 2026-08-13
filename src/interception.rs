@@ -56,6 +56,7 @@
 use async_trait::async_trait;
 use serde_json::Value;
 
+use crate::caps::Capabilities;
 use crate::data::Item;
 use crate::error::EngineError;
 use crate::model::Node;
