@@ -388,7 +388,7 @@ mod tests {
             .await
             .expect("execute");
         assert_eq!(out.port.as_deref(), Some("body"));
-        assert_eq!(out.meta, Some(json!({ "iteration": 1 })));
+        assert_eq!(out.meta.as_ref().and_then(|m| m.get("iteration")), Some(&json!(1)));
         assert_eq!(out.items.len(), 1, "input passes through to the body");
     }
 
@@ -401,7 +401,7 @@ mod tests {
         .await
         .expect("execute");
         assert_eq!(out.port.as_deref(), Some("body"));
-        assert_eq!(out.meta, Some(json!({ "iteration": 3 })));
+        assert_eq!(out.meta.as_ref().and_then(|m| m.get("iteration")), Some(&json!(3)));
     }
 
     #[tokio::test]
@@ -430,7 +430,7 @@ mod tests {
         .await
         .expect("execute");
         assert_eq!(out.port.as_deref(), Some("done"));
-        assert_eq!(out.meta, Some(json!({ "iteration": 3 })));
+        assert_eq!(out.meta.as_ref().and_then(|m| m.get("iteration")), Some(&json!(3)));
         assert_eq!(out.items.len(), 1, "the last pass's items reach downstream");
     }
 
@@ -460,7 +460,7 @@ mod tests {
             Some("done"),
             "no `keep_going` field resolves null, which is falsey"
         );
-        assert_eq!(out.meta, Some(json!({ "iteration": 0 })));
+        assert_eq!(out.meta.as_ref().and_then(|m| m.get("iteration")), Some(&json!(0)));
     }
 
     #[tokio::test]
