@@ -40,7 +40,10 @@ pub use proposal::{
     ProposalId, ProposalStatus, ProposalVerification, WorkflowProposal, fingerprint,
 };
 
-pub use run::{RunId, RunOrigin, RunRecord, RunStatus, RunStep, bounded_evidence, bounded_within};
+pub use run::{
+    LEGACY_TRUNCATED_KEY, RunId, RunOrigin, RunRecord, RunStatus, RunStep, TRUNCATED_KEY,
+    bounded_evidence, bounded_within, is_truncated,
+};
 pub use transcript::TranscriptEntry;
 pub use workflow::{
     WorkflowDefaults, WorkflowId, WorkflowRecord, WorkflowRevision, WorkflowSummary,

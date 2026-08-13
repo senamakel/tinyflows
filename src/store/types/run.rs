@@ -13,6 +13,32 @@ use crate::store::types::diagnosis::Diagnosis;
 /// Maximum serialized bytes retained for one step input or output.
 pub(crate) const MAX_EVIDENCE_BYTES: usize = 64 * 1024;
 
+/// The key marking a value that was bounded rather than stored whole.
+///
+/// Part of the on-disk format, so it is a named constant rather than a literal:
+/// a reader that looks for the wrong string does not fail loudly, it silently
+/// renders a truncation wrapper as if it were the value.
+pub const TRUNCATED_KEY: &str = "_flowsTruncated";
+
+/// The key Medulla wrote before this bounding moved into the engine crate.
+///
+/// Run records are written once and never revised, so files carrying it exist
+/// and will keep existing. Recognising it costs one comparison; not recognising
+/// it would make every one of those records read as an untruncated object whose
+/// only fields are `originalBytes` and `preview`.
+pub const LEGACY_TRUNCATED_KEY: &str = "_medullaTruncated";
+
+/// Whether `value` is a truncation wrapper rather than a stored value.
+///
+/// Accepts both [`TRUNCATED_KEY`] and [`LEGACY_TRUNCATED_KEY`], so a host reads
+/// its own history back regardless of which build wrote it.
+#[must_use]
+pub fn is_truncated(value: &serde_json::Value) -> bool {
+    [TRUNCATED_KEY, LEGACY_TRUNCATED_KEY]
+        .iter()
+        .any(|key| value.get(key).and_then(serde_json::Value::as_bool) == Some(true))
+}
+
 /// Keep small evidence intact and summarize values that would bloat history.
 ///
 /// Execution and diagnosis retain the engine's full in-memory value. Only the
@@ -48,7 +74,7 @@ pub fn bounded_within(value: &serde_json::Value, max_bytes: usize) -> serde_json
         .last()
         .unwrap_or(0);
     let bounded = serde_json::json!({
-        "_flowsTruncated": true,
+        TRUNCATED_KEY: true,
         "originalBytes": serialized.len(),
         "preview": &serialized[..end],
     });

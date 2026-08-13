@@ -39,10 +39,10 @@ pub use file::{
 pub use file::{safe_component, workspace_scope, write_atomic};
 
 pub use self::types::{
-    Diagnosis, NoteId, NoteKind, NoteSource, ProposalId, ProposalStatus, ProposalVerification,
-    RunId, RunOrigin, RunRecord, RunStatus, RunStep, TranscriptEntry, WorkflowDefaults,
-    WorkflowError, WorkflowId, WorkflowNote, WorkflowProposal, WorkflowRecord, WorkflowRevision,
-    WorkflowSummary,
+    Diagnosis, LEGACY_TRUNCATED_KEY, NoteId, NoteKind, NoteSource, ProposalId, ProposalStatus,
+    ProposalVerification, RunId, RunOrigin, RunRecord, RunStatus, RunStep, TRUNCATED_KEY,
+    TranscriptEntry, WorkflowDefaults, WorkflowError, WorkflowId, WorkflowNote, WorkflowProposal,
+    WorkflowRecord, WorkflowRevision, WorkflowSummary, is_truncated,
 };
 
 /// An exclusive claim over proposal decisions for one workflow.

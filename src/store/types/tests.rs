@@ -140,7 +140,8 @@ fn durable_step_evidence_is_bounded_without_changing_small_values() {
 
     let large = json!({ "body": "x".repeat(run::MAX_EVIDENCE_BYTES * 2) });
     let bounded = bounded_evidence(&large);
-    assert_eq!(bounded["_flowsTruncated"], true);
+    assert_eq!(bounded[TRUNCATED_KEY], true);
+    assert!(is_truncated(&bounded));
     assert!(bounded["originalBytes"].as_u64().unwrap() > run::MAX_EVIDENCE_BYTES as u64);
     assert!(
         serde_json::to_vec(&bounded).unwrap().len() <= run::MAX_EVIDENCE_BYTES,
@@ -239,4 +240,28 @@ fn an_empty_trigger_is_not_recorded_as_a_value() {
     let record = crate::store::new_run_record("run-1", "demo", 1)
         .with_inputs(&Default::default(), &json!({}));
     assert!(record.trigger.is_none());
+}
+
+#[test]
+fn a_record_written_before_the_marker_was_renamed_still_reads_as_truncated() {
+    // Run records are written once and never revised, so files carrying the old
+    // key exist. A reader that only knew the new one would render the wrapper
+    // as if it were the value — an object whose fields are `originalBytes` and
+    // `preview` — rather than as an elision.
+    let legacy = serde_json::json!({
+        LEGACY_TRUNCATED_KEY: true,
+        "originalBytes": 200_000,
+        "preview": "{\"items\":[",
+    });
+
+    assert!(is_truncated(&legacy));
+}
+
+#[test]
+fn an_ordinary_value_is_not_mistaken_for_a_truncation_wrapper() {
+    // Both directions matter: a stored value that merely *has* the key set to
+    // something other than `true` is a value, not a wrapper.
+    assert!(!is_truncated(&serde_json::json!({ "items": [1, 2, 3] })));
+    assert!(!is_truncated(&serde_json::json!({ TRUNCATED_KEY: false })));
+    assert!(!is_truncated(&serde_json::json!("a string")));
 }
