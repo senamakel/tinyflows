@@ -115,3 +115,49 @@ pub(super) fn contract_gather() -> NodeKindContract {
         ],
     }
 }
+
+pub(super) fn contract_void() -> NodeKindContract {
+    NodeKindContract {
+        kind: "void".to_string(),
+        summary: "Terminal sink: accepts items, discards them, and runs nothing downstream."
+            .to_string(),
+        description: "The branch ends here, on purpose. A branch could always dead-end — a \
+                          node with no outgoing edges terminates — but an unwired port reads \
+                          exactly like a forgotten one, so there was no way to SAY \"this is a \
+                          side effect and nothing waits on it\". This node is that sentence. It \
+                          adds no concurrency: the work upstream still runs inline in its own \
+                          super-step, and only the result is dropped. For work that should \
+                          actually overlap, use `spawn`."
+            .to_string(),
+        config_fields: vec![],
+        ports: PortSpec::new(&["main"], &[]),
+        example: json!({
+            "id": "drop", "kind": "void", "name": "Fire and forget: audit log",
+            "config": {}
+        }),
+        notes: vec![
+            "An outgoing edge is a validation error, and so is having no incoming edge. \
+                 `on_error: \"route\"` is refused for the same reason — an `error` edge is an \
+                 outgoing edge; use \"stop\" or \"continue\"."
+                .to_string(),
+            "It writes {items: [], port: null, discarded: N} into its slot. A node that never \
+                 ran has no slot at all, so \"never activated\", \"activated with nothing to \
+                 drop\" (discarded: 0) and \"dropped N items\" stay distinguishable."
+                .to_string(),
+            "`discarded` counts THIS activation, not a running total: inside a loop body the \
+                 last iteration's value is what survives, and inside a scatter lane it lands \
+                 under lanes.<lane> rather than at the top level."
+                .to_string(),
+            "spawn -> void is the explicit spelling of a ticket no `gate` will ever collect. \
+                 Same abandon semantics as leaving it unwired, but said out loud."
+                .to_string(),
+            "It is the one dead end a scatter lane may have. Every other lane branch must \
+                 reach the `gather`, because a stranded lane's output is invisible rather than \
+                 merely uncollected — a void makes that invisibility the contract."
+                .to_string(),
+            "There is no `reason` config. The node's `name` is where the human explanation \
+                 goes, and unlike a config key it is rendered in the graph."
+                .to_string(),
+        ],
+    }
+}

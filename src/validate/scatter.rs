@@ -22,6 +22,12 @@ pub(super) fn validate_scatter_regions(graph: &WorkflowGraph, errors: &mut Vec<V
         .filter(|n| n.kind == NodeKind::Gather)
         .map(|n| n.id.as_str())
         .collect();
+    let voids: HashSet<&str> = graph
+        .nodes
+        .iter()
+        .filter(|n| n.kind == NodeKind::Void)
+        .map(|n| n.id.as_str())
+        .collect();
 
     // A gather with no scatter waits on lanes nobody will ever open.
     for gather in &gathers {
@@ -103,10 +109,19 @@ pub(super) fn validate_scatter_regions(graph: &WorkflowGraph, errors: &mut Vec<V
             // deliberately never writes the node's top-level slot, its output
             // is not merely uncollected, it is invisible. Wrong answer, not a
             // failure, which is why this is refused rather than warned about.
+            //
+            // A branch ending in `void` is exempt: the rule exists to catch
+            // *accidental* invisibility, and a void is the author declaring it.
+            // The side effects along that branch still happen once per lane;
+            // only the data is dropped, which is what the node means. This does
+            // not reopen the "scatter with no gather at all" hole — a region
+            // whose walk never reaches a gather has no members (see
+            // `region_members`) and is already refused above.
             let reaches_a_gather = gathers
                 .iter()
                 .any(|gather| path_exists(graph, member, gather));
-            if !reaches_a_gather {
+            let reaches_a_void = voids.iter().any(|sink| path_exists(graph, member, sink));
+            if !reaches_a_gather && !reaches_a_void {
                 errors.push(ValidationError::InvalidNodeConfig {
                     node: (*member).to_string(),
                     reason: format!(

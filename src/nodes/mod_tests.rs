@@ -8,7 +8,7 @@ use serde_json::json;
 fn all_kinds() -> Vec<NodeKind> {
     use NodeKind::{
         Agent, Code, Condition, Dedup, HttpRequest, Loop, Memory, Merge, OutputParser, Shell,
-        SplitOut, SubWorkflow, Switch, ToolCall, Transform, Trigger,
+        SplitOut, SubWorkflow, Switch, ToolCall, Transform, Trigger, Void,
     };
     vec![
         Trigger,
@@ -27,6 +27,7 @@ fn all_kinds() -> Vec<NodeKind> {
         Memory,
         Dedup,
         Loop,
+        Void,
     ]
 }
 
