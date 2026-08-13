@@ -3177,8 +3177,8 @@ async fn a_per_node_cap_bounds_one_node_without_throttling_the_step() {
         .run_with_inputs(
             0,
             [
-                crate::graph::GraphInput::start(),
-                crate::graph::GraphInput::to("other"),
+                crate::graph::GraphInput::start(json!(null)),
+                crate::graph::GraphInput::node("other"),
             ],
         )
         .await
