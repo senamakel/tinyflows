@@ -25,6 +25,21 @@ pub enum ValidationError {
     #[error("illegal cycle detected involving node: {0}")]
     IllegalCycle(String),
 
+    /// Two entries in the graph's agent registry share an id, so an
+    /// `agent_ref` naming it would resolve ambiguously.
+    #[error("duplicate agent definition id: {0}")]
+    DuplicateAgentId(String),
+
+    /// An entry in the graph's agent registry is malformed.
+    #[error("invalid agent definition {agent}: {reason}")]
+    InvalidAgentDefinition {
+        /// The offending definition's id, empty when the id itself is the
+        /// problem.
+        agent: String,
+        /// Why the definition is invalid.
+        reason: String,
+    },
+
     /// A node's configuration is invalid for its kind.
     #[error("invalid config for node {node}: {reason}")]
     InvalidNodeConfig {
