@@ -42,19 +42,12 @@ pub async fn run_with_observer(
     // Default (non-injectable) path: a process-local in-memory checkpointer,
     // keyed by the trigger id — identical behavior to before checkpointer
     // injection existed.
-    let checkpointer: Arc<dyn Checkpointer<Value>> =
-        Arc::new(InMemoryCheckpointer::<Value>::default());
-    let thread_id = default_thread_id(workflow)?;
     let (_graph, _thread_id, outcome, _run_ids) = build_and_run(
         workflow,
         input,
         capabilities,
         observer,
-        checkpointer,
-        thread_id,
-        None,
-        None,
-        CancellationToken::new(),
+        RunConfig::new(workflow)?,
     )
     .await?;
     Ok(outcome)
