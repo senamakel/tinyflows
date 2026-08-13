@@ -101,7 +101,7 @@ pub struct AgentDefinition {
     /// motivating case — so a harness must validate it against whatever roots it
     /// permits before handing it to a process, rather than assuming the engine
     /// vetted it.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub working_dir: Option<String>,
 
     /// Advisory ceilings on the harness's loop. See [`AgentLimits`].
