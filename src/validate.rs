@@ -803,6 +803,44 @@ fn validate_loops(graph: &WorkflowGraph, errors: &mut Vec<ValidationError>) {
                 }),
             }
         }
+        if let Some(state) = node.config.get("state")
+            && !state.is_object()
+        {
+            errors.push(ValidationError::InvalidNodeConfig {
+                node: node.id.clone(),
+                reason: "loop `state` must be an object with `init` and/or `update`".to_string(),
+            });
+        }
+        if let Some(emit) = node.config.get("emit")
+            && !matches!(emit.as_str(), Some("items") | Some("state") | Some("both"))
+        {
+            errors.push(ValidationError::InvalidNodeConfig {
+                node: node.id.clone(),
+                reason: format!(
+                    "loop `emit` must be \"items\", \"state\" or \"both\", got {emit}"
+                ),
+            });
+        }
+        // A `success` exit that goes nowhere strands the converged case: the
+        // run would simply end there, which looks like the loop never finished.
+        if node
+            .config
+            .get("success_port")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+            && !graph
+                .edges
+                .iter()
+                .any(|e| e.from_node == node.id && e.from_port == "success")
+        {
+            errors.push(ValidationError::InvalidNodeConfig {
+                node: node.id.clone(),
+                reason: "loop sets `success_port: true` but nothing is wired to its `success` \
+                         port, so a converged loop would strand the run; wire `success` or drop \
+                         the flag"
+                    .to_string(),
+            });
+        }
         if let Some(policy) = node.config.get("on_exceeded")
             && !matches!(policy.as_str(), Some("error") | Some("continue"))
         {
@@ -910,12 +948,21 @@ fn validate_loops(graph: &WorkflowGraph, errors: &mut Vec<ValidationError>) {
     // standing between this graph and a run that spins until the host's wall
     // clock kills it is the trigger's `recursion_limit`. Requiring one of the
     // two makes the bound an authoring decision rather than an accident.
-    let has_recursion_limit = graph
-        .trigger()
-        .and_then(|t| t.config.get("recursion_limit"))
-        .and_then(Value::as_u64)
-        .is_some_and(|n| n > 0);
-    if !has_recursion_limit {
+    // Either run-level bound counts. `max_node_visits` is enforced just as
+    // firmly as `recursion_limit` and gives the *better* failure — it names the
+    // node that ran away, where `recursion_limit` can only say the run did — so
+    // refusing a graph bounded solely by it was refusing a graph that was in
+    // fact bounded, and pushing authors toward the less informative knob.
+    let has_run_level_bound = graph.trigger().is_some_and(|trigger| {
+        ["recursion_limit", "max_node_visits"].iter().any(|key| {
+            trigger
+                .config
+                .get(*key)
+                .and_then(Value::as_u64)
+                .is_some_and(|n| n > 0)
+        })
+    });
+    if !has_run_level_bound {
         for (from, to) in &loop_edges {
             let bounded = nodes_on_cycle(graph, to, from).into_iter().any(|id| {
                 graph
