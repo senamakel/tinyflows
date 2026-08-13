@@ -237,10 +237,23 @@ async fn a_loop_head_that_is_also_a_fan_in_iterates() {
 
     let errors = tinyflows::validate::validate_all(&graph);
     assert!(
-        errors
-            .iter()
-            .any(|e| matches!(e, ValidationError::IllegalCycle(id) if id == "l")),
-        "a fan-in loop head should be refused, got: {errors:?}"
+        errors.is_empty(),
+        "a fan-in loop head is legal now that the barrier ignores back-edge \
+         arrivals, got: {errors:?}"
+    );
+
+    let outcome = run_guarded(&graph)
+        .await
+        .expect("the loop should run rather than deadlock");
+
+    assert_eq!(
+        outcome.output["nodes"]["l"]["iteration"], 2,
+        "the loop should consume both its iterations; a count of 1 means the \
+         back-edge re-entry was swallowed by the fan-in barrier again"
+    );
+    assert!(
+        outcome.output["nodes"]["out"].get("items").is_some(),
+        "the loop should still leave through `done` into the downstream node"
     );
 }
 
