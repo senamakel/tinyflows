@@ -1148,49 +1148,23 @@ where
         }
     }
 
-    /// Runs one node handler under the graph's node-retry policy.
+    /// Runs one node handler.
     ///
-    /// Builds a fresh handler future (and re-clones the context) for each
-    /// attempt, so a retried node re-runs from its start — matching the durable
-    /// execution model, where a node is never suspended mid-flight. On a
-    /// [retryable][crate::harness::retry::is_retryable] error, when a
-    /// [`RetryPolicy`](crate::harness::retry::RetryPolicy) is configured and
-    /// permits another attempt, it emits
-    /// [`GraphEvent::NodeRetryScheduled`], sleeps the (opt-in) backoff, and
-    /// retries. Non-retryable errors, absence of a policy, or an exhausted
-    /// attempt budget return the error unchanged. The per-node timeout still
-    /// bounds every individual attempt via [`Self::run_node_future`].
+    /// Builds the handler future and re-clones the context, then bounds it with
+    /// the graph's per-node timeout via [`Self::run_node_future`]. Node-level
+    /// retry is deliberately not handled here: tinyflows applies its own
+    /// per-node `on_error`/retry policy inside the node handler it installs, so
+    /// a second retry loop at this layer would multiply the attempt budget.
     async fn run_node_with_retry(
         &self,
         node_id: &NodeId,
         handler: &Arc<NodeHandler<State, Update>>,
         state: &State,
         ctx: NodeContext,
-        step: usize,
+        _step: usize,
     ) -> Result<NodeResult<Update>> {
-        let mut attempt = 0usize;
-        loop {
-            let fut = handler(state.clone(), ctx.clone());
-            match self.run_node_future(node_id, fut).await {
-                Ok(result) => return Ok(result),
-                Err(error) => {
-                    let retry = self
-                        .node_retry
-                        .as_ref()
-                        .filter(|policy| policy.should_retry(attempt) && is_retryable(&error));
-                    let Some(policy) = retry else {
-                        return Err(error);
-                    };
-                    attempt += 1;
-                    self.emit(GraphEvent::NodeRetryScheduled {
-                        node: node_id.clone(),
-                        step,
-                        attempt,
-                    });
-                    policy.sleep_backoff(attempt).await;
-                }
-            }
-        }
+        let fut = handler(state.clone(), ctx.clone());
+        self.run_node_future(node_id, fut).await
     }
 
     /// Folds a single successful branch result into the step accumulators.
