@@ -15,6 +15,7 @@ pub mod scatter;
 pub mod split_out;
 pub mod switch;
 pub mod transform;
+pub mod void;
 
 pub use condition::ConditionNode;
 pub use dedup::DedupNode;
