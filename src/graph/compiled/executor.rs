@@ -582,6 +582,7 @@ where
             let StepRun {
                 updates,
                 goto_map,
+                completed: completed_indices,
                 interrupts,
                 failure,
             } = match run_result {
@@ -1272,6 +1273,7 @@ where
         let mut updates: Vec<Update> = Vec::new();
         let mut goto_map: HashMap<usize, Vec<RouteTarget>> = HashMap::new();
         let mut interrupts: Vec<(usize, Interrupt)> = Vec::new();
+        let mut completed: Vec<usize> = Vec::new();
         let mut failure: Option<StepFailure> = None;
 
         for (index, activation) in active.iter().enumerate() {
@@ -1335,13 +1337,17 @@ where
                 visited,
             ) {
                 interrupts.push(found);
+                // Sequential execution stops here: the rest of the step is never
+                // started, so those branches stay absent from `completed`.
                 break;
             }
+            completed.push(index);
         }
 
         Ok(StepRun {
             updates,
             goto_map,
+            completed,
             interrupts,
             failure,
         })
@@ -1472,6 +1478,7 @@ where
         let mut updates: Vec<Update> = Vec::new();
         let mut goto_map: HashMap<usize, Vec<RouteTarget>> = HashMap::new();
         let mut interrupts: Vec<(usize, Interrupt)> = Vec::new();
+        let mut completed: Vec<usize> = Vec::new();
         let mut failure: Option<StepFailure> = None;
 
         for (index, (activation, result)) in active.iter().zip(results).enumerate() {
@@ -1515,12 +1522,15 @@ where
                 visited,
             ) {
                 interrupts.push(found);
+            } else {
+                completed.push(index);
             }
         }
 
         Ok(StepRun {
             updates,
             goto_map,
+            completed,
             interrupts,
             failure,
         })
