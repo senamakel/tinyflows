@@ -1016,6 +1016,9 @@ fn build_graph(
     let mut builder = GraphBuilder::<Value, Value>::new()
         .with_parallel(true)
         .set_reducer(MergeReducer);
+    if let Some(limit) = max_concurrency {
+        builder = builder.with_max_concurrency(limit);
+    }
     if let Some(limit) = recursion_limit {
         builder = builder.with_recursion_limit(limit as usize);
     } else {
