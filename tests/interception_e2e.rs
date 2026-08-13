@@ -62,7 +62,7 @@ fn graph() -> WorkflowGraph {
             node(
                 "after",
                 NodeKind::Transform,
-                json!({ "set": { "seen": "=item.json" } }),
+                json!({ "set": { "seen": "=item" } }),
             ),
         ],
         edges: vec![edge("t", "call"), edge("call", "after")],
