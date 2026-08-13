@@ -412,6 +412,47 @@ pub fn validate_all(graph: &WorkflowGraph) -> Vec<ValidationError> {
         }
     }
 
+    // `void` node topology checks. The kind asserts exactly one thing — "the
+    // branch ends here, deliberately" — so the two ways to contradict it are
+    // refused rather than absorbed. An outgoing edge would be dead (a leaf
+    // lowers to the engine's `END` sentinel) or would make the node not a void;
+    // and a void nothing routes into declares nothing at all, since a node with
+    // no effect and no input is the one orphan that cannot be work in progress.
+    // There is no general orphan check in this crate, and adding one is out of
+    // scope; this rule is safe precisely because the kind is new, so no
+    // existing graph can trip it.
+    for node in &graph.nodes {
+        if node.kind != NodeKind::Void {
+            continue;
+        }
+        let mut outgoing: Vec<&str> = graph
+            .edges
+            .iter()
+            .filter(|e| e.from_node == node.id)
+            .map(|e| e.to_node.as_str())
+            .collect();
+        outgoing.sort_unstable();
+        outgoing.dedup();
+        if !outgoing.is_empty() {
+            errors.push(ValidationError::InvalidNodeConfig {
+                node: node.id.clone(),
+                reason: format!(
+                    "`void` is a terminal sink and may not have outgoing edges (found \
+                     {outgoing:?}); remove the edge, or use a different kind if the branch is \
+                     meant to continue"
+                ),
+            });
+        }
+        if !graph.edges.iter().any(|e| e.to_node == node.id) {
+            errors.push(ValidationError::InvalidNodeConfig {
+                node: node.id.clone(),
+                reason: "`void` has no incoming edge, so it can never run and declares nothing; \
+                         wire the branch it is meant to terminate, or delete it"
+                    .to_string(),
+            });
+        }
+    }
+
     // A `condition` node's outgoing edges must emit on `from_port` "true" or
     // "false" — routing is keyed EXCLUSIVELY on `from_port` (see
     // `engine::outgoing_by_port` / `handler_routing`), so any other value
