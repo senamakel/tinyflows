@@ -158,6 +158,8 @@ impl ValidationError {
             Self::MultipleTriggers(_) => "multiple_triggers",
             Self::UnknownNode(_) => "unknown_node",
             Self::DuplicateNodeId(_) => "duplicate_node_id",
+            Self::DuplicateAgentId(_) => "duplicate_agent_id",
+            Self::InvalidAgentDefinition { .. } => "invalid_agent_definition",
             Self::IllegalCycle(_) => "illegal_cycle",
             Self::InvalidNodeConfig { .. } => "invalid_node_config",
             Self::MissingErrorRoute(_) => "missing_error_route",
@@ -178,6 +180,8 @@ impl ValidationError {
     /// `SchemaVersionTooNew`), for `MultipleTriggers` (which carries many ids in
     /// its payload rather than a single anchor), and for the declared-input
     /// errors (anchored to an input, not a node — see [`Self::input_name`]).
+    /// Also `None` for the agent-registry errors, which are anchored to an agent
+    /// definition rather than to any one node that references it.
     /// Lets a host attach the error to the right node in a structured
     /// validation report.
     pub fn node_id(&self) -> Option<&str> {
@@ -196,7 +200,9 @@ impl ValidationError {
             | Self::DuplicateInputName(_)
             | Self::InvalidInputName(_)
             | Self::InputDefaultTypeMismatch { .. }
-            | Self::RequiredInputWithDefault(_) => None,
+            | Self::RequiredInputWithDefault(_)
+            | Self::DuplicateAgentId(_)
+            | Self::InvalidAgentDefinition { .. } => None,
         }
     }
 
