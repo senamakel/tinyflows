@@ -21,6 +21,13 @@
 //! A graph also declares its parameters — see [`WorkflowInput`] and
 //! [`resolve_inputs`]. They are the workflow's public signature, validated
 //! before a run starts and addressed from node config as `=inputs.<name>`.
+//!
+//! ## Agents
+//!
+//! A graph may also declare reusable **agent types** — see [`AgentDefinition`]
+//! and [`WorkflowGraph::agents`]. An `agent` node selects one by `agent_ref` and
+//! may narrow it (tighter limits, fewer tools, extra instructions), so one
+//! definition serves many nodes and travels with the workflow between hosts.
 
 mod agent;
 mod inputs;
