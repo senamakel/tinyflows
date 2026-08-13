@@ -235,9 +235,48 @@ impl StateReducer<Value, Value> for MergeReducer {
     }
 }
 
+/// The sentinel key that makes an update *assign* rather than merge.
+///
+/// An update object shaped exactly `{"$replace": v}` sets its slot to `v`
+/// wholesale.
+pub(crate) const REPLACE: &str = "$replace";
+
+/// Wraps `value` so [`merge`] assigns it instead of merging into what is there.
+pub(crate) fn replace(value: Value) -> Value {
+    json!({ REPLACE: value })
+}
+
 /// Recursively merges `update` into `base`: objects merge key-by-key; any other
-/// value (array, scalar, null) overwrites.
+/// value (array, scalar, null) overwrites; and an update of exactly
+/// `{"$replace": v}` assigns `v` wholesale.
+///
+/// # Why the sentinel exists
+///
+/// Key-by-key merging means an object-valued slot can only ever *gain* keys. A
+/// node that keeps state across its own activations — a `loop` node's
+/// accumulator — could therefore never drop one: `{"attempts": [...], "err":
+/// "x"}` has no way to become `{"attempts": [...]}`. Arrays and scalars already
+/// overwrite, so this is specifically the object case, which is the interesting
+/// one for an accumulator.
+///
+/// # Why user data cannot be mistaken for it
+///
+/// `merge` only ever recurses through the object-valued subtrees of an *update*,
+/// and the only object subtrees an update contains are the root, `"nodes"`, each
+/// node's slot, and the `meta` values a node records about itself. Item payloads
+/// live inside `slot["items"]`, which is an **array** — it hits the overwrite arm
+/// without being walked into. So a workflow whose data happens to contain a
+/// `$replace` key is never examined by this function, and cannot trigger it.
 fn merge(base: &mut Value, update: Value) {
+    // Checked before the object/object arm: the sentinel *is* an object, and
+    // merging it key-by-key would write a literal `$replace` key into state.
+    if let Value::Object(map) = &update
+        && map.len() == 1
+        && let Some(value) = map.get(REPLACE)
+    {
+        *base = value.clone();
+        return;
+    }
     match (base, update) {
         (Value::Object(base), Value::Object(update)) => {
             for (key, value) in update {
