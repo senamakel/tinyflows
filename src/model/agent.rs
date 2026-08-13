@@ -88,6 +88,22 @@ pub struct AgentDefinition {
     #[serde(default)]
     pub provider: Option<String>,
 
+    /// Working directory the agent should run in, when it runs somewhere with a
+    /// filesystem — a repo checkout, a sandbox root, a scratch workspace.
+    ///
+    /// Optional and opaque: the engine never touches the filesystem, never
+    /// canonicalizes this, and never checks that it exists. `None` means "no
+    /// author preference"; the harness's own default applies.
+    ///
+    /// This is **untrusted authoring input**, exactly like the path fields on
+    /// [`ShellRequest`](crate::caps::ShellRequest). It may be an
+    /// `=`-expression — a checkout path produced by an upstream node is the
+    /// motivating case — so a harness must validate it against whatever roots it
+    /// permits before handing it to a process, rather than assuming the engine
+    /// vetted it.
+    #[serde(default)]
+    pub working_dir: Option<String>,
+
     /// Advisory ceilings on the harness's loop. See [`AgentLimits`].
     #[serde(default)]
     pub limits: AgentLimits,
