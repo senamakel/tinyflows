@@ -384,7 +384,15 @@ pub enum ContextSourceKind {
     /// hands an agent an upstream node's output as prose.
     Text {
         /// The block body, literal or `=`-expression.
-        text: String,
+        ///
+        /// Typed as a [`Value`] rather than a `String` because an expression
+        /// resolves to whatever the data holds: `"=item.count"` yields a number
+        /// and `"=item.record"` an object. Rejecting those would make the
+        /// commonest binding in the whole feature fail on a type the author
+        /// never wrote. A non-string value is rendered as compact JSON for the
+        /// block's `text` and carried structurally in its `data`, so a harness
+        /// can use whichever it prefers.
+        text: Value,
     },
 
     /// The node's input items, as a JSON array — the commonest way to hand an
@@ -517,7 +525,12 @@ mod tests {
                 .unwrap();
         assert_eq!(source.label.as_deref(), Some("Greeting"));
         assert!(!source.optional, "sources are required by default");
-        assert_eq!(source.kind, ContextSourceKind::Text { text: "hello".into() });
+        assert_eq!(
+            source.kind,
+            ContextSourceKind::Text {
+                text: Value::from("hello")
+            }
+        );
     }
 
     #[test]

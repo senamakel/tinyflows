@@ -556,7 +556,9 @@ fn validate_agents(graph: &WorkflowGraph, errors: &mut Vec<ValidationError>) {
     fn context_source_problem(source: &ContextSource, index: usize) -> Option<String> {
         let label = source.label_or_index(index);
         match &source.kind {
-            ContextSourceKind::Text { text } if text.is_empty() => {
+            ContextSourceKind::Text { text }
+                if text.is_null() || text.as_str().is_some_and(str::is_empty) =>
+            {
                 Some(format!("context source `{label}` has empty `text`"))
             }
             ContextSourceKind::Memory { scope, query, .. } => {

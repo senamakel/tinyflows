@@ -203,7 +203,16 @@ pub(crate) async fn resolve_context(
         let kind = source.kind.as_str();
 
         let resolved: Option<ContextBlock> = match &source.kind {
-            ContextSourceKind::Text { text } => Some(ContextBlock::text(&label, kind, text)),
+            ContextSourceKind::Text { text } => Some(match text {
+                Value::String(s) => ContextBlock::text(&label, kind, s),
+                Value::Null => ContextBlock::text(&label, kind, ""),
+                other => ContextBlock {
+                    label: label.clone(),
+                    source_kind: kind.to_string(),
+                    text: Some(other.to_string()),
+                    data: other.clone(),
+                },
+            }),
             ContextSourceKind::Items => Some(ContextBlock::data(
                 &label,
                 kind,
