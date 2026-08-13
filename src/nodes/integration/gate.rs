@@ -277,15 +277,15 @@ impl NodeExecutor for GateNode {
                     results.len()
                 ))),
                 OnTimeout::Route => Ok(NodeOutput::routed(
-                    emit_items(results, &awaiting),
+                    emit_items(results),
                     "timeout",
                 )
                 .with_meta(meta)),
                 OnTimeout::Partial => {
-                    Ok(NodeOutput::main(emit_items(results, &awaiting)).with_meta(meta))
+                    Ok(NodeOutput::main(emit_items(results)).with_meta(meta))
                 }
             },
-            Release::Emit => Ok(NodeOutput::main(emit_items(results, &awaiting)).with_meta(meta)),
+            Release::Emit => Ok(NodeOutput::main(emit_items(results)).with_meta(meta)),
         }
     }
 }
@@ -296,8 +296,7 @@ impl NodeExecutor for GateNode {
 /// their tickets settle in different orders, and downstream must not be able to
 /// tell — so results are sorted back into the order the tickets were listed,
 /// and each carries its `paired_item` so the correlation survives.
-fn emit_items(mut results: Vec<(usize, Value)>, awaiting: &[Awaited]) -> Vec<Item> {
-    let _ = awaiting;
+fn emit_items(mut results: Vec<(usize, Value)>) -> Vec<Item> {
     results.sort_by_key(|(index, _)| *index);
     results
         .into_iter()
@@ -355,7 +354,7 @@ mod tests {
             (0, json!("first")),
             (1, json!("second")),
         ];
-        let items = emit_items(results, &awaiting);
+        let items = emit_items(results);
         let values: Vec<&Value> = items.iter().map(|item| &item.json).collect();
         assert_eq!(
             values,
