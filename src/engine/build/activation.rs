@@ -19,6 +19,10 @@ pub(super) struct HandlerData {
     pub(super) has_error_edge: bool,
     pub(super) is_trigger: bool,
     pub(super) node_timeout: Option<std::time::Duration>,
+    /// The step-debugging hook, when one is attached. `None` on every ordinary
+    /// run, and the reason interception costs nothing unless asked for: with no
+    /// interceptor no [`StepFrame`] is ever built.
+    pub(super) interceptor: Option<Arc<dyn StepInterceptor>>,
 }
 
 impl HandlerData {
