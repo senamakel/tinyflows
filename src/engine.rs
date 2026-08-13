@@ -22,8 +22,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use serde_json::{Map, Value, json};
-use tinyagents::{
-    Command, CompiledGraph, END, GraphBuilder, Interrupt, NodeResult, StateReducer, TinyAgentsError,
+use crate::graph::{
+    Command, CompiledGraph, END, GraphBuilder, GraphError, Interrupt, NodeResult, StateReducer,
 };
 
 /// Checkpointer types re-exported from `tinyagents` so a host can name and
@@ -37,7 +37,7 @@ use tinyagents::{
 /// [`InMemoryCheckpointer`] is the process-local default used by [`run`],
 /// [`run_with_observer`], [`run_resumable`], and [`resume`]; [`DurabilityMode`]
 /// configures how aggressively a checkpointer persists.
-pub use tinyagents::{Checkpointer, DurabilityMode, FileCheckpointer, InMemoryCheckpointer};
+pub use crate::graph::{Checkpointer, DurabilityMode, FileCheckpointer, InMemoryCheckpointer};
 
 /// Graph-observability types re-exported from `tinyagents` so a host can
 /// journal a run's durable [`GraphObservation`]s without taking a direct
@@ -50,7 +50,7 @@ pub use tinyagents::{Checkpointer, DurabilityMode, FileCheckpointer, InMemoryChe
 /// read the slice back (`journal.read_from(run_id, 0)`) and e.g. export it to
 /// Langfuse. [`InMemoryGraphEventJournal`] is a process-local implementation
 /// suitable for per-run capture.
-pub use tinyagents::{GraphEventJournal, GraphObservation, InMemoryGraphEventJournal};
+pub use crate::graph::{GraphEventJournal, GraphObservation, InMemoryGraphEventJournal};
 
 use crate::caps::Capabilities;
 use crate::compiler::CompiledWorkflow;
@@ -211,7 +211,7 @@ pub struct JournaledRunOutcome {
 struct MergeReducer;
 
 impl StateReducer<Value, Value> for MergeReducer {
-    fn apply(&self, mut state: Value, update: Value) -> tinyagents::Result<Value> {
+    fn apply(&self, mut state: Value, update: Value) -> crate::graph::Result<Value> {
         merge(&mut state, update);
         Ok(state)
     }
@@ -628,7 +628,7 @@ fn reaches_via_port(
 /// reducer merges node slots key-by-key: omitting `port` would preserve a port
 /// emitted by an earlier activation and could misroute loops after a node
 /// recovers from an error.
-fn items_update(node_id: &str, items: &[Item], port: Option<&str>) -> tinyagents::Result<Value> {
+fn items_update(node_id: &str, items: &[Item], port: Option<&str>) -> crate::graph::Result<Value> {
     items_update_with_meta(node_id, items, port, None)
 }
 
@@ -646,7 +646,7 @@ fn items_update_with_meta(
     items: &[Item],
     port: Option<&str>,
     meta: Option<&Value>,
-) -> tinyagents::Result<Value> {
+) -> crate::graph::Result<Value> {
     let mut slot = Map::new();
     slot.insert("items".to_string(), serde_json::to_value(items)?);
     slot.insert(
@@ -1162,7 +1162,7 @@ fn build_graph(
                         }
                         // No error branch to route to — fail the run so the denial
                         // is not silently swallowed.
-                        return Err(TinyAgentsError::Graph(format!(
+                        return Err(GraphError::Graph(format!(
                             "approval gate '{}' was denied and has no `error` port to route to",
                             node.id
                         )));
@@ -1449,7 +1449,7 @@ fn build_graph(
                             // "stop" (default) and any unknown policy fail the run.
                             //
                             // Stash the structured error before handing
-                            // tinyagents a string: `TinyAgentsError::Graph` is
+                            // tinyagents a string: `GraphError::Graph` is
                             // the only channel out of a handler, so without this
                             // every node failure would reach the caller flattened
                             // into `EngineError::Capability` and a host could not
@@ -1470,7 +1470,7 @@ fn build_graph(
                                 // unchanged, so every path that only sees the
                                 // stringified error reads exactly what it did
                                 // before; the sink is strictly additive.
-                                Err(TinyAgentsError::Graph(message))
+                                Err(GraphError::Graph(message))
                             }
                         }
                     }
@@ -1688,8 +1688,8 @@ fn build_graph(
         .and_then(Value::as_u64)
         .filter(|n| *n > 0)
     {
-        let defaults = tinyagents::graph::RecursionPolicy::default();
-        compiled = compiled.with_recursion_policy(tinyagents::graph::RecursionPolicy {
+        let defaults = crate::graph::RecursionPolicy::default();
+        compiled = compiled.with_recursion_policy(crate::graph::RecursionPolicy {
             max_visits_per_node: Some(max_visits as usize),
             // Keep whatever step budget `recursion_limit` asked for; the
             // policy's own default (1000) must not quietly become a second,
