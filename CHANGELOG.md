@@ -9,6 +9,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Configurable agents.** An `agent` node can now be given dynamic context,
+  an explicit tool allow-list, a model and provider, a working directory,
+  advisory limits, and arbitrary harness metadata — while the agent
+  *implementation* stays entirely with the embedding harness. tinyflows runs no
+  agentic loop: it assembles a typed `caps::AgentRunRequest` and the harness
+  executes it.
+  - `WorkflowGraph::agents`: a top-level registry of reusable
+    `model::AgentDefinition`s (id, name, description, instructions, model,
+    provider, working_dir, tools, context, limits, metadata), mirroring
+    `inputs`. A node's `agent_ref` resolves here first, then against the
+    harness's registry, then passes through as a bare id.
+  - New `agent` node config keys, all optional: `instructions`, `model`,
+    `provider`, `working_dir`, `context`, `limits`, `metadata` (`prompt`,
+    `agent_ref`, `tools`, `output_parser`, `connection_ref` keep their meaning).
+    A node may only **narrow** its agent definition — instructions append,
+    context appends, tools intersect, limits take the lower bound.
+  - `model::ContextSource`: declarative dynamic context — `text` (literal or
+    `=`-expression), `items`, `memory` and `flavour` (via the existing
+    `MemoryProvider`), and `host` (expanded by the harness). An unresolvable
+    source fails the node unless it sets `optional: true`.
+  - `model::AgentLimits`: `max_steps`, `max_tool_calls`, `agent_timeout_secs`
+    (whole run) and `tool_timeout_secs` (per tool call).
+  - `AgentRunner` gains four **defaulted** methods — `run`, `resolve_agent`,
+    `list_agents`, `resolve_context`, `resolve_tools` — plus the value types
+    `AgentRunRequest`, `AgentRunOutcome`, `StopReason`, `ContextBlock`,
+    `ToolDescriptor`, `AgentRunIdentity`, `AgentModelSelection`, `AgentUsage`.
+  - `StopReason` distinguishes `Finished` from `LimitStop` and `Paused`, so a
+    partial or human-blocked run is no longer indistinguishable from an answer.
+    Surfaced on the item envelope's new `meta` key as `=item.meta.stop`.
+  - `validate::unresolved_agent_refs` reports refs the graph does not declare,
+    for hosts that want author-time resolution against their own registry.
+  - Author-time validation: duplicate agent ids, literal-only `agent_ref` /
+    tool `slug` / tool `connection_ref` / memory `scope`, trailing-`.*`-only
+    tool patterns, positive limits, and a node that tries to widen an in-graph
+    agent's tool grants.
+  - Mocks: `MockAgentHarness` (typed seam), `MockLimitedAgentRunner`,
+    `MockPausingAgentRunner`.
+
+  **This release is additive.** `AgentRunner::run_agent` is unchanged and
+  remains the trait's only required method; the default `run` forwards the
+  node's resolved config to it verbatim, so a host written against the previous
+  release compiles untouched and behaves byte-identically. `Capabilities` gains
+  no fields, and the item envelope's `json` / `text` / `raw` are unchanged. The
+  only source-level change is the new `agents` field on `WorkflowGraph` (and
+  `agents` on `NodeContext`): JSON round-trips unaffected, but code
+  constructing either by exhaustive struct literal needs `..Default::default()`
+  or the new field. To move off the shim, override `AgentRunner::run` and map
+  your harness's real stop reason onto `StopReason` — leaving it defaulted
+  reports every run as `Finished`.
+
 - A `shell` node kind that runs a shell script — inline via `config.source` or
   from a file via `config.script_path` — with an optional `interpreter`
   (`sh`/`bash`), `cwd`, and `env`. A non-zero exit fails the step; a successful
