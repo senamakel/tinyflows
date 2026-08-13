@@ -278,13 +278,68 @@ fn merge(base: &mut Value, update: Value) {
         *base = value.clone();
         return;
     }
-    match (base, update) {
-        (Value::Object(base), Value::Object(update)) => {
+    match update {
+        Value::Object(update) => {
+            // Recurse even when this subtree does not exist yet. Assigning the
+            // incoming object wholesale would leave any nested `$replace`
+            // sentinel as literal state on its first write.
+            if !base.is_object() {
+                *base = Value::Object(Map::new());
+            }
+            let base = base.as_object_mut().expect("object created above");
             for (key, value) in update {
                 merge(base.entry(key).or_insert(Value::Null), value);
             }
         }
-        (base, update) => *base = update,
+        update => *base = update,
+    }
+}
+
+/// Cancels background tasks that a cancelled run started.
+///
+/// A `spawn` hands task ownership to the host runner. Merely stopping graph
+/// scheduling does not stop that work, so without this pass a cancellation
+/// between `spawn` and `gate` leaks every issued ticket. The runner contract
+/// makes cancellation a no-op for already-settled work, so every issued ticket
+/// can be handed back without racing an extra poll against task completion.
+async fn cancel_spawned_tasks(
+    workflow: &CompiledWorkflow,
+    state: &Value,
+    capabilities: &Capabilities,
+) {
+    let Some(runner) = capabilities.tasks.as_ref() else {
+        return;
+    };
+    for spawn in workflow
+        .graph
+        .nodes
+        .iter()
+        .filter(|node| node.kind == NodeKind::Spawn)
+    {
+        let Some(slot) = state.get("nodes").and_then(|nodes| nodes.get(&spawn.id)) else {
+            continue;
+        };
+        let mut item_lists: Vec<&Vec<Value>> = slot
+            .get("items")
+            .and_then(Value::as_array)
+            .into_iter()
+            .collect();
+        item_lists.extend(
+            slot.get("lanes")
+                .and_then(Value::as_object)
+                .into_iter()
+                .flat_map(|lanes| lanes.values())
+                .filter_map(|lane| lane.get("items").and_then(Value::as_array)),
+        );
+        for ticket in item_lists.into_iter().flatten().filter_map(|item| {
+            item.get("json")
+                .and_then(|json| json.get("ticket"))
+                .and_then(Value::as_str)
+        }) {
+            if let Err(error) = runner.cancel(ticket).await {
+                tracing::warn!(%ticket, %error, "failed to cancel spawned task");
+            }
+        }
     }
 }
 
@@ -1205,11 +1260,10 @@ fn build_graph(
         // Successors on the emitted port, needed only inside a lane: `Plain`
         // routing normally rides static edges, but a lane has to re-schedule
         // every successor as a `Send`, so it needs the target list explicitly.
-        let plain_targets: Vec<String> = graph
-            .edges
+        let plain_targets_by_port = outgoing_by_port(graph, &node.id);
+        let plain_targets: Vec<String> = plain_targets_by_port
             .iter()
-            .filter(|e| e.from_node == node.id)
-            .map(|e| e.to_node.clone())
+            .flat_map(|(_, targets)| targets.iter().cloned())
             .collect();
         // Which successors end a lane. Routing to one of these is a plain
         // activation, so the lanes converge on it instead of each running their
@@ -1240,6 +1294,7 @@ fn build_graph(
             let token = token.clone();
             let routing = routing.clone();
             let plain_targets = plain_targets.clone();
+            let plain_targets_by_port = plain_targets_by_port.clone();
             let gather_nodes = gather_nodes.clone();
             // The resume value delivered to this node on a checkpointed resume, if
             // any. A bare `true` means "approve the interrupted gate"; a structured
@@ -1302,7 +1357,11 @@ fn build_graph(
                     if let Some(lane) = lane.as_ref() {
                         let emitted = port.unwrap_or("main");
                         let targets: Vec<String> = match &routing {
-                            HandlerRouting::Plain => plain_targets.clone(),
+                            HandlerRouting::Plain => plain_targets_by_port
+                                .iter()
+                                .find(|(port, _)| port == emitted)
+                                .map(|(_, targets)| targets.clone())
+                                .unwrap_or_default(),
                             HandlerRouting::FanOut(targets) => targets.clone(),
                             HandlerRouting::PortCommand(groups) => groups
                                 .iter()
@@ -1831,18 +1890,46 @@ fn build_graph(
                         };
                         match on_error {
                             // Turn the failure into data on the default port.
-                            "continue" => Ok(emit(
-                                items_update(&node.id, &[error_item(&node.id, &err)], None)?,
-                                None,
-                                &[error_item(&node.id, &err)],
-                            )),
+                            "continue" => {
+                                let item = error_item(&node.id, &err);
+                                let update = match lane.as_ref() {
+                                    Some(lane) => lane_items_update(
+                                        &node.id,
+                                        lane,
+                                        std::slice::from_ref(&item),
+                                        None,
+                                        "ok",
+                                        None,
+                                    )?,
+                                    None => items_update(
+                                        &node.id,
+                                        std::slice::from_ref(&item),
+                                        None,
+                                    )?,
+                                };
+                                Ok(emit(update, None, std::slice::from_ref(&item)))
+                            }
                             // Turn the failure into data on the `error` port so the
                             // graph can route it to a recovery sub-graph.
-                            "route" => Ok(emit(
-                                items_update(&node.id, &[error_item(&node.id, &err)], Some("error"))?,
-                                Some("error"),
-                                &[error_item(&node.id, &err)],
-                            )),
+                            "route" => {
+                                let item = error_item(&node.id, &err);
+                                let update = match lane.as_ref() {
+                                    Some(lane) => lane_items_update(
+                                        &node.id,
+                                        lane,
+                                        std::slice::from_ref(&item),
+                                        Some("error"),
+                                        "ok",
+                                        None,
+                                    )?,
+                                    None => items_update(
+                                        &node.id,
+                                        std::slice::from_ref(&item),
+                                        Some("error"),
+                                    )?,
+                                };
+                                Ok(emit(update, Some("error"), std::slice::from_ref(&item)))
+                            }
                             // "stop" (default) and any unknown policy fail the run.
                             //
                             // Stash the structured error before handing
@@ -1857,6 +1944,23 @@ fn build_graph(
                             // may produce several.
                             _ => {
                                 let message = err.to_string();
+                                // A lane failure belongs to its gather, whose
+                                // `on_lane_error` policy decides whether to
+                                // collect, skip, or fail the overall run. Record
+                                // it in the disjoint lane slot and carry the lane
+                                // to the gather instead of aborting here.
+                                if let Some(lane) = lane.as_ref() {
+                                    let meta = json!({ "error": message });
+                                    let update = lane_items_update(
+                                        &node.id,
+                                        lane,
+                                        &[],
+                                        None,
+                                        "failed",
+                                        Some(&meta),
+                                    )?;
+                                    return Ok(emit(update, None, &[]));
+                                }
                                 let mut slot =
                                     terminal_error.lock().expect("terminal error mutex poisoned");
                                 if slot.is_none() {
@@ -2269,6 +2373,10 @@ async fn build_and_run(
         .iter()
         .map(|interrupt| interrupt.id.clone())
         .collect();
+
+    if token.is_cancelled() {
+        cancel_spawned_tasks(workflow, &execution.state, capabilities).await;
+    }
 
     tracing::info!(
         steps = execution.steps,
@@ -2957,6 +3065,10 @@ mod merge_tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "engine_merge_tests.rs"]
+mod merge_property_tests;
 
 #[cfg(test)]
 mod lane_context_tests {
