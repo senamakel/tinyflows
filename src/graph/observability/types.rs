@@ -22,8 +22,7 @@ use crate::graph::error::Result;
 use crate::graph::status::GraphRunStatus;
 use crate::graph::stream::{GraphEvent, GraphEventSink};
 use crate::graph::ids::{CheckpointId, EventId, GraphId, NodeId, RunId, ThreadId};
-use crate::harness::observability::AppendWorker;
-use crate::harness::store::AppendStore;
+use crate::graph::worker::AppendWorker;
 
 // ---------------------------------------------------------------------------
 // GraphObservation
@@ -282,18 +281,6 @@ pub trait GraphEventJournal: Send + Sync {
 pub struct InMemoryGraphEventJournal {
     /// `run_id → ordered observations`.
     pub(crate) runs: Arc<Mutex<HashMap<String, Vec<GraphObservation>>>>,
-}
-
-/// [`GraphEventJournal`] backed by any [`AppendStore`].
-///
-/// Each run's observations are appended to the store under a stream named by
-/// the run id, so `read_from` resumes from a durable offset. Pair with
-/// [`crate::harness::store::JsonlAppendStore`] for a local durable journal or
-/// [`crate::harness::store::InMemoryAppendStore`] for deterministic tests.
-#[derive(Clone, Debug)]
-pub struct StoreGraphEventJournal<A: AppendStore> {
-    /// The backing append store; stream key is the run id.
-    pub(crate) store: A,
 }
 
 // ---------------------------------------------------------------------------
