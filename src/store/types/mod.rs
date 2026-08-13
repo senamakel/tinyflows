@@ -19,10 +19,14 @@
 //! - [`note`] — what the host has learned about a workflow across runs.
 //! - [`proposal`] — a graph change suggested but not yet made.
 //! - [`error`] — the failure vocabulary every surface reports through.
-//! - [`diagnosis`] — why a failed run failed, in terms an author can act on.
 //! - [`transcript`] — one line of what an agent did inside a step.
+//!
+//! Why a failed run failed, in terms an author can act on, is
+//! [`crate::diagnostics`] — reading a run's steps is a pure function of the
+//! engine's own records, so it is not gated behind this feature and is
+//! re-exported here only for the callers that always reached it through
+//! `store::types`.
 
-pub mod diagnosis;
 mod error;
 mod note;
 mod proposal;
