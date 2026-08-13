@@ -64,6 +64,9 @@ pub struct CompiledGraph<State, Update> {
     pub(crate) parallel: bool,
     /// Upper bound on concurrently-running branches per step (`None` = unbounded).
     pub(crate) max_concurrency: Option<usize>,
+    /// Per-node ceilings on concurrent activations of the same node in one step.
+    /// Empty for a graph that sets none, which is the common case.
+    pub(crate) node_concurrency: Arc<HashMap<NodeId, usize>>,
     /// Default per-node handler timeout (`None` = no timeout).
     pub(crate) node_timeout: Option<std::time::Duration>,
     /// Optional whole-run wall-clock deadline (`None` = no deadline). Checked at
@@ -115,6 +118,7 @@ impl<State, Update> Clone for CompiledGraph<State, Update> {
             namespace: self.namespace.clone(),
             parallel: self.parallel,
             max_concurrency: self.max_concurrency,
+            node_concurrency: self.node_concurrency.clone(),
             node_timeout: self.node_timeout,
             run_deadline: self.run_deadline,
             durability: self.durability,
