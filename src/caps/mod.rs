@@ -10,6 +10,7 @@ pub mod agent;
 pub mod host;
 #[cfg(any(test, feature = "mock"))]
 pub mod mock;
+pub mod schema;
 pub mod shell;
 pub mod tasks;
 
