@@ -667,7 +667,13 @@ mod tests {
 
     #[tokio::test]
     async fn the_default_resolvers_report_absence_not_failure() {
-        assert!(LegacyRunner.resolve_agent("anything").await.unwrap().is_none());
+        assert!(
+            LegacyRunner
+                .resolve_agent("anything")
+                .await
+                .unwrap()
+                .is_none()
+        );
         assert!(LegacyRunner.list_agents().await.unwrap().is_empty());
         assert!(
             LegacyRunner
@@ -714,18 +720,28 @@ mod tests {
 
         let from_string = AgentRunOutcome::finished(json!("just prose"));
         assert_eq!(from_string.text.as_deref(), Some("just prose"));
-        assert_eq!(from_string.json, Value::Null, "a scalar carries no structure");
+        assert_eq!(
+            from_string.json,
+            Value::Null,
+            "a scalar carries no structure"
+        );
     }
 
     #[test]
     fn stop_reasons_have_stable_wire_names() {
         assert_eq!(StopReason::Finished.as_str(), "finished");
         assert_eq!(
-            StopReason::LimitStop { limit: "max_steps".into() }.as_str(),
+            StopReason::LimitStop {
+                limit: "max_steps".into()
+            }
+            .as_str(),
             "limit_stop"
         );
         assert_eq!(
-            serde_json::to_value(StopReason::LimitStop { limit: "max_steps".into() }).unwrap(),
+            serde_json::to_value(StopReason::LimitStop {
+                limit: "max_steps".into()
+            })
+            .unwrap(),
             json!({ "stop": "limit_stop", "limit": "max_steps" })
         );
     }

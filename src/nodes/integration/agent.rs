@@ -814,7 +814,9 @@ mod tests {
         };
         use crate::caps::{AgentRunner, Capabilities};
         use crate::data::Item;
-        use crate::model::{AgentDefinition, AgentLimits, ContextSource, ContextSourceKind, ToolGrant};
+        use crate::model::{
+            AgentDefinition, AgentLimits, ContextSource, ContextSourceKind, ToolGrant,
+        };
         use crate::nodes::{NodeContext, NodeExecutor};
         use serde_json::{Value, json};
 
@@ -900,9 +902,15 @@ mod tests {
             );
             assert_eq!(echo["working_dir"], "/srv/other");
             assert_eq!(echo["prompt"], "Triage it.");
-            assert_eq!(echo["data"][0]["seed"], 1, "input items ride along structurally");
+            assert_eq!(
+                echo["data"][0]["seed"], 1,
+                "input items ride along structurally"
+            );
             assert_eq!(echo["limits"]["max_steps"], 4, "the node tightened it");
-            assert_eq!(echo["limits"]["max_tool_calls"], 20, "un-narrowed bound survives");
+            assert_eq!(
+                echo["limits"]["max_tool_calls"], 20,
+                "un-narrowed bound survives"
+            );
             assert_eq!(echo["limits"]["tool_timeout_secs"], 30);
             assert_eq!(echo["limits"]["agent_timeout_secs"], 300);
             assert_eq!(echo["metadata"]["tier"], "fast");
@@ -930,7 +938,10 @@ mod tests {
             let caps = mock_capabilities_with_agent(MockAgentHarness::new().with(host_side));
             let value =
                 run_with_registry(json!({ "agent_ref": "triager" }), &[triager()], &caps).await;
-            assert_eq!(value["json"]["model"], "sonnet", "the graph's definition wins");
+            assert_eq!(
+                value["json"]["model"], "sonnet",
+                "the graph's definition wins"
+            );
         }
 
         #[tokio::test]
@@ -985,7 +996,10 @@ mod tests {
             assert_eq!(blocks[0]["data"]["k"], "v");
             assert_eq!(blocks[1]["kind"], "memory");
             assert_eq!(blocks[2]["label"], "Body");
-            assert_eq!(blocks[2]["text"], "1", "the =expression resolved against the item");
+            assert_eq!(
+                blocks[2]["text"], "1",
+                "the =expression resolved against the item"
+            );
             assert_eq!(blocks[3]["kind"], "items");
             assert_eq!(blocks[3]["data"][0]["seed"], 1);
             assert_eq!(
@@ -1066,7 +1080,10 @@ mod tests {
             .await;
             assert_eq!(value["meta"]["stop"], "limit_stop");
             assert_eq!(value["meta"]["limit"], "max_steps");
-            assert_eq!(value["json"]["partial"], true, "the partial payload is kept");
+            assert_eq!(
+                value["json"]["partial"], true,
+                "the partial payload is kept"
+            );
             assert_eq!(value["text"], "got as far as I could");
         }
 
@@ -1117,8 +1134,7 @@ mod tests {
             // implements only `run_agent`, so the default `run` shim applies and
             // the host sees exactly the (agent_ref, resolved config, conn) it
             // received before the typed seam existed.
-            let caps =
-                mock_capabilities_with_agent(crate::caps::mock::MockAgentRunner);
+            let caps = mock_capabilities_with_agent(crate::caps::mock::MockAgentRunner);
             let config = json!({
                 "agent_ref": "researcher",
                 "prompt": "hi",

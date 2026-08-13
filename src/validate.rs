@@ -572,17 +572,21 @@ fn validate_agents(graph: &WorkflowGraph, errors: &mut Vec<ValidationError>) {
                          (expected a literal user|flow|flows)"
                     ))
                 } else if query.is_empty() {
-                    Some(format!("context source `{label}` has an empty memory `query`"))
+                    Some(format!(
+                        "context source `{label}` has an empty memory `query`"
+                    ))
                 } else {
                     None
                 }
             }
-            ContextSourceKind::Flavour { slug } if slug.is_empty() => {
-                Some(format!("context source `{label}` has an empty flavour `slug`"))
-            }
+            ContextSourceKind::Flavour { slug } if slug.is_empty() => Some(format!(
+                "context source `{label}` has an empty flavour `slug`"
+            )),
             ContextSourceKind::Host { source: name, .. } => {
                 if name.is_empty() {
-                    Some(format!("context source `{label}` has an empty host `source`"))
+                    Some(format!(
+                        "context source `{label}` has an empty host `source`"
+                    ))
                 } else if is_expression(name) {
                     Some(format!(
                         "context source `{label}` host `source` must be a literal, not the \
@@ -608,8 +612,10 @@ fn validate_agents(graph: &WorkflowGraph, errors: &mut Vec<ValidationError>) {
         .into_iter()
         .find(|(_, v)| *v == Some(0));
         zero.map(|(field, _)| {
-            format!("`limits.{field}` must be greater than 0 (an agent that may take 0 steps \
-                     cannot run); omit it for no bound")
+            format!(
+                "`limits.{field}` must be greater than 0 (an agent that may take 0 steps \
+                     cannot run); omit it for no bound"
+            )
         })
     }
 
@@ -2496,7 +2502,10 @@ mod loop_tests {
         }
 
         fn reasons(graph: &WorkflowGraph) -> Vec<String> {
-            validate_all(graph).iter().map(ToString::to_string).collect()
+            validate_all(graph)
+                .iter()
+                .map(ToString::to_string)
+                .collect()
         }
 
         #[test]
@@ -2547,7 +2556,9 @@ mod loop_tests {
             // could include model output, and would choose the agent's tools.
             let graph = agent_graph(vec![], json!({ "agent_ref": "=item.which_agent" }));
             assert!(
-                reasons(&graph).iter().any(|r| r.contains("must be a literal")),
+                reasons(&graph)
+                    .iter()
+                    .any(|r| r.contains("must be a literal")),
                 "{:?}",
                 reasons(&graph)
             );
@@ -2556,7 +2567,11 @@ mod loop_tests {
         #[test]
         fn an_expression_tool_slug_or_connection_is_rejected() {
             let by_slug = agent_graph(vec![], json!({ "tools": [{ "slug": "=item.tool" }] }));
-            assert!(reasons(&by_slug).iter().any(|r| r.contains("`slug` must be a literal")));
+            assert!(
+                reasons(&by_slug)
+                    .iter()
+                    .any(|r| r.contains("`slug` must be a literal"))
+            );
 
             let by_conn = agent_graph(
                 vec![],
@@ -2607,7 +2622,9 @@ mod loop_tests {
                 json!({ "context": [{ "kind": "memory", "scope": "=item.scope", "query": "q" }] }),
             );
             assert!(
-                reasons(&graph).iter().any(|r| r.contains("unknown memory scope")),
+                reasons(&graph)
+                    .iter()
+                    .any(|r| r.contains("unknown memory scope")),
                 "{:?}",
                 reasons(&graph)
             );
@@ -2626,7 +2643,11 @@ mod loop_tests {
         #[test]
         fn a_malformed_context_or_limits_block_reports_the_key() {
             let graph = agent_graph(vec![], json!({ "context": "not an array" }));
-            assert!(reasons(&graph).iter().any(|r| r.contains("invalid `context`")));
+            assert!(
+                reasons(&graph)
+                    .iter()
+                    .any(|r| r.contains("invalid `context`"))
+            );
         }
 
         #[test]

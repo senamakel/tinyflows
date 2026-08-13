@@ -160,7 +160,10 @@ pub(crate) fn merge_node_overrides(
 /// a different credential.
 fn narrow_tools(granted: &[ToolGrant], requested: &[ToolGrant], node_id: &str) -> Vec<ToolGrant> {
     for want in requested {
-        if !granted.iter().any(|g| g.covers(&want.slug) || want.covers(&g.slug)) {
+        if !granted
+            .iter()
+            .any(|g| g.covers(&want.slug) || want.covers(&g.slug))
+        {
             tracing::warn!(
                 node = node_id,
                 slug = %want.slug,
@@ -170,7 +173,11 @@ fn narrow_tools(granted: &[ToolGrant], requested: &[ToolGrant], node_id: &str) -
     }
     granted
         .iter()
-        .filter(|g| requested.iter().any(|w| w.covers(&g.slug) || g.covers(&w.slug)))
+        .filter(|g| {
+            requested
+                .iter()
+                .any(|w| w.covers(&g.slug) || g.covers(&w.slug))
+        })
         .cloned()
         .collect()
 }
@@ -319,9 +326,8 @@ pub(crate) async fn assemble(
     // resolved value that happens to start with `=` would otherwise be
     // re-evaluated.
     let definition: AgentDefinition = {
-        let raw = serde_json::to_value(&definition).map_err(|e| {
-            EngineError::Capability(format!("agent node {}: {e}", ctx.node.id))
-        })?;
+        let raw = serde_json::to_value(&definition)
+            .map_err(|e| EngineError::Capability(format!("agent node {}: {e}", ctx.node.id)))?;
         let resolved = crate::expr::resolve_traced(&raw, scope).0;
         serde_json::from_value(resolved).map_err(|e| {
             EngineError::Capability(format!(
@@ -419,7 +425,10 @@ mod tests {
     #[test]
     fn node_instructions_append_rather_than_replace() {
         let agent = merged(json!({ "instructions": "Prefer `bug`." }));
-        assert_eq!(agent.instructions.as_deref(), Some("Be terse.\n\nPrefer `bug`."));
+        assert_eq!(
+            agent.instructions.as_deref(),
+            Some("Be terse.\n\nPrefer `bug`.")
+        );
     }
 
     #[test]
@@ -446,7 +455,11 @@ mod tests {
             { "slug": "shell.exec" }
         ] }));
         assert_eq!(
-            agent.tools.iter().map(|t| t.slug.as_str()).collect::<Vec<_>>(),
+            agent
+                .tools
+                .iter()
+                .map(|t| t.slug.as_str())
+                .collect::<Vec<_>>(),
             ["github.search"]
         );
     }

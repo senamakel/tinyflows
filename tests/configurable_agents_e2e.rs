@@ -92,12 +92,18 @@ async fn a_graph_declared_agent_reaches_the_harness_merged_and_narrowed() {
         "the node's instructions append to the definition's rather than replacing them"
     );
     assert_eq!(request["model"], "opus", "the node overrode the model");
-    assert_eq!(request["provider"], "anthropic", "the definition's provider survived");
+    assert_eq!(
+        request["provider"], "anthropic",
+        "the definition's provider survived"
+    );
     assert_eq!(request["working_dir"], "/srv/checkout");
     assert_eq!(request["prompt"], "Triage this issue.");
 
     assert_eq!(request["limits"]["max_steps"], 4, "narrowed by the node");
-    assert_eq!(request["limits"]["max_tool_calls"], 20, "left alone by the node");
+    assert_eq!(
+        request["limits"]["max_tool_calls"], 20,
+        "left alone by the node"
+    );
     assert_eq!(request["limits"]["tool_timeout_secs"], 30);
 
     assert_eq!(
@@ -216,9 +222,13 @@ async fn a_host_context_source_a_harness_cannot_expand_fails_loudly() {
             .expect("inputs object")
             .clone(),
     );
-    let err = run(&compiled, input, &mock_capabilities_with_agent(MockAgentRunner))
-        .await
-        .expect_err("an unresolvable required context source must fail the run");
+    let err = run(
+        &compiled,
+        input,
+        &mock_capabilities_with_agent(MockAgentRunner),
+    )
+    .await
+    .expect_err("an unresolvable required context source must fail the run");
     let message = err.to_string();
     assert!(message.contains("repo_conventions"), "{message}");
     assert!(message.contains("optional"), "{message}");

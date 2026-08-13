@@ -33,9 +33,7 @@ mod agent;
 mod inputs;
 mod node_kind;
 
-pub use agent::{
-    AgentDefinition, AgentLimits, ContextSource, ContextSourceKind, ToolGrant,
-};
+pub use agent::{AgentDefinition, AgentLimits, ContextSource, ContextSourceKind, ToolGrant};
 pub use inputs::{InputError, InputType, WorkflowInput, is_valid_input_name, resolve_inputs};
 pub use node_kind::{NodeKind, TriggerKind};
 

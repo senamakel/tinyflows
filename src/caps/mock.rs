@@ -166,22 +166,24 @@ impl AgentRunner for MockAgentHarness {
         // tell an expanded grant from a passed-through one.
         Ok(grants
             .iter()
-            .flat_map(|grant| match grant.slug.strip_suffix(".*") {
-                Some(ns) => vec![format!("{ns}.alpha"), format!("{ns}.beta")],
-                None => vec![grant.slug.clone()],
-            }
-            .into_iter()
-            .map(|slug| crate::caps::ToolDescriptor {
-                description: Some(format!("mock tool {slug}")),
-                input_schema: Some(json!({ "type": "object" })),
-                connection_ref: grant
-                    .connection_ref
-                    .clone()
-                    .or_else(|| conn.map(str::to_string)),
-                name: None,
-                slug,
+            .flat_map(|grant| {
+                match grant.slug.strip_suffix(".*") {
+                    Some(ns) => vec![format!("{ns}.alpha"), format!("{ns}.beta")],
+                    None => vec![grant.slug.clone()],
+                }
+                .into_iter()
+                .map(|slug| crate::caps::ToolDescriptor {
+                    description: Some(format!("mock tool {slug}")),
+                    input_schema: Some(json!({ "type": "object" })),
+                    connection_ref: grant
+                        .connection_ref
+                        .clone()
+                        .or_else(|| conn.map(str::to_string)),
+                    name: None,
+                    slug,
+                })
+                .collect::<Vec<_>>()
             })
-            .collect::<Vec<_>>())
             .collect())
     }
 }
@@ -194,7 +196,12 @@ pub struct MockLimitedAgentRunner;
 
 #[async_trait]
 impl AgentRunner for MockLimitedAgentRunner {
-    async fn run_agent(&self, _agent_ref: &str, _request: Value, _conn: Option<&str>) -> Result<Value> {
+    async fn run_agent(
+        &self,
+        _agent_ref: &str,
+        _request: Value,
+        _conn: Option<&str>,
+    ) -> Result<Value> {
         Ok(Value::Null)
     }
 
@@ -223,7 +230,12 @@ pub struct MockPausingAgentRunner;
 
 #[async_trait]
 impl AgentRunner for MockPausingAgentRunner {
-    async fn run_agent(&self, _agent_ref: &str, _request: Value, _conn: Option<&str>) -> Result<Value> {
+    async fn run_agent(
+        &self,
+        _agent_ref: &str,
+        _request: Value,
+        _conn: Option<&str>,
+    ) -> Result<Value> {
         Ok(Value::Null)
     }
 
