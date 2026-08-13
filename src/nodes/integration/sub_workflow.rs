@@ -516,7 +516,9 @@ async fn run_child(
         )));
     }
 
-    Ok(ChildOutcome::Finished(crate::data::Item::new(outcome.output)))
+    Ok(ChildOutcome::Finished(crate::data::Item::new(
+        outcome.output,
+    )))
 }
 
 #[cfg(test)]
