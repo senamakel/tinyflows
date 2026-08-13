@@ -71,6 +71,44 @@ fn bounded_failure(error: &EngineError) -> Result<String, String> {
     }
 }
 
+/// Guards against the whole suite going quietly vacuous.
+///
+/// Every property below skips a graph the validator refuses, which is correct
+/// — but it means a generator that drifted into producing only invalid graphs
+/// would leave every test passing while exercising nothing. This pins the
+/// generator's yield so that drift fails loudly here instead of hiding there.
+///
+/// The graphs that *are* refused are refused for `illegal cycle`: a `merge`
+/// landing on a cycle when a branch or fan-out is nested inside a loop body.
+/// That refusal is the one the lane-scoped barrier work is expected to lift, so
+/// this ratio is also the before/after measure for it — when that lands, the
+/// floor here should rise rather than the test being deleted.
+#[test]
+fn the_generator_mostly_produces_runnable_graphs() {
+    use proptest::strategy::{Strategy, ValueTree};
+    use proptest::test_runner::TestRunner;
+
+    const SAMPLES: usize = 200;
+    const FLOOR: usize = 120; // ~60%; observed yield at time of writing is ~85%
+
+    let mut runner = TestRunner::deterministic();
+    let mut runnable = 0;
+    for _ in 0..SAMPLES {
+        let shape = arb_shape(3)
+            .new_tree(&mut runner)
+            .expect("generate a shape")
+            .current();
+        if compile(&graph_of(&shape)).is_ok() {
+            runnable += 1;
+        }
+    }
+    assert!(
+        runnable >= FLOOR,
+        "only {runnable}/{SAMPLES} generated graphs were runnable, below the {FLOOR} floor — \
+         the generator has drifted and the property tests above are running on very little"
+    );
+}
+
 proptest! {
     #![proptest_config(ProptestConfig { cases: 128, ..ProptestConfig::default() })]
 
