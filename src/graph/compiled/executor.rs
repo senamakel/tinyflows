@@ -1474,7 +1474,9 @@ where
                     .is_some_and(|cap| *seen > *cap)
             })
         };
-        let global_binds = self.max_concurrency.is_some_and(|limit| limit < futures.len());
+        let global_binds = self
+            .max_concurrency
+            .is_some_and(|limit| limit < futures.len());
 
         let results = match (global_binds || node_caps_bind).then_some(()) {
             Some(()) => {
@@ -1510,7 +1512,8 @@ where
                                 // cap; the next completion frees one.
                                 break;
                             };
-                            let (index, fut) = queue.remove(position).expect("position is in range");
+                            let (index, fut) =
+                                queue.remove(position).expect("position is in range");
                             *in_flight_per_node
                                 .entry(active[index].node.clone())
                                 .or_default() += 1;
