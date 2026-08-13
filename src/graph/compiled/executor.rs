@@ -759,10 +759,27 @@ where
                             .await;
                     }
                 };
+                // Only the interrupted branches are rescheduled: the completed
+                // ones are represented by their successors instead.
+                let interrupted_activations: Vec<Activation> = interrupts
+                    .iter()
+                    .map(|(index, _)| active[*index].clone())
+                    .collect();
+                let interrupted_nodes: Vec<NodeId> = interrupted_activations
+                    .iter()
+                    .map(|activation| activation.node.clone())
+                    .collect();
                 let mut pending = successors;
-                pending.extend(active[index..].iter().cloned());
+                pending.extend(interrupted_activations);
                 let pending_nodes = activation_nodes(&pending);
-                let interrupt_id = InterruptId::new(emitted.id.clone());
+                let interrupt_ids: Vec<InterruptId> = interrupts
+                    .iter()
+                    .map(|(_, emitted)| InterruptId::new(emitted.id.clone()))
+                    .collect();
+                let emitted_interrupts: Vec<Interrupt> = interrupts
+                    .iter()
+                    .map(|(_, emitted)| emitted.clone())
+                    .collect();
                 // An interrupt hands control back to the caller expecting a
                 // fully durable pause point: settle any in-flight Async
                 // background writes first, failing the run if one was lost
