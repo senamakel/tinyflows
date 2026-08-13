@@ -86,6 +86,7 @@ where
             recursion_limit: 50,
             parallel: false,
             max_concurrency: None,
+            node_concurrency: HashMap::new(),
             node_timeout: None,
             node_meta: HashMap::new(),
         }
@@ -116,6 +117,27 @@ where
     /// handlers are in flight at once. `0` is treated as unbounded.
     pub fn with_max_concurrency(mut self, n: usize) -> Self {
         self.max_concurrency = (n > 0).then_some(n);
+        self
+    }
+
+    /// Bounds how many activations of **one node** may run concurrently within a
+    /// step, independently of the graph-wide [`Self::with_max_concurrency`].
+    ///
+    /// Only meaningful for a node that can be activated more than once in the
+    /// same superstep — i.e. one scheduled through `Send` packets, where a fan-out
+    /// of N items becomes N activations of the same node. The graph-wide bound
+    /// cannot express "let this one node run 4 at a time" without also throttling
+    /// every unrelated branch in the step.
+    ///
+    /// Both bounds apply: a branch starts only when the step is below the global
+    /// limit *and* its node is below this one. `0` removes the per-node bound.
+    pub fn with_node_concurrency(mut self, node: impl Into<NodeId>, n: usize) -> Self {
+        let node = node.into();
+        if n == 0 {
+            self.node_concurrency.remove(&node);
+        } else {
+            self.node_concurrency.insert(node, n);
+        }
         self
     }
 

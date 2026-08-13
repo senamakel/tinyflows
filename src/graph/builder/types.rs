@@ -244,6 +244,9 @@ pub struct GraphBuilder<State, Update> {
     pub(crate) parallel: bool,
     /// Upper bound on concurrently-running branches per step (`None` = unbounded).
     pub(crate) max_concurrency: Option<usize>,
+    /// Per-node ceilings on concurrent activations of that *same* node within a
+    /// step (`None` for a node = bounded only by `max_concurrency`).
+    pub(crate) node_concurrency: HashMap<NodeId, usize>,
     /// Default per-node handler timeout (`None` = no timeout).
     pub(crate) node_timeout: Option<Duration>,
     /// Behavior-free per-node markers/metadata surfaced by the topology export.
