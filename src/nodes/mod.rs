@@ -382,6 +382,21 @@ pub enum NodeControl {
         /// How long to wait before the next activation, in milliseconds.
         after_ms: u64,
     },
+    /// Fan this node's successors out into `lanes` **parallel copies**, one per
+    /// entry, each carrying its own slice of the work.
+    ///
+    /// The difference from an ordinary fan-out is what gets duplicated. A
+    /// fan-out runs each *successor* once; a scatter runs the *whole downstream
+    /// path* once per lane, so a five-node pipeline becomes N concurrent
+    /// five-node pipelines. That is only expressible as a routing decision —
+    /// the engine schedules one activation per (lane × successor), each with its
+    /// own input — so it comes back through this channel rather than as items.
+    Scatter {
+        /// The work for each lane, in lane order. Emission downstream is
+        /// ordered by this index rather than by completion, so a run is
+        /// reproducible whatever the timing.
+        lanes: Vec<Vec<Item>>,
+    },
 }
 
 impl NodeOutput {
@@ -452,6 +467,14 @@ impl NodeOutput {
         Self::empty()
             .with_meta(meta)
             .with_control(NodeControl::Reenter { after_ms })
+    }
+
+    /// Builds an output that fans the downstream path out into parallel lanes.
+    #[must_use]
+    pub fn scatter(lanes: Vec<Vec<Item>>, meta: Value) -> Self {
+        Self::empty()
+            .with_meta(meta)
+            .with_control(NodeControl::Scatter { lanes })
     }
 }
 
