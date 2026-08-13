@@ -350,6 +350,10 @@ async fn run_child(
     let compiled = crate::compiler::compile(&child)?;
     let trigger =
         serde_json::to_value(child_input).map_err(|e| EngineError::Capability(e.to_string()))?;
+    // Approvals the parent has accumulated for *this* node's child gates. Empty
+    // on a first run; populated after a resume, which is what lets the re-run
+    // get past the gate that paused it.
+    let trigger = seed_child_approvals(trigger, approvals_for_child(ctx.run, &ctx.node.id));
     // Resolved against the same `scope` as `workflow_id`, so a `per_item` run
     // forwards values derived from *its* element (`"=item.repo"`) rather than
     // from the batch — the whole point of resolving inputs in here rather than
