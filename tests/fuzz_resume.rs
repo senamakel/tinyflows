@@ -16,6 +16,28 @@
 //! moment of suspension is precisely what a generator varies and a human does
 //! not.
 //!
+//! # What "the same" has to mean here, and why
+//!
+//! The two paths cannot be compared byte-for-byte, and the reason is worth
+//! stating so nobody later "fixes" this by weakening it further. Approval has
+//! to reach the run through *some* channel, and the two channels are not
+//! interchangeable: pre-approval rides in on the trigger payload, which every
+//! node's items then carry, while a resume delivers approval out of band. So
+//! the pre-approved run's items legitimately contain an `approvals` key the
+//! resumed run's do not, and its slots carry different `_activation_step`
+//! stamps because suspending genuinely costs a super-step.
+//!
+//! Comparison is therefore over what the *workflow* computed rather than how
+//! the engine got there: which nodes ran, and how many items each produced.
+//! That still catches the failures that matter — a branch whose work is lost
+//! across the pause, a branch re-run so its output is duplicated, a node
+//! skipped entirely on the resumed path.
+//!
+//! It does **not** catch a side-effecting node re-running idempotently, since
+//! these graphs are built from pure passthroughs where a re-run looks identical
+//! to not re-running. Detecting that needs an invocation counter rather than a
+//! state diff, and belongs with the work that fixes it.
+//!
 //! Gated behind the `mock` feature alongside the rest of the e2e suite.
 
 mod support;
