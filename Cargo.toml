@@ -87,5 +87,5 @@ proptest = "1"
 sha2 = "0.10"
 tempfile = "3"
 fs2 = "0.4"
-reqwest = { version = "0.13", default-features = false, features = ["json"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 tokio = { version = "1", features = ["fs", "process", "io-util"] }
