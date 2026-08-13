@@ -1322,6 +1322,7 @@ fn build_graph(
                         // into its child; a plain executor never reads it.
                         token: token.clone(),
                         lane: lane.clone(),
+                        resume: resume_value.clone(),
                         step: activation_step,
                     };
                     // BUG-8: bound THIS attempt (not the whole retry loop) to
@@ -1510,6 +1511,7 @@ fn build_graph(
                                 observer: observer.as_ref(),
                                 token: token.clone(),
                                 lane: lane.clone(),
+                                resume: resume_value.clone(),
                                 step: activation_step,
                             };
                             let scope = crate::nodes::expr_scope(&ctx);

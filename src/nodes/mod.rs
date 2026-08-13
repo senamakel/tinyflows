@@ -68,6 +68,15 @@ pub struct NodeContext<'a> {
     /// its predecessors' run-state slots, because every lane sees the same
     /// committed state snapshot and would otherwise all read identical items.
     pub lane: Option<LaneContext>,
+    /// The value a checkpointed resume delivered to this node, when this
+    /// activation is the re-run of a node that had interrupted.
+    ///
+    /// `None` on an ordinary activation. A node that pauses the run with
+    /// [`NodeControl::Interrupt`] reads this on its re-run to learn what the
+    /// host decided — which is the only channel on the checkpointed resume path,
+    /// since that path replays from the checkpoint rather than re-executing with
+    /// a merged run input.
+    pub resume: Option<Value>,
     /// The super-step that is running this activation, counting from 0.
     ///
     /// A monotonic tick that does not depend on the wall clock, so it stays
@@ -563,6 +572,7 @@ mod tests {
                     observer: &crate::observability::NoopObserver,
                     token: crate::engine::CancellationToken::new(),
                     lane: None,
+                    resume: None,
                     step: 0,
                 })
                 .await;
@@ -591,6 +601,7 @@ mod tests {
                 observer: &crate::observability::NoopObserver,
                 token: crate::engine::CancellationToken::new(),
                 lane: None,
+                resume: None,
                 step: 0,
             })
             .await
@@ -624,6 +635,7 @@ mod tests {
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
             lane: None,
+            resume: None,
             step: 0,
         };
         let scope = expr_scope(&ctx);
@@ -658,6 +670,7 @@ mod tests {
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
             lane: None,
+            resume: None,
             step: 0,
         };
         let scope = expr_scope(&ctx);

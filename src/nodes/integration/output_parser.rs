@@ -86,6 +86,7 @@ mod tests {
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
             lane: None,
+            resume: None,
             step: 0,
         };
         let out = OutputParserNode.execute(ctx).await.expect("execute");
@@ -118,6 +119,7 @@ mod tests {
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
             lane: None,
+            resume: None,
             step: 0,
         };
         OutputParserNode.execute(ctx).await.expect("execute").items
@@ -185,6 +187,7 @@ mod tests {
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
             lane: None,
+            resume: None,
             step: 0,
         };
         OutputParserNode.execute(ctx).await.map(|o| o.items)

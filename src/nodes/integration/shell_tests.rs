@@ -40,6 +40,7 @@ async fn execute_with(caps: Capabilities, config: Value) -> Result<NodeOutput> {
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
             lane: None,
+            resume: None,
             step: 0,
         })
         .await

@@ -93,6 +93,7 @@ mod tests {
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
             lane: None,
+            resume: None,
             step: 0,
         };
         let out = ConditionNode.execute(ctx).await.expect("execute");

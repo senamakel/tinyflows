@@ -183,6 +183,7 @@ mod tests {
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
             lane: None,
+            resume: None,
             step: 0,
         };
         let err = ToolCallNode
@@ -213,6 +214,7 @@ mod tests {
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
             lane: None,
+            resume: None,
             step: 0,
         };
         let out = ToolCallNode.execute(ctx).await.expect("execute");
@@ -242,6 +244,7 @@ mod tests {
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
             lane: None,
+            resume: None,
             step: 0,
         };
         let out = ToolCallNode.execute(ctx).await.expect("execute");
@@ -267,6 +270,7 @@ mod tests {
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
             lane: None,
+            resume: None,
             step: 0,
         };
         let out = ToolCallNode.execute(ctx).await.expect("execute");
@@ -298,6 +302,7 @@ mod tests {
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
             lane: None,
+            resume: None,
             step: 0,
         };
         let out = ToolCallNode.execute(ctx).await.expect("execute");
@@ -330,6 +335,7 @@ mod tests {
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
             lane: None,
+            resume: None,
             step: 0,
         };
         let out = ToolCallNode.execute(ctx).await.expect("execute");
