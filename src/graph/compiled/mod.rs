@@ -146,6 +146,15 @@ struct StepRun<Update> {
     /// [`Command::goto`] — a node-keyed map would let a later activation's
     /// command clobber an earlier one's routing.
     goto_map: HashMap<usize, Vec<RouteTarget>>,
+    /// Active-set indices of the branches that actually ran to a result and were
+    /// folded, in ascending order. Excludes interrupted branches.
+    ///
+    /// Not the same as "everything that did not interrupt". Sequential execution
+    /// stops at the first interrupt and never starts the rest of the step, so
+    /// those branches have no result — treating them as completed would route
+    /// successors for work that never happened. Parallel execution runs the whole
+    /// set before folding, so there every non-interrupting branch is here.
+    completed: Vec<usize>,
     /// Every branch that interrupted this step, as `(active-set index, value)`,
     /// in ascending index order.
     ///
