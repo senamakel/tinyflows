@@ -22,8 +22,9 @@ fn kind_name(kind: &NodeKind) -> String {
 /// Currently checks: unique node ids, exactly one trigger node, that every edge
 /// references existing nodes, no duplicate edges, per-node `on_error` policy
 /// sanity (a known value, and an `error` edge when the policy is `route`),
-/// declared-input sanity (addressable, unique names; defaults that match their
-/// declared type), and loop legality (see [`validate_loops`] — cycles are
+/// `void` topology (a terminal sink may have no outgoing edge, and must have an
+/// incoming one), declared-input sanity (addressable, unique names; defaults
+/// that match their declared type), and loop legality (see [`validate_loops`] — cycles are
 /// permitted; only the ones that cannot iterate are refused).
 ///
 /// # Errors
