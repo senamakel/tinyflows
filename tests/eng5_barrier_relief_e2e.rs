@@ -381,3 +381,64 @@ async fn pure_unconditional_fan_in_regression() {
         "m must include both a's and b's items"
     );
 }
+
+/// A conditional predecessor reached *through a fan-out* must not be phantomed.
+///
+/// This is the non-loop form of a bug found while enabling diamonds inside loop
+/// bodies, and it is a plain-graph data-loss bug in its own right. Relief
+/// decides "was the branch leading to this predecessor taken?" by walking
+/// forward through deterministic routing. A fan-out node has no static edge —
+/// its successors come from the `Command` it emits — so the walk used to stop
+/// there and report unreachable. Reporting unreachable is what *fires* relief,
+/// so the barrier cleared before `a1`/`a2` had run and `m` merged only `c`.
+///
+/// `start` fans out to `cond` and `c`. `cond --true--> apex`, and `apex` itself
+/// fans out to `a1` and `a2`, both feeding `m` alongside `c`. With `flag: true`
+/// every one of `m`'s three predecessors really runs, so `m` must see all three
+/// tags.
+#[tokio::test]
+async fn a_conditional_predecessor_behind_a_fan_out_is_not_phantomed() {
+    let graph = WorkflowGraph {
+        name: "relief_through_fan_out".to_string(),
+        nodes: vec![
+            trigger("start"),
+            node("cond", NodeKind::Condition, json!({ "field": "flag" })),
+            node("apex", NodeKind::OutputParser, Value::Null),
+            tagged("a1", "a1"),
+            tagged("a2", "a2"),
+            tagged("b", "b"),
+            tagged("c", "c"),
+            node("m", NodeKind::Merge, Value::Null),
+        ],
+        edges: vec![
+            edge("start", "main", "cond"),
+            edge("start", "main", "c"),
+            edge("cond", "true", "apex"),
+            edge("cond", "false", "b"),
+            // `apex` fans out: both leave on the same port.
+            edge("apex", "main", "a1"),
+            edge("apex", "main", "a2"),
+            edge("a1", "main", "m"),
+            edge("a2", "main", "m"),
+            edge("c", "main", "m"),
+        ],
+        ..Default::default()
+    };
+    let compiled = compile(&graph).expect("compile");
+
+    let outcome = tokio::time::timeout(
+        Duration::from_secs(5),
+        run(&compiled, json!({ "flag": true }), &mock_capabilities()),
+    )
+    .await
+    .expect("must not deadlock")
+    .expect("run");
+
+    assert_eq!(
+        merge_tags(&outcome.output, "m"),
+        HashSet::from(["a1".to_string(), "a2".to_string(), "c".to_string()]),
+        "every predecessor really ran, so none may be phantomed away — a result \
+         of just {{c}} means relief cleared the barrier before the fan-out's \
+         branches committed their data"
+    );
+}
