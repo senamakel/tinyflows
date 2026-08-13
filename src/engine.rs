@@ -841,6 +841,15 @@ pub async fn run_cancellable_with_observer(
 /// agrees on one bound.
 pub const MAX_SUB_WORKFLOW_DEPTH: u64 = 8;
 
+/// The ceiling on `trigger.config.max_concurrency`: how many branches of one
+/// super-step the engine will ever run at once.
+///
+/// A cap rather than an error, mirroring how a node's own `concurrency` is
+/// clamped: a graph asking for 100_000 concurrent branches has a mistake in it,
+/// and refusing the run outright would be a worse answer than running it
+/// sensibly and saying so in a warning.
+pub const MAX_GRAPH_CONCURRENCY: usize = 256;
+
 /// Runs a nested child workflow for a `sub_workflow` node, threading the current
 /// nesting `depth` into the child run's `run.sub_workflow_depth`.
 ///
@@ -951,6 +960,29 @@ fn build_graph(
         .and_then(Value::as_u64)
         .filter(|n| *n > 0)
         .map(std::time::Duration::from_secs);
+    // How many branches of one super-step may be in flight at once.
+    //
+    // This is *admission control*, not backpressure: a super-step engine cannot
+    // block a producer mid-step, so the only lever is how many activations are
+    // allowed to start. Unset means unbounded, which is the historical behavior.
+    let max_concurrency = trigger
+        .config
+        .get("max_concurrency")
+        .and_then(Value::as_u64)
+        .filter(|n| *n > 0)
+        .map(|requested| {
+            let requested = usize::try_from(requested).unwrap_or(MAX_GRAPH_CONCURRENCY);
+            if requested > MAX_GRAPH_CONCURRENCY {
+                tracing::warn!(
+                    requested,
+                    max = MAX_GRAPH_CONCURRENCY,
+                    "max_concurrency above the engine ceiling; clamping"
+                );
+                MAX_GRAPH_CONCURRENCY
+            } else {
+                requested
+            }
+        });
 
     tracing::info!(node_count = graph.nodes.len(), trigger = %trigger_id, "workflow run starting");
 
