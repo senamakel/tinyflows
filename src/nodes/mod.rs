@@ -284,6 +284,51 @@ pub struct NodeOutput {
     ///
     /// Must be a JSON object; anything else is ignored when the slot is built.
     pub meta: Option<Value>,
+    /// A request to the engine for something other than "emit and move on".
+    /// `None` — the overwhelmingly common case — means ordinary data flow.
+    ///
+    /// This is the channel that lets an executor return *control* rather than
+    /// only data. Without it a node can express "here are my items" and "I
+    /// failed", but not "pause the run here" or "ask me again shortly" — which
+    /// is why, before this existed, a `sub_workflow` whose child paused at an
+    /// approval gate had to fail the parent outright rather than pause it.
+    pub control: Option<NodeControl>,
+}
+
+/// What a node asks the engine to do instead of simply emitting its items.
+///
+/// Both variants are lowered in [`crate::engine`]'s node handler, which is the
+/// only place that can speak to the underlying super-step executor.
+#[derive(Debug, Clone, PartialEq)]
+pub enum NodeControl {
+    /// Pause the whole run here, surfacing `id` on the run's pending set.
+    ///
+    /// The engine turns this into a `tinyagents` interrupt, which **discards
+    /// this activation's state update** — the node re-runs from the top when
+    /// the run is resumed. An executor using this must therefore be safe to
+    /// re-enter: record what it needs to recognise the resume (a ticket, a
+    /// child thread id) in its slot on an *earlier* activation, not this one.
+    Interrupt {
+        /// Identifies the pause to the host, and addresses the resume value
+        /// back to this node. Conventionally the node id.
+        id: String,
+        /// Host-facing description of what is being waited on.
+        payload: Value,
+    },
+    /// Re-activate this same node in the next super-step, after a delay.
+    ///
+    /// State-driven waiting: the node's update *is* committed, so it can leave
+    /// itself notes, and it is then re-run to look at the world again. This is
+    /// how a gather or gate waits for lanes and tickets that settle in
+    /// different super-steps.
+    ///
+    /// Each poll costs one super-step and one node visit against the run's
+    /// budgets, so **every** user of this must carry its own bounded poll count
+    /// rather than relying on the run-level backstop to stop it.
+    Reenter {
+        /// How long to wait before the next activation, in milliseconds.
+        after_ms: u64,
+    },
 }
 
 impl NodeOutput {
