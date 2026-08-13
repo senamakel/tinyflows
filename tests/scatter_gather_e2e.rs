@@ -320,3 +320,99 @@ async fn an_empty_scatter_does_not_hang_the_gather() {
         "no lanes means no results, but the run still finishes"
     );
 }
+
+/// A lane that leaves the region without passing through the gather is refused.
+///
+/// This is the guard on the invariant the whole design rests on. The engine
+/// propagates a lane envelope to every successor that is not a gather, so an
+/// edge out of the region carries the lane somewhere nothing collects it — and
+/// the node on the far side, having no gather to converge on, writes its
+/// top-level slot as though it were never in a lane. Wrong output, not a
+/// failure, which is exactly what must be caught at author time.
+#[tokio::test]
+async fn a_lane_escaping_the_region_is_refused() {
+    let mut graph = scatter_graph(json!({ "path": "rows" }), json!({}));
+    graph
+        .nodes
+        .push(node("escapee", NodeKind::OutputParser, Value::Null));
+    graph.edges.push(edge("work", "escapee"));
+
+    let errors = tinyflows::validate::validate_all(&graph);
+    assert!(
+        errors.iter().any(|e| format!("{e:?}").contains("escapee")),
+        "an edge out of the lane region should be refused, got: {errors:?}"
+    );
+}
+
+/// A scatter with no gather downstream is refused: its lanes would run with
+/// nothing to collect them.
+#[tokio::test]
+async fn a_scatter_without_a_gather_is_refused() {
+    let mut graph = scatter_graph(json!({ "path": "rows" }), json!({}));
+    graph.nodes.retain(|n| n.id != "collect");
+    graph.edges.retain(|e| e.to_node != "collect");
+
+    let errors = tinyflows::validate::validate_all(&graph);
+    assert!(
+        errors.iter().any(|e| format!("{e:?}").contains("fan")),
+        "a scatter with no gather should be refused, got: {errors:?}"
+    );
+}
+
+/// A gather with no scatter upstream is refused: it would wait on lanes nobody
+/// opens until its poll budget ran out.
+#[tokio::test]
+async fn a_gather_without_a_scatter_is_refused() {
+    let graph = WorkflowGraph {
+        name: "orphan_gather".to_string(),
+        nodes: vec![
+            node("t", NodeKind::Trigger, Value::Null),
+            node("work", NodeKind::OutputParser, Value::Null),
+            node("collect", NodeKind::Gather, json!({ "from": ["work"] })),
+        ],
+        edges: vec![edge("t", "work"), edge("work", "collect")],
+        ..Default::default()
+    };
+
+    let errors = tinyflows::validate::validate_all(&graph);
+    assert!(
+        errors.iter().any(|e| format!("{e:?}").contains("collect")),
+        "an orphan gather should be refused, got: {errors:?}"
+    );
+}
+
+/// The v1 region restrictions, each refused with its own reason rather than
+/// producing a subtly wrong run.
+#[tokio::test]
+async fn the_unsupported_region_members_are_refused() {
+    // A nested scatter: lane ids would have to compose, and the inner gather
+    // would have to know which level it closes.
+    let mut nested = scatter_graph(json!({ "path": "rows" }), json!({}));
+    for n in &mut nested.nodes {
+        if n.id == "work" {
+            n.kind = NodeKind::Scatter;
+            n.config = json!({ "path": "inner" });
+        }
+    }
+    assert!(
+        tinyflows::validate::validate_all(&nested)
+            .iter()
+            .any(|e| format!("{e:?}").contains("nested")),
+        "a nested scatter should be refused"
+    );
+
+    // An approval gate: a resume is addressed by node id, so every lane of one
+    // node would share a single approval.
+    let mut gated = scatter_graph(json!({ "path": "rows" }), json!({}));
+    for n in &mut gated.nodes {
+        if n.id == "work" {
+            n.config = json!({ "requires_approval": true });
+        }
+    }
+    assert!(
+        tinyflows::validate::validate_all(&gated)
+            .iter()
+            .any(|e| format!("{e:?}").contains("requires_approval")),
+        "an approval gate inside a lane should be refused"
+    );
+}
