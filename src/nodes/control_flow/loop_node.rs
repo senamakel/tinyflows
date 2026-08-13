@@ -120,18 +120,49 @@ impl NodeExecutor for LoopNode {
             .and_then(Value::as_u64)
             .unwrap_or(DEFAULT_MAX_ITERATIONS);
         let items = ctx.input.to_vec();
-        // The count is recorded on every path, including the exits, so a host
-        // reading the finished run can see how many passes actually happened.
-        let done = |iteration: u64| {
-            Ok(NodeOutput::routed(items.clone(), "done")
-                .with_meta(json!({ "iteration": iteration })))
+
+        // Fold the body's output into the accumulator, before any exit is
+        // considered — so `until` tests the state *including* the pass that just
+        // finished, which is what "stop when the check passes" has to mean.
+        //
+        // Only on re-entry: on the seeding activation the body has not run, so
+        // there is nothing to fold and `init` stands.
+        let state = if iteration > 0 {
+            fold_state(&ctx)?
+        } else {
+            initial_state(&ctx)?
         };
+        let emit_mode = EmitMode::from_config(&ctx.node.config);
+
+        // Every path records the count and the accumulator, so a host reading a
+        // finished run sees both how many passes happened and what they built.
+        let exit = |iteration: u64, reason: &str, port: &str| {
+            Ok(
+                NodeOutput::routed(emit_mode.items(&items, &state), port).with_meta(json!({
+                    "iteration": iteration,
+                    "state": crate::engine::replace(state.clone()),
+                    "exit_reason": reason,
+                })),
+            )
+        };
+
+        // `until` is the accumulator's own exit: truthy means the check passed.
+        // Checked first because converging is a better outcome than either
+        // running out of work or running out of tries.
+        if until_holds(&ctx, &state) {
+            let port = if success_port(&ctx.node.config) {
+                "success"
+            } else {
+                "done"
+            };
+            return exit(iteration, "until", port);
+        }
 
         // The condition is checked before the cap so a loop that finishes early
         // on its own terms never trips the limit, and checked before the
         // iteration is consumed so `condition: false` exits without a pass.
         if !condition_holds(&ctx) {
-            return done(iteration);
+            return exit(iteration, "condition", "done");
         }
 
         if iteration >= max_iterations {
@@ -140,11 +171,14 @@ impl NodeExecutor for LoopNode {
                     node: ctx.node.id.clone(),
                     limit: max_iterations,
                 }),
-                OnExceeded::Continue => done(iteration),
+                OnExceeded::Continue => exit(iteration, "max_iterations", "done"),
             };
         }
 
-        Ok(NodeOutput::routed(items, "body").with_meta(json!({ "iteration": iteration + 1 })))
+        Ok(NodeOutput::routed(items, "body").with_meta(json!({
+            "iteration": iteration + 1,
+            "state": crate::engine::replace(state),
+        })))
     }
 }
 
