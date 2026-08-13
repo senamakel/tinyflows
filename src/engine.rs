@@ -306,9 +306,9 @@ fn lane_items_update(
     port: Option<&str>,
     status: &str,
     meta: Option<&Value>,
-) -> Result<Value> {
+) -> crate::graph::Result<Value> {
     let mut slot = json!({
-        "items": serde_json::to_value(items).map_err(|e| EngineError::Capability(e.to_string()))?,
+        "items": serde_json::to_value(items)?,
         "port": port.map(Value::from).unwrap_or(Value::Null),
         "status": status,
         "index": lane.index,
@@ -327,7 +327,7 @@ fn lane_envelope(
     index: usize,
     count: usize,
     items: &[Item],
-) -> Result<Value> {
+) -> crate::graph::Result<Value> {
     Ok(json!({
         LANE_KEY: {
             "id": format!("{origin}#{index}"),
@@ -335,8 +335,7 @@ fn lane_envelope(
             "index": index,
             "count": count,
         },
-        "items": serde_json::to_value(items)
-            .map_err(|e| EngineError::Capability(e.to_string()))?,
+        "items": serde_json::to_value(items)?,
     }))
 }
 
