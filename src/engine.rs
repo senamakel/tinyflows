@@ -1396,6 +1396,7 @@ fn build_graph(
                             return Ok(emit(
                                 items_update(&node.id, &[item], Some("error"))?,
                                 Some("error"),
+                                std::slice::from_ref(&item),
                             ));
                         }
                         // No error branch to route to — fail the run so the denial
@@ -1710,6 +1711,7 @@ fn build_graph(
                                 output.meta.as_ref(),
                             )?,
                             port,
+                            &output.items,
                         ))
                     }
                     None => {
@@ -1759,12 +1761,14 @@ fn build_graph(
                             "continue" => Ok(emit(
                                 items_update(&node.id, &[error_item(&node.id, &err)], None)?,
                                 None,
+                                &[error_item(&node.id, &err)],
                             )),
                             // Turn the failure into data on the `error` port so the
                             // graph can route it to a recovery sub-graph.
                             "route" => Ok(emit(
                                 items_update(&node.id, &[error_item(&node.id, &err)], Some("error"))?,
                                 Some("error"),
+                                &[error_item(&node.id, &err)],
                             )),
                             // "stop" (default) and any unknown policy fail the run.
                             //
