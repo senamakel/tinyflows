@@ -318,6 +318,7 @@ mod tests {
                     .with_default(serde_json::json!(3))
                     .with_description("How deep to recurse"),
             ],
+            agents: Vec::new(),
             nodes: vec![node("t", NodeKind::Trigger), node("a", NodeKind::Agent)],
             edges: vec![Edge {
                 from_node: "t".to_string(),
@@ -469,6 +470,7 @@ mod tests {
             id: Some("wf_1".to_string()),
             name: "demo".to_string(),
             inputs: Vec::new(),
+            agents: Vec::new(),
             nodes: vec![Node {
                 id: "t".to_string(),
                 kind: NodeKind::Trigger,
