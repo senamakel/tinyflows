@@ -250,6 +250,9 @@ pub use api::{
 mod build;
 use build::build_graph;
 
+mod run_config;
+use run_config::RunConfig;
+
 mod run_state;
 pub use run_state::resume;
 use run_state::{build_and_run, default_thread_id, merge_approvals};
