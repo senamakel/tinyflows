@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking: the Chrome companion moved behind the `chrome-extension`
+  feature.** `tinyflows::browser` and `tinyflows::companion` — previously part
+  of the default public API at `0.6.1` — now compile only when the
+  `chrome-extension` feature is enabled, and the `tinyflows` CLI binary requires
+  that feature too. The core engine no longer pulls in the `axum`/`reqwest`
+  listener and HTTP client stack by default. Downstream code that used
+  `tinyflows::browser` or `tinyflows::companion` must enable the feature (e.g.
+  `tinyflows = { version = "0.7", features = ["chrome-extension"] }`).
+  Correspondingly released as a major semver change (`0.7.0`, breaking in `0.x`
+  terms).
+
 - **Removed the `tinyagents` dependency.** The state-graph runtime the engine
   lowers workflows onto now lives in-crate as `crate::graph` (builder, superstep
   executor, channels, reducers, commands/interrupts, checkpointing, run status,
