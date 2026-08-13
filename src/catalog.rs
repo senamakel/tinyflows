@@ -344,6 +344,31 @@ pub fn contract_for(kind: &str) -> Option<NodeKindContract> {
                  output_parser.schema — an untyped field can carry the truthy string \"false\" and \
                  route to the wrong port."
                     .to_string(),
+                "Reusable agent types live in the graph's TOP-LEVEL `agents` array (a sibling of \
+                 `nodes`/`edges`/`inputs`), each {id, name?, description?, instructions?, model?, \
+                 provider?, working_dir?, tools?, context?, limits?, metadata?}. A node's \
+                 agent_ref resolves there first, then against the host's registry; a ref neither \
+                 knows is passed through to the harness as an id, which is not an error."
+                    .to_string(),
+                "Merge order is definition-then-node, narrowing only: instructions append, \
+                 context appends, tools intersect, limits take the lower bound, metadata merges \
+                 per key, and model/provider/working_dir are overridden by the node."
+                    .to_string(),
+                "agent_ref, tool slug, tool connection_ref, a memory context scope, and a host \
+                 context source must all be LITERALS, never =expressions — otherwise run data \
+                 (which may include model output) could choose the credential a call acts as, the \
+                 tool it reaches, or the agent type it runs as."
+                    .to_string(),
+                "The output item carries a `meta` key alongside json/text/raw: `=item.meta.stop` \
+                 is \"finished\" or \"limit_stop\", so a downstream condition can branch on \
+                 whether the agent actually reached an answer instead of assuming it did. A \
+                 limit_stop output is PARTIAL and skips output_parser."
+                    .to_string(),
+                "A `memory` or `flavour` context block needs the host's MemoryProvider, and a \
+                 `host` block needs the harness's context resolver; without them the node fails \
+                 unless the block sets optional:true. Silently dropping context would leave the \
+                 agent answering confidently from nothing."
+                    .to_string(),
             ],
         },
         "tool_call" => NodeKindContract {
