@@ -3,7 +3,7 @@
 **tinyflows** is a Rust-native, host-agnostic workflow automation engine, shipped
 as a library crate. A workflow is a directed graph of typed nodes
 (`WorkflowGraph`) that is validated, compiled, and lowered per-run onto the
-[`tinyagents`](https://crates.io/crates/tinyagents) state-graph engine, then
+in-crate `graph` state-graph runtime, then
 driven to completion by `engine::run`.
 
 Rust 2024 · MSRV 1.85 · `#![forbid(unsafe_code)]` · GPL-3.0-or-later.

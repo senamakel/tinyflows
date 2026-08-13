@@ -6,7 +6,7 @@ fixed pipeline.
 ```
 WorkflowGraph  →  validate  →  compile  →  engine::run
  (typed graph)   (structural)  (lowers)   (drives to completion,
-                                           lowered onto tinyagents)
+                                           lowered onto crate::graph)
                                    ▲
               caps traits (LlmProvider / ToolInvoker / HttpClient /
               CodeRunner / StateStore) — host-injected, captured per run
@@ -18,13 +18,13 @@ WorkflowGraph  →  validate  →  compile  →  engine::run
    reference existing nodes), run before compilation.
 3. **`compile`** — validates and produces a `CompiledWorkflow`.
 4. **`engine::run`** — lowers the compiled graph onto the
-   [`tinyagents`](https://crates.io/crates/tinyagents) state-graph engine and
+   in-crate `graph` state-graph runtime and
    drives it to completion, returning a `RunOutcome`.
 
 ## Per-run lowering
 
 Lowering happens **per run**, inside `engine::run`. Each node becomes a
-`tinyagents` handler that captures that run's host `Capabilities`, so the graph
+`graph` handler that captures that run's host `Capabilities`, so the graph
 built for one run carries exactly the caps handed to it. The engine wires:
 
 - **Linear** paths (one successor per node).
