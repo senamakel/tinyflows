@@ -27,6 +27,7 @@ fn all_kinds() -> Vec<NodeKind> {
         Memory,
         Dedup,
         Loop,
+        Void,
     ]
 }
 
