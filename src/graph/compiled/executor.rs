@@ -1346,7 +1346,7 @@ where
     /// Each branch executes on its own cloned `State` snapshot and a distinct
     /// [`ForkId`], optionally with the [`Send`] argument that scheduled it. With
     /// no `max_concurrency` bound every branch starts before any is awaited and
-    /// all are driven via [`futures::future::join_all`]; with a bound the active
+    /// all are driven via [`futures_util::future::join_all`]; with a bound the active
     /// set is run in chunks of at most that many futures, so at most that many
     /// node handlers are in flight at once. Results are folded in active-set
     /// index order — the reducer is the join/fan-in — so the merged state is
@@ -1445,7 +1445,7 @@ where
                     running_index.push(index);
                 }
                 while !running.is_empty() {
-                    let (result, completed, rest) = futures::future::select_all(running).await;
+                    let (result, completed, rest) = futures_util::future::select_all(running).await;
                     let index = running_index.remove(completed);
                     slots[index] = Some(result);
                     running = rest;
@@ -1459,7 +1459,7 @@ where
                     .map(|slot| slot.expect("every branch produced a result"))
                     .collect::<Vec<_>>()
             }
-            _ => futures::future::join_all(futures).await,
+            _ => futures_util::future::join_all(futures).await,
         };
 
         // Fold in deterministic active-set index order.
