@@ -976,6 +976,14 @@ fn build_graph(
     // budgets. The per-attempt bound is applied inside the handler's retry loop
     // instead (raced against each attempt), so it is the sole timeout in effect.
 
+    // The graph's own agent registry, shared by every node handler. An `agent`
+    // node resolves its `agent_ref` here first (see `crate::nodes::integration`),
+    // falling back to the harness's registry. Held behind an `Arc` and cloned per
+    // handler rather than seeded into run state, which is checkpointed on every
+    // super-step: the registry is static for the run, so serializing it into each
+    // checkpoint to read it back in one node would be pure waste.
+    let agents: Arc<Vec<crate::model::AgentDefinition>> = Arc::new(graph.agents.clone());
+
     for node in &graph.nodes {
         let node = node.clone();
         // Incoming edges as `(predecessor id, edge from_port)` pairs, so
@@ -1001,6 +1009,7 @@ fn build_graph(
             .map(|e| (e.from_node.clone(), e.from_port.clone()))
             .collect();
         let caps = capabilities.clone();
+        let agents = agents.clone();
         let observer = observer.clone();
         let steps = steps.clone();
         let terminal_error = terminal_error.clone();
@@ -1021,6 +1030,7 @@ fn build_graph(
             let incoming = incoming.clone();
             let back_incoming = back_incoming.clone();
             let caps = caps.clone();
+            let agents = agents.clone();
             let observer = observer.clone();
             let steps = steps.clone();
             let terminal_error = terminal_error.clone();
@@ -1276,6 +1286,7 @@ fn build_graph(
                         run: &run_meta,
                         nodes: &nodes_state,
                         caps: &caps,
+                        agents: &agents,
                         observer: observer.as_ref(),
                         // Handed to the executor so a nested engine call (today the
                         // `sub_workflow` node) can thread this run's cancellation
@@ -1401,6 +1412,7 @@ fn build_graph(
                                 run: &run_meta,
                                 nodes: &nodes_state,
                                 caps: &caps,
+                                agents: &agents,
                                 observer: observer.as_ref(),
                                 token: token.clone(),
                             };
