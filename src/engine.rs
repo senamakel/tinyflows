@@ -1,6 +1,7 @@
-//! Drives a [`CompiledWorkflow`] to completion by lowering it onto `tinyagents`.
+//! Drives a [`CompiledWorkflow`] to completion by lowering it onto the in-crate
+//! state-graph runtime ([`crate::graph`]).
 //!
-//! `run` builds a fresh `tinyagents` state graph from the validated
+//! `run` builds a fresh [`crate::graph`] state graph from the validated
 //! [`WorkflowGraph`](crate::model::WorkflowGraph) — capturing the run's host
 //! [`Capabilities`] in each node handler — then drives it and returns the final
 //! run state. State is a [`serde_json::Value`] laid out as
@@ -26,8 +27,8 @@ use crate::graph::{
 };
 use serde_json::{Map, Value, json};
 
-/// Checkpointer types re-exported from `tinyagents` so a host can name and
-/// implement them without taking a direct dependency on `tinyagents`.
+/// Checkpointer types re-exported from [`crate::graph`] so a host can name and
+/// implement them without reaching into the runtime module directly.
 ///
 /// A host that wants durable, cross-process HITL resume implements
 /// [`Checkpointer<serde_json::Value>`] (or reuses [`FileCheckpointer`]) and
@@ -39,14 +40,14 @@ use serde_json::{Map, Value, json};
 /// configures how aggressively a checkpointer persists.
 pub use crate::graph::{Checkpointer, DurabilityMode, FileCheckpointer, InMemoryCheckpointer};
 
-/// Graph-observability types re-exported from `tinyagents` so a host can
+/// Graph-observability types re-exported from [`crate::graph`] so a host can
 /// journal a run's durable [`GraphObservation`]s without taking a direct
-/// dependency on `tinyagents`.
+/// dependency on the runtime module.
 ///
 /// Inject a [`GraphEventJournal`] via [`run_with_checkpointer_journaled`] /
 /// [`resume_with_checkpointer_journaled`]; every graph event the run emits is
 /// wrapped into a [`GraphObservation`] and appended under the run's
-/// `tinyagents` run id (returned on [`JournaledRunOutcome`]), so the host can
+/// graph run id (returned on [`JournaledRunOutcome`]), so the host can
 /// read the slice back (`journal.read_from(run_id, 0)`) and e.g. export it to
 /// Langfuse. [`InMemoryGraphEventJournal`] is a process-local implementation
 /// suitable for per-run capture.
@@ -179,7 +180,7 @@ pub struct RunOutcome {
     pub cancelled: bool,
 }
 
-/// The `tinyagents`-minted identifiers of the underlying graph run.
+/// The runtime-minted identifiers of the underlying graph run.
 ///
 /// A [`GraphEventJournal`] attached to a run keys that run's
 /// [`GraphObservation`]s by `run_id`, so a host that journaled a run reads the
@@ -201,7 +202,7 @@ pub struct GraphRunIds {
 pub struct JournaledRunOutcome {
     /// The workflow-level outcome (final state + pending approval gates).
     pub outcome: RunOutcome,
-    /// The `tinyagents` run ids the injected journal keys observations by.
+    /// The graph run ids the injected journal keys observations by.
     pub graph_run_ids: GraphRunIds,
 }
 
@@ -849,7 +850,7 @@ pub(crate) async fn run_sub_workflow(
     Ok(outcome)
 }
 
-/// Builds and compiles the `tinyagents` graph for `workflow`, attaching the
+/// Builds and compiles the graph-runtime graph for `workflow`, attaching the
 /// host-supplied `checkpointer`, and returns the compiled graph together with
 /// the graph's entry (trigger) node id.
 ///
@@ -861,9 +862,9 @@ pub(crate) async fn run_sub_workflow(
 /// fresh process, re-attach the same durable `checkpointer`, and resume.
 ///
 /// When `journal` is supplied the compiled graph is additionally wired with
-/// `tinyagents`' durable event journal (see
+/// the runtime's durable event journal (see
 /// [`CompiledGraph::with_event_journal`]), so every emitted graph event is
-/// recorded as a [`GraphObservation`] keyed by the run's `tinyagents` run id.
+/// recorded as a [`GraphObservation`] keyed by the run's graph run id.
 ///
 /// # Errors
 /// Returns an [`EngineError`] if the workflow has no trigger or if compilation
@@ -888,7 +889,7 @@ fn build_graph(
 
     // Run-level knobs are read from the trigger node's config — the natural
     // run-level config holder, since `WorkflowGraph` has no top-level config.
-    // `recursion_limit` bounds loops (tinyagents' default is 50) and is applied
+    // `recursion_limit` bounds loops (the runtime's default is 50) and is applied
     // to the builder below; `node_timeout_secs` bounds each individual node
     // *attempt* and is applied per attempt inside the handler's retry loop.
     let recursion_limit = trigger
@@ -946,7 +947,7 @@ fn build_graph(
     if let Some(limit) = recursion_limit {
         builder = builder.with_recursion_limit(limit as usize);
     } else {
-        // tinyagents defaults to 50 super-steps, which is too small for the
+        // The graph runtime defaults to 50 super-steps, which is too small for the
         // advertised default loop cap once the head and body activations are
         // counted. A declared loop already has its own finite cap, so derive a
         // conservative graph budget that lets that structured limit win.
@@ -970,7 +971,7 @@ fn build_graph(
         }
     }
     // NOTE: `node_timeout` is intentionally NOT wired via
-    // `builder.with_node_timeout(..)`. That tinyagents knob wraps a node
+    // `builder.with_node_timeout(..)`. That runtime knob wraps a node
     // handler's *entire* execution — the whole retry loop, including backoff
     // sleeps — which is exactly the BUG-8 conflation of the timeout and retry
     // budgets. The per-attempt bound is applied inside the handler's retry loop
@@ -1111,7 +1112,7 @@ fn build_graph(
                 // `requires_approval: true` must not execute until its id is
                 // listed in the run input's `approvals` array (readable at
                 // `state["run"]["trigger"]["approvals"]`). Until then it pauses
-                // the run via a tinyagents interrupt, so its downstream never
+                // the run via a graph interrupt, so its downstream never
                 // runs and the run reports the pending node.
                 let requires_approval = node
                     .config
@@ -1449,7 +1450,7 @@ fn build_graph(
                             // "stop" (default) and any unknown policy fail the run.
                             //
                             // Stash the structured error before handing
-                            // tinyagents a string: `GraphError::Graph` is
+                            // the runtime a string: `GraphError::Graph` is
                             // the only channel out of a handler, so without this
                             // every node failure would reach the caller flattened
                             // into `EngineError::Capability` and a host could not
@@ -1652,7 +1653,7 @@ fn build_graph(
         }
     }
 
-    // A checkpointer (plus a thread id on the run) is required for tinyagents to
+    // A checkpointer (plus a thread id on the run) is required for the graph runtime to
     // persist the interrupt boundary and hand pending approvals back to us. The
     // checkpointer is host-injected: the default entry points supply an
     // in-memory one to keep the crate host-agnostic and dep-free, while a host
@@ -1662,7 +1663,7 @@ fn build_graph(
         .map_err(|e| EngineError::Capability(e.to_string()))?
         .with_checkpointer(checkpointer);
 
-    // Opt-in durable observability: with a journal attached, tinyagents wraps
+    // Opt-in durable observability: with a journal attached, the runtime wraps
     // every emitted graph event into a `GraphObservation` (stamped with run
     // lineage + step) and appends it under the run id.
     if let Some(journal) = journal {
@@ -1679,7 +1680,7 @@ fn build_graph(
     // that the run took too many super-steps).
     //
     // Only set when asked. `RecursionPolicy` also carries `max_total_steps`,
-    // and tinyagents takes `min(recursion_limit, max_total_steps)` — so
+    // and the runtime takes `min(recursion_limit, max_total_steps)` — so
     // installing a default policy here would silently tighten the step budget
     // of every existing graph.
     if let Some(max_visits) = trigger
@@ -1721,7 +1722,7 @@ fn default_thread_id(workflow: &CompiledWorkflow) -> Result<String> {
         .clone())
 }
 
-/// Builds the `tinyagents` graph for `workflow` under the supplied
+/// Builds the graph-runtime graph for `workflow` under the supplied
 /// `checkpointer`, drives the first run keyed under `thread_id`, and returns the
 /// still-live compiled graph, that `thread_id`, and the [`RunOutcome`].
 ///
@@ -1834,7 +1835,7 @@ async fn build_and_run(
             // A node that ended the run stashed its real error on the way out;
             // prefer it so callers can match on the variant (e.g.
             // `EngineError::LoopLimit`). Falling back to the stringified driver
-            // error covers failures that came from tinyagents itself — a hit
+            // error covers failures that came from the graph runtime itself — a hit
             // recursion limit, a checkpointer fault — which have no node error
             // behind them.
             let structured = terminal_error
@@ -1846,7 +1847,7 @@ async fn build_and_run(
     };
 
     // Nodes that paused the run awaiting approval, surfaced from the interrupts
-    // tinyagents returned at the boundary.
+    // the runtime returned at the boundary.
     let pending_approvals: Vec<String> = execution
         .interrupts
         .iter()
@@ -1882,7 +1883,7 @@ async fn build_and_run(
     };
     observer.on_run_finish(&run_record);
 
-    // The tinyagents-minted run ids: a journal (when attached) keys this run's
+    // The runtime-minted run ids: a journal (when attached) keys this run's
     // observations by `run_id`, so surface both ids to the caller.
     let graph_run_ids = GraphRunIds {
         run_id: execution.run_id.as_str().to_string(),
@@ -1994,10 +1995,10 @@ pub async fn resume_cancellable(
 
 /// A live, resumable workflow run.
 ///
-/// Unlike the re-run-based [`resume`], this keeps the compiled `tinyagents` graph
+/// Unlike the re-run-based [`resume`], this keeps the compiled graph-runtime graph
 /// (and therefore its checkpointer) alive after the initial run, so
 /// [`ResumableRun::resume`] can continue **from the persisted checkpoint** —
-/// tinyagents replays forward from the interrupt boundary, so nodes that already
+/// the runtime replays forward from the interrupt boundary, so nodes that already
 /// completed are **not** re-executed.
 pub struct ResumableRun {
     /// The compiled graph that ran, kept alive so its in-memory checkpointer
@@ -2022,7 +2023,7 @@ impl ResumableRun {
     /// being approved; they are also recorded into the run's approvals for
     /// downstream visibility.
     ///
-    /// tinyagents replays forward from the persisted checkpoint — the interrupted
+    /// the runtime replays forward from the persisted checkpoint — the interrupted
     /// gate re-runs (now approved, because the resume value reaches it via
     /// `NodeContext::resume`) and its downstream continues, while nodes that
     /// already completed are not re-executed.
@@ -2035,7 +2036,7 @@ impl ResumableRun {
             "run": { "trigger": { "approvals": newly_approved.clone() } }
         });
         // Deliver the explicit `approved` gate id list as the resume value.
-        // tinyagents ignores the `with_update` state write on resume, so the
+        // The runtime ignores the `with_update` state write on resume, so the
         // resume value is the sole approval channel: each interrupted gate
         // proceeds only if its id is listed, leaving any other parallel gate
         // pending rather than blanket-approving every interrupt with a bare `true`.
@@ -2153,19 +2154,19 @@ pub async fn run_with_checkpointer(
 /// `checkpointer`.
 ///
 /// This is the durable, cross-process resume path. It rebuilds the identical
-/// `tinyagents` graph for `workflow`, re-attaches the **same** `checkpointer`,
+/// graph-runtime graph for `workflow`, re-attaches the **same** `checkpointer`,
 /// and resumes the persisted `thread_id` — so a host can run, persist to its
 /// own durable store, and later (even after a full process restart) reconstruct
 /// its [`Capabilities`] plus checkpointer and pick the run back up by
 /// `thread_id`. Nodes that already completed before the pause are not
-/// re-executed; tinyagents replays forward from the interrupt boundary.
+/// re-executed; the runtime replays forward from the interrupt boundary.
 ///
 /// `newly_approved` are the gate node ids being approved. Approval flows through
 /// the same mechanism [`ResumableRun::resume`] uses: [`Command::resume`]
 /// delivers a resume value that reaches the interrupted gate via
 /// `NodeContext::resume`, which the gate treats as approval. The ids are also
 /// recorded into the run's approvals for downstream visibility. (Note: in
-/// tinyagents the accompanying state update is ignored on resume, so the resume
+/// the runtime the accompanying state update is ignored on resume, so the resume
 /// value itself is the operative approval channel.)
 ///
 /// Returns a fresh [`RunOutcome`]: `output` is the resumed run's final state and
@@ -2200,13 +2201,13 @@ pub async fn resume_with_checkpointer(
 
 /// Like [`run_with_checkpointer`], but additionally attaches the host-supplied
 /// `journal`: every graph event the run emits is recorded as a durable
-/// [`GraphObservation`] keyed by the run's `tinyagents` run id, which is
+/// [`GraphObservation`] keyed by the run's graph run id, which is
 /// returned on the [`JournaledRunOutcome`] so the host can read the exact
 /// slice back (`journal.read_from(&graph_run_ids.run_id, 0)`) — for example to
 /// export the run to Langfuse after it settles.
 ///
 /// All execution behavior is identical to [`run_with_checkpointer`]; the
-/// journal sits off the hot path (appends are best-effort inside `tinyagents`)
+/// journal sits off the hot path (appends are best-effort inside the runtime)
 /// and never fails the run.
 ///
 /// # Errors
@@ -2281,7 +2282,7 @@ pub async fn run_with_checkpointer_journaled_observed(
 /// Like [`resume_with_checkpointer`], but additionally attaches the
 /// host-supplied `journal` to the resumed run (see
 /// [`run_with_checkpointer_journaled`] for the journaling contract). The
-/// resumed execution mints a **new** `tinyagents` run id — returned on the
+/// resumed execution mints a **new** graph run id — returned on the
 /// [`JournaledRunOutcome`] — so the host reads the resume's observations under
 /// that id, not the original run's.
 ///
@@ -2359,7 +2360,7 @@ pub async fn resume_with_checkpointer_journaled_observed(
 /// Shared implementation of the checkpointed resume path: rebuilds the graph
 /// (optionally journaled), re-attaches the same `checkpointer`, and resumes
 /// `thread_id`. Returns the outcome plus the resumed execution's
-/// `tinyagents`-minted run ids.
+/// runtime-minted run ids.
 #[allow(clippy::too_many_arguments)]
 async fn resume_with_checkpointer_inner(
     workflow: &CompiledWorkflow,
@@ -2392,7 +2393,7 @@ async fn resume_with_checkpointer_inner(
     // Approvals recorded for downstream visibility. On resume the interrupted
     // gate is approved because the resume value reaches it via
     // `NodeContext::resume`; the `with_update` mirrors `ResumableRun::resume`
-    // (tinyagents ignores it on resume, so the resume value is the real
+    // (the runtime ignores it on resume, so the resume value is the real
     // approval channel).
     let approvals_update = json!({
         "run": { "trigger": { "approvals": newly_approved.clone() } }
@@ -2401,7 +2402,7 @@ async fn resume_with_checkpointer_inner(
         tracing::info!(?rejected, "resuming with denied approval gate(s)");
     }
     // Always deliver a structured resume value carrying the explicit `approved`
-    // and `rejected` gate id lists. tinyagents ignores the `with_update` state
+    // and `rejected` gate id lists. the runtime ignores the `with_update` state
     // write on resume, so this value is the sole approval channel and each
     // interrupted gate decides for itself: gates in `approved` proceed, gates in
     // `rejected` route to their `error` port (or fail), and gates in neither stay
@@ -2556,7 +2557,7 @@ mod tests {
     async fn journaled_run_records_graph_observations() {
         // trigger -> output_parser under run_with_checkpointer_journaled: the
         // injected in-memory journal must hold this run's durable
-        // GraphObservations (node started/completed) under the tinyagents run
+        // GraphObservations (node started/completed) under the graph run
         // id returned on the JournaledRunOutcome.
         let graph = WorkflowGraph {
             nodes: vec![
@@ -2891,7 +2892,7 @@ mod tests {
         // exponential backoff of 1ms across 2 attempts. The tiny delay proves the
         // backoff path executes between attempts without hanging, and `on_error:
         // continue` lets the run complete with an error item. (Actual timeout/limit
-        // firing is enforced and tested by tinyagents itself.)
+        // firing is enforced and tested by the runtime's own tests.)
         let mut tool = node("x", NodeKind::ToolCall);
         tool.config = json!({
             "retry": { "max_attempts": 2, "backoff_ms": 1, "backoff": "exponential" },
@@ -2922,7 +2923,7 @@ mod tests {
         // A trigger carrying run-level `recursion_limit` and `node_timeout_secs`
         // wired to a downstream passthrough. This proves the knobs are read from the
         // trigger config and wired onto the builder without breaking execution; the
-        // downstream node still runs. (tinyagents itself tests the knobs actually
+        // downstream node still runs. (the runtime's own tests cover the knobs actually
         // firing.)
         let mut trigger = node("t", NodeKind::Trigger);
         trigger.config = json!({ "recursion_limit": 100, "node_timeout_secs": 30 });
@@ -4537,7 +4538,7 @@ mod tests {
     #[tokio::test]
     async fn durable_resume_with_journal_surfaces_resume_observations() {
         // Same durable resume path as above, but with a graph event journal attached
-        // to both halves. The resumed run returns its own tinyagents run id and the
+        // to both halves. The resumed run returns its own graph run id and the
         // journal stores observations under that id.
         let cp: Arc<dyn Checkpointer<Value>> = Arc::new(InMemoryCheckpointer::<Value>::default());
         let mut approval_gate = node("gate", NodeKind::OutputParser);
@@ -4585,7 +4586,7 @@ mod tests {
         );
         assert!(
             !resumed.graph_run_ids.run_id.is_empty(),
-            "resume must surface the tinyagents run id"
+            "resume must surface the graph run id"
         );
 
         let observations = journal
