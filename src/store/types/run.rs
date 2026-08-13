@@ -24,7 +24,8 @@ pub type RunId = String;
 
 /// Bytes of one declared input value kept on the durable record.
 ///
-/// Much smaller than [`MAX_EVIDENCE_BYTES`]: an input is a knob a caller turned,
+/// Much smaller than the step-evidence budget [`bounded_evidence`] applies: an
+/// input is a knob a caller turned,
 /// and every surface that shows a run shows all of them at once. A repository
 /// name, a branch, a PR number, a paragraph of instruction all fit; a pasted
 /// transcript is summarized rather than carried into every future listing.
