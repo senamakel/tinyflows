@@ -18,8 +18,6 @@ its embedded, versioned extension into a local directory and drives the
 companion, so nothing below needs a source checkout:
 
 ```bash
-mkdir -p ~/tinyflows-extension
-cd ~/tinyflows-extension
 tinyflows extension path
 ```
 
@@ -32,10 +30,17 @@ tinyflows companion start \
   --workflows-dir "$PWD/workflows"
 ```
 
-To rebuild the extension from a source checkout instead (e.g. when developing
-the `extension/` package), run `npm ci && npm run verify && npm run build`
-first — the installed `tinyflows` binary then serves the freshly built
-`extension/dist` output.
+To rebuild and test the extension from a source checkout instead, build the
+package first and then compile the companion from that checkout so the fresh
+`extension/dist` output is embedded:
+
+```bash
+cd extension
+npm ci
+npm run verify
+cd ..
+cargo run --features chrome-extension -- extension path
+```
 
 `pair` prints a loopback relay URL and a pairing token. Paste both into the toolbar popup. The token is stored in `~/.tinyflows/credentials/chrome-extension-relay.secret` with mode `0600` on Unix. It is carried in `Sec-WebSocket-Protocol`, never in the URL. Rotate it with `tinyflows pair --rotate`, restart the companion, and pair the extension again.
 
