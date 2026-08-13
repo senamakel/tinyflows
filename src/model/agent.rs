@@ -160,6 +160,12 @@ impl AgentDefinition {
 ///
 /// A `None` field means "no author-declared bound", not "unbounded" — the
 /// harness's own default applies.
+///
+/// The two timeouts are separate on purpose. A whole-run budget cannot express
+/// "no single tool call may hang for more than 30s", and a per-tool timeout
+/// cannot express "give up on this agent after five minutes" — a loop making
+/// steady, individually-fast tool calls runs forever under a per-tool bound
+/// alone.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct AgentLimits {
     /// Maximum model↔tool iterations.
@@ -168,16 +174,27 @@ pub struct AgentLimits {
     /// Maximum individual tool invocations across the run.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_tool_calls: Option<u32>,
-    /// Wall-clock budget, in seconds, for the whole agent run.
+    /// Wall-clock budget, in seconds, for the **whole agent run** — every model
+    /// call, every tool call, and the harness's own overhead between them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_seconds: Option<u32>,
+    pub agent_timeout_secs: Option<u32>,
+    /// Wall-clock budget, in seconds, for a **single tool invocation**.
+    ///
+    /// Bounds each call independently, so one wedged tool cannot consume the
+    /// whole agent budget. How a harness reports the timeout to the model — as a
+    /// tool error it can recover from, or as a hard stop — is its own policy.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_timeout_secs: Option<u32>,
 }
 
 impl AgentLimits {
     /// Whether no bound at all is declared.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.max_steps.is_none() && self.max_tool_calls.is_none() && self.max_seconds.is_none()
+        self.max_steps.is_none()
+            && self.max_tool_calls.is_none()
+            && self.agent_timeout_secs.is_none()
+            && self.tool_timeout_secs.is_none()
     }
 
     /// Narrows `self` by `other`, taking the **lower** of each declared bound.
