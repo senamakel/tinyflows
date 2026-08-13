@@ -1298,6 +1298,8 @@ fn build_graph(
                         // `sub_workflow` node) can thread this run's cancellation
                         // into its child; a plain executor never reads it.
                         token: token.clone(),
+                        lane: lane.clone(),
+                        step: activation_step,
                     };
                     // BUG-8: bound THIS attempt (not the whole retry loop) to
                     // `node_timeout`. Race the attempt future against a
