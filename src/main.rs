@@ -323,6 +323,9 @@ fn standalone_capabilities() -> tinyflows::caps::Capabilities {
         agent: None,
         shell: None,
         memory: None,
+        // The stub binary refuses every outside-world capability; background
+        // work is no exception, so `spawn` degrades to running inline.
+        tasks: None,
     }
 }
 
