@@ -841,42 +841,43 @@ fn validate_loops(graph: &WorkflowGraph, errors: &mut Vec<ValidationError>) {
         .flat_map(|(from, to)| nodes_on_cycle(graph, to, from))
         .collect();
 
-    // A real fan-in `merge` on a cycle deadlocks the loop **only when one of
-    // the inputs it waits for comes from outside that cycle**. A single-input
-    // merge is a passthrough and is never lowered as a waiting barrier at all.
+    // A real fan-in `merge` inside the loop body deadlocks it. A single-input
+    // merge is a passthrough and is not lowered as a waiting barrier.
     //
-    // Why the narrower rule is sound. Barrier arrivals refill: the arrival set
-    // is *removed* when the barrier fires (see
-    // `graph::compiled::routing::route_completed`), so the barrier re-arms for
-    // the next pass. If every predecessor it waits for is itself on the cycle,
-    // all of them run again on every pass, the arrival set completes again on
-    // every pass, and the merge fires once per iteration exactly as written.
+    // This refusal looks narrower than it needs to be, and it was tried: the
+    // barrier itself would cope, because arrivals refill (the arrival set is
+    // removed when the barrier fires, see
+    // `graph::compiled::routing::route_completed`), so a merge whose arms are
+    // all on the cycle would re-arm and re-fire every pass.
     //
-    // An off-cycle predecessor is the case that hangs. It runs once, on the
-    // seeding pass, and never activates again — so from the second iteration
-    // onwards the required set can never be completed, and the loop stops dead
-    // at the merge. That is what stays refused.
+    // What defeats it is **barrier relief**, not the barrier. Arms inside a
+    // loop body are reachable only through the head's `body` port, so
+    // `conditional_predecessors` classifies them as conditional and registers a
+    // relief for each. Relief then injects phantom arrivals, and the merge
+    // fires *before* its arms have run — observed as the activation order
+    // `head, apex, join, arm_a, arm_b, …`, i.e. the join completing on data
+    // from the previous pass. That is silently wrong output rather than a hang,
+    // which is worse than refusing the graph.
+    //
+    // Relief cannot simply be skipped for on-cycle merges either: a `condition`
+    // *inside* a loop body is a real conditional whose untaken arm still needs
+    // relief every pass. Lifting this properly needs relief scoped to a single
+    // pass — arrivals keyed by `(node, iteration)` rather than by node — which
+    // is a change to the barrier's identity model, not to this predicate.
     for id in &on_a_cycle {
         let is_merge = graph
             .nodes
             .iter()
             .any(|n| n.id == *id && n.kind == NodeKind::Merge);
-        if !is_merge {
-            continue;
-        }
-        let forward_predecessors: Vec<&str> = graph
+        let forward_predecessors = graph
             .edges
             .iter()
             .filter(|edge| {
                 edge.to_node == **id
                     && !loop_edges.contains(&(edge.from_node.clone(), edge.to_node.clone()))
             })
-            .map(|edge| edge.from_node.as_str())
-            .collect();
-        let waits_on_something_off_the_cycle = forward_predecessors
-            .iter()
-            .any(|pred| !on_a_cycle.contains(pred));
-        if forward_predecessors.len() > 1 && waits_on_something_off_the_cycle {
+            .count();
+        if is_merge && forward_predecessors > 1 {
             errors.push(ValidationError::IllegalCycle((*id).to_string()));
         }
     }
