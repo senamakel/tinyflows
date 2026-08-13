@@ -712,7 +712,7 @@ where
             // members of this step (interrupted node first). Each pending branch
             // keeps its `Send` arg; accumulated barrier arrivals are persisted
             // too. Then return control to the caller.
-            if let Some((index, emitted)) = interrupt {
+            if !interrupts.is_empty() {
                 if let Err(err) = self.require_interrupt_durability(&thread_id) {
                     return self
                         .fail_and_return(
@@ -725,9 +725,23 @@ where
                         )
                         .await;
                 }
+                // Split the step into the branches that interrupted and the
+                // branches that finished. Only the interrupted ones are
+                // rescheduled; a branch that completed keeps its result and has
+                // its successors routed now, so a resume never runs it again.
+                //
+                // Under parallel execution "the branches after the interrupt"
+                // is not the same as "the branches that did not run" — the whole
+                // active set runs before anything is folded. Rescheduling by
+                // position would re-run completed work and fire its side effects
+                // a second time.
+                let interrupted_indices: HashSet<usize> =
+                    interrupts.iter().map(|(index, _)| *index).collect();
+                let (completed, completed_goto) =
+                    Self::partition_completed(active, &goto_map, &interrupted_indices);
                 let successors = match self.route_completed(
-                    &active[..index],
-                    &goto_map,
+                    &completed,
+                    &completed_goto,
                     &state,
                     &mut barrier_arrivals,
                 ) {
