@@ -7,21 +7,25 @@
 pub mod agent;
 pub(crate) mod agent_request;
 pub mod code;
+pub mod gate;
 pub(crate) mod envelope;
 pub mod http_request;
 pub mod memory;
 pub mod output_parser;
 pub(crate) mod schema;
 pub mod shell;
+pub mod spawn;
 pub mod sub_workflow;
 pub mod tool_call;
 
 pub use agent::AgentNode;
 pub use code::CodeNode;
+pub use gate::GateNode;
 pub use http_request::HttpRequestNode;
 pub use memory::MemoryNode;
 pub use output_parser::OutputParserNode;
 pub use shell::ShellNode;
+pub use spawn::SpawnNode;
 pub use sub_workflow::SubWorkflowNode;
 pub use tool_call::ToolCallNode;
 
