@@ -10,6 +10,7 @@ use crate::compiler::compile;
 use crate::data::Item;
 use crate::model::{Edge, Node, NodeKind, TriggerKind, WorkflowGraph};
 use crate::testkit::debug::breakpoint::Condition;
+use crate::testkit::debug::{BreakpointSpec, DebugCommand};
 use serde_json::{Value, json};
 use std::time::Duration;
 
