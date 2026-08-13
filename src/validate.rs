@@ -44,7 +44,8 @@ pub fn validate(graph: &WorkflowGraph) -> Result<(), ValidationError> {
 ///
 /// Returns an empty `Vec` for a valid graph. The checks are ordered
 /// deterministically (duplicate ids → trigger count → edge integrity →
-/// `on_error` policy → per-kind config → condition routing → declared inputs),
+/// `on_error` policy → per-kind config → `void` topology → condition routing →
+/// declared inputs),
 /// and every error is self-contained (no check can panic on a graph that failed
 /// an earlier one), so accumulating is safe. The first element is identical to what
 /// [`validate`] returns, preserving the historical single-error contract.
