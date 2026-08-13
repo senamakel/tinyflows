@@ -604,7 +604,7 @@ async fn an_accumulator_survives_across_iterations() {
         "state": {
             "init": { "attempts": [] },
             // Append the pass number each time round.
-            "update": "={{ .state | .attempts += [(.state.attempts | length) + 1] }}"
+            "update": "={ attempts: (.state.attempts + [((.state.attempts | length) + 1)]) }"
         }
     }));
 
@@ -629,7 +629,7 @@ async fn an_accumulator_can_drop_a_key_it_previously_held() {
         "state": {
             "init": { "err": "boom", "tries": 0 },
             // Rebuild the accumulator without `err`.
-            "update": "={{ { tries: (.state.tries + 1) } }}"
+            "update": "={ tries: (.state.tries + 1) }"
         }
     }));
 
@@ -648,8 +648,8 @@ async fn until_exits_early_and_reports_its_reason() {
     let graph = loop_graph(json!({
         "max_iterations": 10,
         "on_exceeded": "continue",
-        "state": { "init": { "tries": 0 }, "update": "={{ { tries: (.state.tries + 1) } }}" },
-        "until": "={{ .state.tries >= 2 }}"
+        "state": { "init": { "tries": 0 }, "update": "={ tries: (.state.tries + 1) }" },
+        "until": "=.state.tries >= 2"
     }));
 
     let outcome = run_guarded(&graph).await.expect("run");
@@ -670,8 +670,8 @@ async fn an_until_that_never_passes_reports_exhaustion_not_success() {
     let graph = loop_graph(json!({
         "max_iterations": 2,
         "on_exceeded": "continue",
-        "state": { "init": { "tries": 0 }, "update": "={{ { tries: (.state.tries + 1) } }}" },
-        "until": "={{ .state.tries >= 99 }}"
+        "state": { "init": { "tries": 0 }, "update": "={ tries: (.state.tries + 1) }" },
+        "until": "=.state.tries >= 99"
     }));
 
     let outcome = run_guarded(&graph).await.expect("run");
@@ -686,8 +686,8 @@ async fn the_success_port_separates_convergence_from_exhaustion() {
         "max_iterations": 10,
         "on_exceeded": "continue",
         "success_port": true,
-        "state": { "init": { "tries": 0 }, "update": "={{ { tries: (.state.tries + 1) } }}" },
-        "until": "={{ .state.tries >= 2 }}"
+        "state": { "init": { "tries": 0 }, "update": "={ tries: (.state.tries + 1) }" },
+        "until": "=.state.tries >= 2"
     }));
     graph.nodes.push(node("won", NodeKind::OutputParser, Value::Null));
     graph.edges.push(port_edge("l", "success", "won"));
@@ -710,7 +710,7 @@ async fn the_body_can_read_the_accumulator() {
     let mut graph = loop_graph(json!({
         "max_iterations": 2,
         "on_exceeded": "continue",
-        "state": { "init": { "tries": 0 }, "update": "={{ { tries: (.state.tries + 1) } }}" }
+        "state": { "init": { "tries": 0 }, "update": "={ tries: (.state.tries + 1) }" }
     }));
     // Replace the body with a transform that stamps what it can see.
     graph.nodes.retain(|n| n.id != "work");
@@ -735,7 +735,7 @@ async fn emit_state_puts_the_accumulator_on_the_done_port() {
         "max_iterations": 2,
         "on_exceeded": "continue",
         "emit": "state",
-        "state": { "init": { "tries": 0 }, "update": "={{ { tries: (.state.tries + 1) } }}" }
+        "state": { "init": { "tries": 0 }, "update": "={ tries: (.state.tries + 1) }" }
     }));
 
     let outcome = run_guarded(&graph).await.expect("run");
