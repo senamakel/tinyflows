@@ -300,3 +300,14 @@ pub fn arb_shape(depth: u32) -> impl Strategy<Value = Shape> {
 pub fn arb_workflow_graph() -> impl Strategy<Value = WorkflowGraph> {
     arb_shape(3).prop_map(|shape| graph_of(&shape))
 }
+
+/// Like [`arb_shape`], but every generated shape contains **at least one**
+/// approval gate, so every run it produces suspends.
+///
+/// Kept separate from [`arb_shape`] rather than folded in as one more variant:
+/// a strategy that only *sometimes* produces a gate would spend most of its
+/// cases not testing suspension at all, and the properties about running to
+/// completion want graphs that reliably do not pause.
+pub fn arb_gated_shape(depth: u32) -> impl Strategy<Value = Shape> {
+    arb_shape(depth).prop_map(|inner| Shape::Gate(Box::new(inner)))
+}
