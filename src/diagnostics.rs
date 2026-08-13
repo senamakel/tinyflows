@@ -300,5 +300,5 @@ pub struct DryRun {
 }
 
 #[cfg(test)]
-#[path = "diagnosis_tests.rs"]
+#[path = "diagnostics_tests.rs"]
 mod tests;
