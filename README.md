@@ -244,6 +244,7 @@ done
 | `merge`         | Fan-in barrier that combines multiple inputs; waits for all wired predecessors.              |
 | `split_out`     | Fan-out that emits one item per element of a list.                                           |
 | `transform`     | Pure, expression-based data transform / field mapping over the run state.                    |
+| `void`          | Terminal sink: discards its input and runs nothing downstream — the explicit dead end.       |
 
 See the [Node Catalog](../../wiki/Node-Catalog) wiki page for config keys and
 ports.
