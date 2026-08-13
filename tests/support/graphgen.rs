@@ -54,6 +54,13 @@ pub enum Shape {
         /// What runs on each pass.
         body: Box<Shape>,
     },
+    /// A node that pauses the run awaiting approval, followed by a shape.
+    ///
+    /// Present so generated runs actually *suspend*, which is the only way to
+    /// exercise the checkpoint/resume path. A shape containing one of these
+    /// cannot complete without either a pre-approval on the run input or a
+    /// resume that names its gate.
+    Gate(Box<Shape>),
 }
 
 impl Shape {
