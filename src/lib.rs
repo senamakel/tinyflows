@@ -32,8 +32,15 @@ pub mod catalog;
 pub mod companion;
 pub mod compiler;
 pub mod data;
+/// Reading a run's steps for the failures a green outcome hides: null bindings,
+/// empty agent prompts, errors an `on_error` policy swallowed, and nodes a
+/// branch routed past.
+pub mod diagnostics;
 pub mod engine;
 pub mod error;
+/// Bounding what a run hands back — durable records and tool replies alike —
+/// so one large item cannot bloat every future read of it.
+pub mod evidence;
 pub mod expr;
 /// Authoring gates: what is *guaranteed* wrong with a graph, caught before a
 /// write lands rather than as a silent null at run time.
