@@ -26,3 +26,4 @@ fn graph_with_inputs(inputs: Vec<crate::model::WorkflowInput>) -> WorkflowGraph 
 include!("validate_tests/validate_tests_part_01_tests.rs");
 include!("validate_tests/validate_tests_part_02_tests.rs");
 include!("validate_tests/validate_tests_part_03_tests.rs");
+include!("validate_tests/validate_tests_part_04_tests.rs");
