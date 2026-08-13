@@ -582,7 +582,12 @@ impl HandlerData {
                     lane: lane.as_ref(),
                     resume: resume_value.as_ref(),
                     output: output.as_ref(),
-                    error: last_err.as_ref(),
+                    // Only when the activation actually failed. The retry loop
+                    // keeps the last failed attempt's error even after a later
+                    // attempt succeeds, so reporting `last_err` unconditionally
+                    // would show a node that recovered as one that failed — and
+                    // fire every on-error breakpoint on it.
+                    error: output.is_none().then(|| last_err.as_ref()).flatten(),
                 })
                 .await;
             match action {
