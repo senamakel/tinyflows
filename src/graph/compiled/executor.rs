@@ -763,18 +763,32 @@ where
                             .await;
                     }
                 };
-                // Only the interrupted branches are rescheduled: the completed
-                // ones are represented by their successors instead.
-                let interrupted_activations: Vec<Activation> = interrupts
+                // Rescheduled: the interrupted branches, plus any branch that was
+                // never started (sequential execution stops at the interrupt).
+                // The branches that ran are represented by their successors
+                // instead, so they are not run twice.
+                let interrupted_nodes: Vec<NodeId> = interrupts
                     .iter()
-                    .map(|(index, _)| active[*index].clone())
+                    .map(|(index, _)| active[*index].node.clone())
                     .collect();
-                let interrupted_nodes: Vec<NodeId> = interrupted_activations
+                let ran: HashSet<usize> = completed_indices
                     .iter()
-                    .map(|activation| activation.node.clone())
+                    .copied()
+                    .chain(interrupts.iter().map(|(index, _)| *index))
                     .collect();
                 let mut pending = successors;
-                pending.extend(interrupted_activations);
+                pending.extend(
+                    interrupts
+                        .iter()
+                        .map(|(index, _)| active[*index].clone())
+                        .chain(
+                            active
+                                .iter()
+                                .enumerate()
+                                .filter(|(index, _)| !ran.contains(index))
+                                .map(|(_, activation)| activation.clone()),
+                        ),
+                );
                 let pending_nodes = activation_nodes(&pending);
                 let interrupt_ids: Vec<InterruptId> = interrupts
                     .iter()
