@@ -154,7 +154,7 @@ impl<T: Send + 'static> AppendWorker<T> {
         let append_failures = Arc::new(AtomicU64::new(0));
         let failures = Arc::clone(&append_failures);
         let handle = std::thread::Builder::new()
-            .name(format!("tinyagents-{name}-drain"))
+            .name(format!("tinyflows-graph-{name}-drain"))
             .spawn(move || {
                 let rt = match tokio::runtime::Builder::new_current_thread()
                     .enable_all()

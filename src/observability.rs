@@ -121,7 +121,7 @@ impl Run {
     /// caused the failure** — a `stop`-policy node records its `Error` step on
     /// the way out before ending the run. A `Failed` run that came from a
     /// driver-level fault with no node behind it (a hit recursion limit, a
-    /// checkpointer error, a tinyagents graph error) records no `Error` step and
+    /// checkpointer error, a graph-runtime error) records no `Error` step and
     /// so returns an **empty** vector. So read a non-empty result as "these
     /// nodes failed" — never read emptiness as "the run succeeded", and never
     /// use this as a proxy for [`RunStatus::Failed`]; consult the run's

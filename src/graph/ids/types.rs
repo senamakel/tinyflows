@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 /// Identifies a single harness run (one model call, one agent loop, or one
 /// graph-node invocation of the harness).
 ///
-/// A `RunId` is the unit of recursion in TinyAgents: when a run spawns a
+/// A `RunId` is the unit of recursion in the graph runtime: when a run spawns a
 /// sub-agent or sub-graph, the child gets its own `RunId` while
 /// [`crate::harness::events::HarnessRunStatus`] records that child's
 /// `parent_run_id` (the spawning run) and `root_run_id` (the top-level

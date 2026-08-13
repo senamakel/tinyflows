@@ -389,7 +389,7 @@ mod file_backend {
     impl TempDir {
         fn new(test_name: &str) -> Self {
             let dir = std::env::temp_dir().join(format!(
-                "tinyagents-ckpt-{}-{}",
+                "tinyflows-graph-ckpt-{}-{}",
                 test_name,
                 std::process::id()
             ));

@@ -196,7 +196,7 @@ async fn a_plain_back_edge_onto_a_mid_graph_node_iterates() {
 }
 
 /// A loop head may not itself be a fan-in, and validation says so rather than
-/// letting the graph run once and stop. The barrier tinyagents installs for a
+/// letting the graph run once and stop. The barrier the graph runtime installs for a
 /// node's forward predecessors is per-node, so it swallows the re-entry the
 /// back-edge delivers — the loop would silently iterate exactly once.
 #[tokio::test]

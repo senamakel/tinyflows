@@ -103,7 +103,7 @@ work. Grounding already exists (`search_tool_catalog` builder tool).
 - **BUG-3 — mixed-port fan-out silently drops branches.** `fan_out_targets`
   (`engine.rs:422`) only treats _all-same-port_ multi-edges as parallel fan-out.
   The common "fan out `main→a`,`main→b` + `error→h`" shape falls into conditional-edge
-  lowering, whose route map (tinyagents builder) overwrites duplicate labels — one of
+  lowering, whose route map (`crate::graph` builder) overwrites duplicate labels — one of
   `a`/`b` never runs. No validation rejects it.
 - **BUG-4 — merge barrier + input collection ignore ports.** Waiting edges are added
   only for single-out-degree predecessors (`engine.rs:789`), so a merge fed by a

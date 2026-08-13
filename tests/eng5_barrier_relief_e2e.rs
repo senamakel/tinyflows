@@ -238,7 +238,7 @@ async fn pure_conditional_join_regression() {
 /// would fire a phantom arrival for `a` the instant `cond` completes, even
 /// on the taken branch — `a` is not yet in that step's `next` (only `x`
 /// is), it needs one more superstep to run. The fix (`reaches_deterministically`
-/// in `tinyagents`) instead resolves `cond`'s actual routing target (`x`)
+/// in `crate::graph`) instead resolves `cond`'s actual routing target (`x`)
 /// and walks it forward through the compiled graph's deterministic edges,
 /// which is correct regardless of hop count.
 fn multi_hop_conditional_graph() -> WorkflowGraph {
@@ -274,7 +274,7 @@ fn multi_hop_conditional_graph() -> WorkflowGraph {
 /// registering a phantom arrival that lets `m` fire off `c`'s arrival alone,
 /// *before* `a`'s real item ever commits. This test MUST fail against that
 /// bug and pass once the relief is keyed on `cond`'s resolved routing target
-/// reaching `a` (Option 1, implemented in `tinyagents`'s
+/// reaching `a` (Option 1, implemented in the graph runtime's
 /// `reaches_deterministically`) — `m` must include BOTH `a`'s and `c`'s
 /// items.
 #[tokio::test]
@@ -308,7 +308,7 @@ async fn multi_hop_conditional_taken_no_data_loss() {
 /// flag:false — `cond` takes the `false` branch (to `b`, never wired into
 /// `m`), so neither `x` nor `a` ever runs. Implemented Option 1 (the
 /// general, correct fix keyed on the brancher's resolved routing target, not
-/// same-superstep scheduling — see `tinyagents`'s `reaches_deterministically`
+/// same-superstep scheduling — see the graph runtime's `reaches_deterministically`
 /// in `src/graph/compiled/routing.rs`), so the multi-hop untaken-branch case
 /// is fully fixed, not merely a documented residual limitation: `m`'s
 /// barrier still clears on `c` alone via the relief, exactly as the direct
