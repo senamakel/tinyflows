@@ -217,3 +217,80 @@ async fn run_with_preapproved_input_completes_immediately() {
         "downstream must stay blocked when the gate is not approved"
     );
 }
+
+/// A branch that finished alongside an interrupted one must not run again when
+/// the run resumes.
+///
+/// Parallel branches all run before any result is folded, so when one of them
+/// pauses the others have genuinely completed. Rescheduling them by position —
+/// "everything after the interrupt" — would re-run finished work, and for a node
+/// with side effects that means firing them twice. The engine reschedules only
+/// the branches that actually interrupted.
+///
+/// The counting `tool_call` is the instrument: a state diff cannot tell a re-run
+/// from a first run when the node is pure, so the assertion is on how many times
+/// the capability was invoked.
+#[tokio::test]
+async fn a_sibling_that_completed_is_not_re_run_on_resume() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// Counts invocations so a re-run is visible.
+    struct CountingTools(Arc<AtomicUsize>);
+
+    #[async_trait::async_trait]
+    impl tinyflows::caps::ToolInvoker for CountingTools {
+        async fn invoke(
+            &self,
+            _slug: &str,
+            _args: &Value,
+            _connection: Option<&str>,
+        ) -> tinyflows::error::Result<Value> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(json!({ "ok": true }))
+        }
+    }
+
+    let calls = Arc::new(AtomicUsize::new(0));
+    let mut caps = mock_capabilities();
+    caps.tools = Arc::new(CountingTools(calls.clone()));
+
+    // `t` fans out to a gate and to a side-effecting tool call. Both run in the
+    // same superstep; the gate pauses, the tool call completes.
+    let graph = WorkflowGraph {
+        name: "sibling_not_rerun".to_string(),
+        nodes: vec![
+            node("t", NodeKind::Trigger, Value::Null),
+            node("gate", NodeKind::OutputParser, json!({ "requires_approval": true })),
+            node("effect", NodeKind::ToolCall, json!({ "slug": "side.effect" })),
+        ],
+        edges: vec![edge("t", "gate"), edge("t", "effect")],
+        ..Default::default()
+    };
+    let compiled = compile(&graph).expect("compile");
+
+    let resumable = run_resumable(&compiled, json!({}), &caps)
+        .await
+        .expect("run_resumable");
+    assert_eq!(
+        resumable.outcome().pending_approvals,
+        vec!["gate".to_string()],
+        "the gate should pause the run"
+    );
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        1,
+        "the sibling ran once before the pause"
+    );
+
+    resumable
+        .resume(vec!["gate".to_string()])
+        .await
+        .expect("resume");
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        1,
+        "the sibling had already completed, so resuming must not invoke it a \
+         second time"
+    );
+}
