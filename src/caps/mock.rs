@@ -454,6 +454,9 @@ pub fn mock_capabilities_with_resolver(resolver: impl WorkflowResolver + 'static
         agent: None,
         // Wired by default (unlike `agent`) — see the doc comment above.
         memory: Some(Arc::new(MockMemory)),
+        // The real tokio-backed runner, so `spawn`/`gate` behave under test the
+        // way they behave for a host that wires nothing.
+        tasks: Some(Arc::new(crate::caps::TokioTaskRunner::new())),
     }
 }
 
