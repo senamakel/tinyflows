@@ -52,6 +52,21 @@ model::WorkflowGraph  →  validate  →  compiler::compile  →  engine::run
   superstep executor, channels, checkpointing, interrupts, event journal).
   Vendored out of `tinyagents` and trimmed: agents themselves are a host concern
   reached through `caps`, so the crate carries no agent-harness dependency.
+- `interception.rs` — the engine's one execution-*gating* hook. A `RunObserver`
+  watches a run; a `StepInterceptor` can change one (substitute a node's output,
+  inject a failure, patch the state it reads, park the activation). Always
+  compiled, inert unless a run is started with `engine::run_intercepted`.
+- `testkit/` — testing, mocking, and live debugging, behind the default-off
+  `testkit` feature: programmable capability doubles with a call log (`mocks`),
+  a structured run trace that names the upstream node behind every null binding
+  (`trace`), `TestHarness` and its assertions (`harness`), breakpoints and debug
+  sessions (`debug`), and all of it as agent-callable tools with JSON Schemas
+  (`tools`). Built entirely on `interception` — nothing in it is special-cased
+  inside the engine.
+- `diagnostics.rs` / `evidence.rs` — reading a run's steps for what a green
+  outcome hides, and bounding what gets handed back. Pure functions of engine
+  records, so neither sits behind a feature; both are re-exported from
+  `store::types` for callers that always reached them there.
 - `error.rs` — shared error types across validate/compile/execute (thiserror).
 - `lib.rs` — crate surface + module declarations; `main.rs` — thin binary stub.
 
