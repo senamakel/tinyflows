@@ -680,6 +680,56 @@ mod tests {
     }
 
     #[test]
+    /// The run-level cap lowers a node that asked for more, and leaves alone a
+    /// node that asked for less — it is a ceiling, not an assignment.
+    #[test]
+    fn the_run_level_cap_only_lowers_a_nodes_own_concurrency() {
+        let run = json!({ "trigger": { "max_item_concurrency": 4 } });
+        assert_eq!(
+            map_options(&json!({ "concurrency": 16 }), "n", &run).concurrency,
+            4,
+            "a node above the run cap is lowered to it"
+        );
+        assert_eq!(
+            map_options(&json!({ "concurrency": 2 }), "n", &run).concurrency,
+            2,
+            "a node below the run cap keeps its own smaller value"
+        );
+    }
+
+    /// `"all"` / `0` means unbounded, which is exactly the case a run-level cap
+    /// exists to bound — so it is capped rather than treated as satisfied.
+    #[test]
+    fn the_run_level_cap_bounds_an_unbounded_node() {
+        let run = json!({ "trigger": { "max_item_concurrency": 3 } });
+        assert_eq!(
+            map_options(&json!({ "concurrency": "all" }), "n", &run).concurrency,
+            3
+        );
+        assert_eq!(
+            map_options(&json!({ "concurrency": 0 }), "n", &run).concurrency,
+            3
+        );
+    }
+
+    /// An absent, zero, or malformed cap leaves node concurrency untouched.
+    #[test]
+    fn a_missing_or_invalid_run_level_cap_changes_nothing() {
+        for run in [
+            json!({}),
+            json!({ "trigger": {} }),
+            json!({ "trigger": { "max_item_concurrency": 0 } }),
+            json!({ "trigger": { "max_item_concurrency": "lots" } }),
+        ] {
+            assert_eq!(
+                map_options(&json!({ "concurrency": 8 }), "n", &run).concurrency,
+                8,
+                "cap {run} should not change the node's own concurrency"
+            );
+        }
+    }
+
+    #[test]
     fn options_clamp_an_absurd_concurrency_instead_of_failing_the_run() {
         let o = map_options(&json!({ "concurrency": 10_000 }), "n", &Value::Null);
         assert_eq!(o.concurrency, MAX_CONCURRENCY);
