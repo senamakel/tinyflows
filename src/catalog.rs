@@ -308,8 +308,11 @@ pub fn contract_for(kind: &str) -> Option<NodeKindContract> {
                     "limits",
                     "object",
                     "Advisory ceilings for the harness's loop: {max_steps?, max_tool_calls?, \
-                     max_seconds?}. May only LOWER the agent definition's. Advisory because the \
-                     loop runs host-side — node_timeout_secs is the bound the engine enforces.",
+                     agent_timeout_secs?, tool_timeout_secs?}. agent_timeout_secs bounds the whole \
+                     run; tool_timeout_secs bounds each individual tool call, so one wedged tool \
+                     cannot eat the whole budget. May only LOWER the agent definition's. Advisory \
+                     because the loop runs host-side — node_timeout_secs is what the engine \
+                     itself enforces.",
                 ),
                 ConfigField::optional(
                     "metadata",

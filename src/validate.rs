@@ -600,7 +600,8 @@ fn validate_agents(graph: &WorkflowGraph, errors: &mut Vec<ValidationError>) {
         let zero = [
             ("max_steps", limits.max_steps),
             ("max_tool_calls", limits.max_tool_calls),
-            ("max_seconds", limits.max_seconds),
+            ("agent_timeout_secs", limits.agent_timeout_secs),
+            ("tool_timeout_secs", limits.tool_timeout_secs),
         ]
         .into_iter()
         .find(|(_, v)| *v == Some(0));

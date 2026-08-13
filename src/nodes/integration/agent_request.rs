@@ -385,7 +385,8 @@ mod tests {
             limits: AgentLimits {
                 max_steps: Some(8),
                 max_tool_calls: Some(20),
-                max_seconds: None,
+                agent_timeout_secs: None,
+                tool_timeout_secs: Some(60),
             },
             tools: vec![
                 ToolGrant::new("github.search"),

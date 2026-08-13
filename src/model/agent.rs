@@ -206,13 +206,20 @@ impl AgentLimits {
     /// ```
     /// use tinyflows::model::AgentLimits;
     ///
-    /// let definition = AgentLimits { max_steps: Some(8), max_tool_calls: Some(20), max_seconds: None };
-    /// let node = AgentLimits { max_steps: Some(4), max_tool_calls: Some(99), max_seconds: Some(30) };
+    /// let definition = AgentLimits {
+    ///     max_steps: Some(8), max_tool_calls: Some(20),
+    ///     agent_timeout_secs: None, tool_timeout_secs: Some(60),
+    /// };
+    /// let node = AgentLimits {
+    ///     max_steps: Some(4), max_tool_calls: Some(99),
+    ///     agent_timeout_secs: Some(30), tool_timeout_secs: None,
+    /// };
     ///
     /// let merged = definition.narrowed_by(&node);
-    /// assert_eq!(merged.max_steps, Some(4));       // node tightened it
-    /// assert_eq!(merged.max_tool_calls, Some(20)); // node tried to widen it; ignored
-    /// assert_eq!(merged.max_seconds, Some(30));    // only the node declared one
+    /// assert_eq!(merged.max_steps, Some(4));            // node tightened it
+    /// assert_eq!(merged.max_tool_calls, Some(20));      // node tried to widen it; ignored
+    /// assert_eq!(merged.agent_timeout_secs, Some(30));  // only the node declared one
+    /// assert_eq!(merged.tool_timeout_secs, Some(60));   // only the definition declared one
     /// ```
     #[must_use]
     pub fn narrowed_by(&self, other: &Self) -> Self {
@@ -226,7 +233,8 @@ impl AgentLimits {
         Self {
             max_steps: lower(self.max_steps, other.max_steps),
             max_tool_calls: lower(self.max_tool_calls, other.max_tool_calls),
-            max_seconds: lower(self.max_seconds, other.max_seconds),
+            agent_timeout_secs: lower(self.agent_timeout_secs, other.agent_timeout_secs),
+            tool_timeout_secs: lower(self.tool_timeout_secs, other.tool_timeout_secs),
         }
     }
 }
@@ -524,19 +532,22 @@ mod tests {
         let definition = AgentLimits {
             max_steps: Some(8),
             max_tool_calls: Some(20),
-            max_seconds: None,
+            agent_timeout_secs: None,
+            tool_timeout_secs: Some(60),
         };
         let node = AgentLimits {
             max_steps: Some(4),
             max_tool_calls: Some(99),
-            max_seconds: Some(30),
+            agent_timeout_secs: Some(30),
+            tool_timeout_secs: Some(90),
         };
         assert_eq!(
             definition.narrowed_by(&node),
             AgentLimits {
                 max_steps: Some(4),
                 max_tool_calls: Some(20),
-                max_seconds: Some(30),
+                agent_timeout_secs: Some(30),
+                tool_timeout_secs: Some(60),
             }
         );
         assert!(AgentLimits::default().is_empty());
