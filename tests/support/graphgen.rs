@@ -117,6 +117,7 @@ impl Builder {
             nodes: Vec::new(),
             edges: Vec::new(),
             next_id: 0,
+            gates: Vec::new(),
         }
     }
 
