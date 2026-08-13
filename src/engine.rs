@@ -1416,6 +1416,69 @@ fn build_graph(
                         steps.lock().expect("steps mutex poisoned").push(step.clone());
                         observer.on_step_finish(&step);
                         let port = output.port.as_deref();
+
+                        // A node that asked for something other than plain data
+                        // flow. Handled before `emit` because both variants
+                        // bypass ordinary routing.
+                        match output.control {
+                            // Pause the run. The update is deliberately dropped:
+                            // the underlying executor discards an interrupting
+                            // activation's state write, so returning one here
+                            // would be a silent lie about what got committed.
+                            // The node re-runs from the top on resume.
+                            Some(crate::nodes::NodeControl::Interrupt { id, payload }) => {
+                                tracing::info!(node = %node.id, gate = %id, "node paused the run");
+                                return Ok(NodeResult::Interrupt(Interrupt {
+                                    id,
+                                    node: node.id.clone().into(),
+                                    payload,
+                                }));
+                            }
+                            // Ask to be run again. The update *is* committed, so
+                            // the node can leave itself notes (a poll count, a
+                            // ticket) and read them back on the next activation.
+                            //
+                            // `goto`-ing ourselves re-activates this node in the
+                            // next super-step. Each poll costs one super-step and
+                            // one node visit, so the caller's own bounded poll
+                            // count is what stops this — not the run-level
+                            // backstop, which cannot say which node span.
+                            Some(crate::nodes::NodeControl::Reenter { after_ms }) => {
+                                let update = items_update_with_meta(
+                                    &node.id,
+                                    &output.items,
+                                    port,
+                                    output.meta.as_ref(),
+                                )?;
+                                if after_ms > 0 {
+                                    // Chopped into slices so a cancel during a
+                                    // long poll interval is seen promptly, the
+                                    // same way retry backoff is drained above.
+                                    let mut remaining = after_ms;
+                                    while remaining > 0 {
+                                        if token.is_cancelled() {
+                                            tracing::info!(node = %node.id, "run cancelled while waiting to re-enter");
+                                            return Ok(NodeResult::Update(items_update(
+                                                &node.id,
+                                                &[],
+                                                None,
+                                            )?));
+                                        }
+                                        let slice = remaining.min(BACKOFF_POLL_MS);
+                                        futures_timer::Delay::new(
+                                            std::time::Duration::from_millis(slice),
+                                        )
+                                        .await;
+                                        remaining -= slice;
+                                    }
+                                }
+                                return Ok(NodeResult::Command(
+                                    Command::goto(vec![node.id.clone()]).with_update(update),
+                                ));
+                            }
+                            None => {}
+                        }
+
                         Ok(emit(
                             items_update_with_meta(
                                 &node.id,
