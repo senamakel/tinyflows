@@ -1055,7 +1055,7 @@ mod tests {
                 }
             }
         }
-        assert_eq!(all_contracts().len(), 16);
+        assert_eq!(all_contracts().len(), 18);
     }
 
     #[test]
@@ -1082,16 +1082,21 @@ mod tests {
     }
 
     #[test]
-    fn node_kinds_has_16_entries_including_shell_memory_dedup_and_loop() {
-        assert_eq!(NODE_KINDS.len(), 16);
+    fn node_kinds_has_18_entries_including_the_async_pair() {
+        assert_eq!(NODE_KINDS.len(), 18);
         assert!(NODE_KINDS.contains(&"shell"));
         assert!(NODE_KINDS.contains(&"memory"));
         assert!(NODE_KINDS.contains(&"dedup"));
         assert!(NODE_KINDS.contains(&"loop"));
-        // The PR's shell node precedes the three sequenced-last node kinds.
+        assert!(NODE_KINDS.contains(&"spawn"));
+        assert!(NODE_KINDS.contains(&"gate"));
+        // New kinds are appended, never inserted: a host that pins a position
+        // (or renders the list in order) must not have entries shift under it.
         assert_eq!(NODE_KINDS[13], "memory");
         assert_eq!(NODE_KINDS[14], "dedup");
         assert_eq!(NODE_KINDS[15], "loop");
+        assert_eq!(NODE_KINDS[16], "spawn");
+        assert_eq!(NODE_KINDS[17], "gate");
     }
 
     #[test]
