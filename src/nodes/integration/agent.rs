@@ -988,7 +988,11 @@ mod tests {
             assert_eq!(blocks[2]["text"], "1", "the =expression resolved against the item");
             assert_eq!(blocks[3]["kind"], "items");
             assert_eq!(blocks[3]["data"][0]["seed"], 1);
-            assert_eq!(blocks[3]["label"], "context_1", "unlabelled blocks get a positional label");
+            assert_eq!(
+                blocks[3]["label"], "context_3",
+                "an unlabelled block is numbered by its position in the ASSEMBLED list, \
+                 not within the node's own `context` array"
+            );
         }
 
         #[tokio::test]
