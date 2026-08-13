@@ -27,6 +27,14 @@ where
             namespace: self.namespace.clone(),
         }
     }
+    /// Reads the persisted state snapshot for `thread_id`.
+    ///
+    /// Returns the checkpoint named by `checkpoint_id`, or the thread's latest
+    /// when `None`, and `None` when the thread has no checkpoint yet.
+    ///
+    /// # Errors
+    /// Returns [`GraphError::Resume`] when no checkpointer is configured, or a
+    /// [`GraphError::Checkpoint`] when the read fails.
     pub async fn get_state(
         &self,
         thread_id: &str,

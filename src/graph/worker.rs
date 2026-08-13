@@ -256,7 +256,7 @@ impl<T: Send + 'static> AppendWorker<T> {
     }
 
     /// Returns the number of payloads dropped because the queue was full.
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[allow(dead_code)]
     pub(crate) fn dropped(&self) -> u64 {
         self.dropped.load(Ordering::Relaxed)
     }
@@ -267,7 +267,7 @@ impl<T: Send + 'static> AppendWorker<T> {
     /// attempted and rejected. Reporting is `tracing`-based and suppressed while
     /// a failure run continues, so this counter is the only subscriber-free
     /// signal of durable-log loss.
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[allow(dead_code)]
     pub(crate) fn append_failures(&self) -> u64 {
         self.append_failures.load(Ordering::Relaxed)
     }

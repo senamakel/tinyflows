@@ -95,7 +95,7 @@ use crate::graph::stream::{GraphEvent, GraphEventSink};
 use crate::graph::ids::{
     CheckpointId, ExecutionStatus, GraphId, InterruptId, NodeId, RunId, ThreadId,
 };
-use crate::graph::error::{GraphError, Result};
+use crate::graph::error::GraphError;
 
 /// Allocates a fresh checkpoint id (string form) that is collision-free across
 /// process restarts.
