@@ -2,6 +2,15 @@
 
 TinyFlows can drive ordinary signed-in Chrome tabs through an unpacked Manifest V3 extension. The native companion remains the workflow runtime: it validates and executes `WorkflowGraph`s, owns retries and credentials, and dispatches non-browser integrations. The extension receives only a correlated browser action and the tab already bound to that run.
 
+The Rust protocol, relay, and companion CLI are behind the `chrome-extension`
+Cargo feature. They are absent from the default engine-only build.
+
+Install the companion CLI from crates.io with:
+
+```bash
+cargo install tinyflows --features chrome-extension
+```
+
 ## Build, install, and pair
 
 ```bash
@@ -10,14 +19,14 @@ npm ci
 npm run verify
 npm run build
 cd ..
-cargo run -- extension path
+cargo run --features chrome-extension -- extension path
 ```
 
 Open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select the printed directory. The CLI materializes its embedded, versioned extension there, so the path remains valid after `cargo install` removes its build sources. Copy the extension id shown by Chrome, then start the companion:
 
 ```bash
-cargo run -- pair
-cargo run -- companion start \
+cargo run --features chrome-extension -- pair
+cargo run --features chrome-extension -- companion start \
   --extension-id <32-character-extension-id> \
   --workflows-dir "$PWD/workflows"
 ```

@@ -23,10 +23,12 @@
 /// expression reads from, and whether it reads as prose.
 pub mod bindings;
 /// Browser automation protocol, action validation, and tool routing.
+#[cfg(feature = "chrome-extension")]
 pub mod browser;
 pub mod caps;
 pub mod catalog;
 /// Native companion pairing, tab authorization, relay, and control lifecycle.
+#[cfg(feature = "chrome-extension")]
 pub mod companion;
 pub mod compiler;
 pub mod data;
