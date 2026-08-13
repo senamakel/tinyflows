@@ -236,4 +236,27 @@ pub trait StepInterceptor: Send + Sync {
     /// Returning [`StepAction::Continue`] with no patch is the inert answer and
     /// leaves the run byte-identical to one with no interceptor attached.
     async fn intercept(&self, frame: StepFrame<'_>) -> StepAction;
+
+    /// Substitute the [`Capabilities`] one activation runs with.
+    ///
+    /// Returning `None` — the default — leaves the run's own capabilities in
+    /// place, which is what every ordinary run does.
+    ///
+    /// This exists because "which node made this call?" has no other honest
+    /// answer. A capability implementation is handed a slug and some arguments;
+    /// it is never told who is calling, and under a parallel super-step several
+    /// nodes are calling at once, so neither a shared "current node" cell nor
+    /// the order calls arrive in can recover it. Giving each activation its own
+    /// capability bundle attributes every call exactly, with no ambient state.
+    ///
+    /// It also buys per-node mocking as a side effect: a harness can stub one
+    /// node's tool calls and leave the rest of the graph talking to the real
+    /// thing.
+    ///
+    /// Called once per activation, only when the returned bundle would be used
+    /// — never on a run with no interceptor attached.
+    fn capabilities_for(&self, node: &Node, capabilities: &Capabilities) -> Option<Capabilities> {
+        let _ = (node, capabilities);
+        None
+    }
 }
