@@ -53,6 +53,21 @@ impl<Update> Command<Update> {
         }
     }
 
+    /// Creates a command routing to a **mixed** set of targets: plain
+    /// activations and [`Send`] packets together.
+    ///
+    /// [`Self::goto`] and [`Self::send`] each build one kind. A fan-out whose
+    /// successors are not all the same kind — lanes carrying their own work to
+    /// most successors, but converging on one — needs both in a single command,
+    /// since a node emits one.
+    pub fn route(targets: impl IntoIterator<Item = RouteTarget>) -> Self {
+        Self {
+            update: None,
+            goto: targets.into_iter().collect(),
+            resume: None,
+        }
+    }
+
     /// Creates a command carrying a partial state update.
     pub fn update(update: Update) -> Self {
         Self {

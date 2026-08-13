@@ -78,6 +78,18 @@ pub enum NodeKind {
     /// back already settled, so the graph still computes the right answer
     /// without the concurrency.
     Spawn,
+    /// Fans the **downstream path** out into parallel lanes: each lane runs its
+    /// own copy of every node between here and the matching [`NodeKind::Gather`].
+    ///
+    /// Different from an ordinary fan-out, which runs each *successor* once. A
+    /// scatter over 8 items turns a five-node pipeline into 8 concurrent
+    /// five-node pipelines.
+    Scatter,
+    /// Collects the lanes a [`NodeKind::Scatter`] opened, on a release policy.
+    ///
+    /// Where lanes end: routing to a gather is a plain activation, so N lanes
+    /// converge on one gather rather than each running their own.
+    Gather,
     /// Waits for tickets — from [`NodeKind::Spawn`], or named by expression —
     /// and emits their results once its release policy is satisfied.
     ///

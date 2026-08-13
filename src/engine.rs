@@ -1324,7 +1324,7 @@ fn build_graph(
                             })
                             .collect();
                         return NodeResult::Command(
-                            Command::goto(routed).with_update(update),
+                            Command::route(routed).with_update(update),
                         );
                     }
 
