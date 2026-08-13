@@ -1202,6 +1202,24 @@ fn build_graph(
         let is_trigger = node.kind == NodeKind::Trigger;
         // How this node drives its successors once it has an update.
         let routing = handler_routing(graph, &node.id);
+        // Successors on the emitted port, needed only inside a lane: `Plain`
+        // routing normally rides static edges, but a lane has to re-schedule
+        // every successor as a `Send`, so it needs the target list explicitly.
+        let plain_targets: Vec<String> = graph
+            .edges
+            .iter()
+            .filter(|e| e.from_node == node.id)
+            .map(|e| e.to_node.clone())
+            .collect();
+        // Which successors end a lane. Routing to one of these is a plain
+        // activation, so the lanes converge on it instead of each running their
+        // own copy.
+        let gather_nodes: std::collections::HashSet<String> = graph
+            .nodes
+            .iter()
+            .filter(|n| n.kind == NodeKind::Gather)
+            .map(|n| n.id.clone())
+            .collect();
         // Whether the node has an outgoing edge on the `error` port. A denied
         // approval gate (see the resume-deny path below) routes its error item
         // there when present, and fails the run when absent.
@@ -1221,6 +1239,8 @@ fn build_graph(
             let terminal_error = terminal_error.clone();
             let token = token.clone();
             let routing = routing.clone();
+            let plain_targets = plain_targets.clone();
+            let gather_nodes = gather_nodes.clone();
             // The resume value delivered to this node on a checkpointed resume, if
             // any. A bare `true` means "approve the interrupted gate"; a structured
             // `{ "rejected": [<gate id>, …] }` denies the named gate(s).
