@@ -357,7 +357,10 @@ mod tests {
         ];
         let items = emit_items(results, &awaiting);
         let values: Vec<&Value> = items.iter().map(|item| &item.json).collect();
-        assert_eq!(values, vec![&json!("first"), &json!("second"), &json!("third")]);
+        assert_eq!(
+            values,
+            vec![&json!("first"), &json!("second"), &json!("third")]
+        );
         assert_eq!(
             items.iter().map(|i| i.paired_item).collect::<Vec<_>>(),
             vec![Some(0), Some(1), Some(2)],
@@ -369,7 +372,10 @@ mod tests {
     fn positive_config_fields_fall_back_on_zero_or_garbage() {
         assert_eq!(positive_u64(&json!({}), "max_polls", 7), 7);
         assert_eq!(positive_u64(&json!({ "max_polls": 0 }), "max_polls", 7), 7);
-        assert_eq!(positive_u64(&json!({ "max_polls": "x" }), "max_polls", 7), 7);
+        assert_eq!(
+            positive_u64(&json!({ "max_polls": "x" }), "max_polls", 7),
+            7
+        );
         assert_eq!(positive_u64(&json!({ "max_polls": 3 }), "max_polls", 7), 3);
     }
 }

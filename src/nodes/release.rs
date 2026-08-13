@@ -165,7 +165,10 @@ mod tests {
     /// mistake that must not become a hang.
     #[test]
     fn a_threshold_above_the_expected_count_is_clamped() {
-        assert_eq!(ReleasePolicy::Quorum(5).evaluate(3, 3, false), Release::Emit);
+        assert_eq!(
+            ReleasePolicy::Quorum(5).evaluate(3, 3, false),
+            Release::Emit
+        );
         assert_eq!(ReleasePolicy::Any.evaluate(0, 0, false), Release::Emit);
     }
 
@@ -180,8 +183,14 @@ mod tests {
     fn config_parses_every_policy() {
         let parse = |value: Value| ReleasePolicy::from_config(&value, "g");
         assert_eq!(parse(json!({})).unwrap(), ReleasePolicy::All);
-        assert_eq!(parse(json!({ "release": "all" })).unwrap(), ReleasePolicy::All);
-        assert_eq!(parse(json!({ "release": "any" })).unwrap(), ReleasePolicy::Any);
+        assert_eq!(
+            parse(json!({ "release": "all" })).unwrap(),
+            ReleasePolicy::All
+        );
+        assert_eq!(
+            parse(json!({ "release": "any" })).unwrap(),
+            ReleasePolicy::Any
+        );
         assert_eq!(
             parse(json!({ "release": "first_n", "n": 2 })).unwrap(),
             ReleasePolicy::FirstN(2)
@@ -217,7 +226,13 @@ mod tests {
         let err = ReleasePolicy::from_config(&json!({ "release": "eventually" }), "g")
             .expect_err("unknown policy");
         let message = err.to_string();
-        assert!(message.contains("eventually"), "names the bad value: {message}");
-        assert!(message.contains("quorum"), "lists the valid ones: {message}");
+        assert!(
+            message.contains("eventually"),
+            "names the bad value: {message}"
+        );
+        assert!(
+            message.contains("quorum"),
+            "lists the valid ones: {message}"
+        );
     }
 }

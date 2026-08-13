@@ -80,8 +80,10 @@ async fn run_inline(spec: TaskSpec, ctx: &NodeContext<'_>) -> Result<Value> {
         TaskSpec::Tool { slug, args } => ctx.caps.tools.invoke(&slug, args, None).await,
         TaskSpec::Http { request } => ctx.caps.http.request(request, None).await,
         TaskSpec::Workflow { graph, input } => {
-            let child: crate::model::WorkflowGraph = serde_json::from_value(graph)
-                .map_err(|e| EngineError::Capability(format!("spawn node: invalid workflow: {e}")))?;
+            let child: crate::model::WorkflowGraph =
+                serde_json::from_value(graph).map_err(|e| {
+                    EngineError::Capability(format!("spawn node: invalid workflow: {e}"))
+                })?;
             let compiled = crate::compiler::compile(&child)?;
             let outcome = Box::pin(crate::engine::run(&compiled, input, ctx.caps)).await?;
             Ok(outcome.output)

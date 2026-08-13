@@ -140,12 +140,9 @@ async fn a_gate_polls_until_the_spawned_work_settles() {
     let mut caps = mock_capabilities();
     caps.tasks = Some(runner.clone());
 
-    let outcome = run_guarded(
-        &spawn_gate_graph(json!({ "poll_interval_ms": 1 })),
-        &caps,
-    )
-    .await
-    .expect("the gate should release once its task settles");
+    let outcome = run_guarded(&spawn_gate_graph(json!({ "poll_interval_ms": 1 })), &caps)
+        .await
+        .expect("the gate should release once its task settles");
 
     let items = outcome.output["nodes"]["collect"]["items"]
         .as_array()
@@ -256,9 +253,21 @@ async fn a_quorum_gate_releases_before_every_task_settles() {
                 NodeKind::Trigger,
                 json!({ "recursion_limit": 400, "max_node_visits": 300 }),
             ),
-            node("a", NodeKind::Spawn, json!({ "target": "tool", "slug": "a" })),
-            node("b", NodeKind::Spawn, json!({ "target": "tool", "slug": "b" })),
-            node("c", NodeKind::Spawn, json!({ "target": "tool", "slug": "c" })),
+            node(
+                "a",
+                NodeKind::Spawn,
+                json!({ "target": "tool", "slug": "a" }),
+            ),
+            node(
+                "b",
+                NodeKind::Spawn,
+                json!({ "target": "tool", "slug": "b" }),
+            ),
+            node(
+                "c",
+                NodeKind::Spawn,
+                json!({ "target": "tool", "slug": "c" }),
+            ),
             node(
                 "collect",
                 NodeKind::Gate,

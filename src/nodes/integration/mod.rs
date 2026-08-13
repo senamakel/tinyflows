@@ -7,8 +7,8 @@
 pub mod agent;
 pub(crate) mod agent_request;
 pub mod code;
-pub mod gate;
 pub(crate) mod envelope;
+pub mod gate;
 pub mod http_request;
 pub mod memory;
 pub mod output_parser;
