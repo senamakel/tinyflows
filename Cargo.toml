@@ -38,7 +38,7 @@ getrandom = "0.4"
 tracing = { version = "0.1", default-features = false, features = ["std"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
 axum = { version = "0.8", default-features = false, features = ["http1", "json", "ws"], optional = true }
-reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"], optional = true }
+reqwest = { version = "0.13", default-features = false, features = ["json"], optional = true }
 # `caps::host` only: hashing an author-supplied state key (and namespace) into
 # one safe path component, and staging a script in a temporary directory.
 sha2 = { version = "0.10", optional = true }
@@ -69,7 +69,7 @@ chrome-extension = ["dep:axum", "dep:reqwest", "tokio/net"]
 # its own disk. Off by default because a host with a sandbox wants none of it,
 # and because it is the only thing in the crate that spawns a process or writes
 # a file. Always available inside this crate's own tests.
-host-caps = ["dep:reqwest", "dep:sha2", "dep:tempfile", "tokio/fs", "tokio/process", "tokio/io-util"]
+host-caps = ["dep:reqwest", "dep:sha2", "dep:tempfile", "reqwest/rustls", "tokio/fs", "tokio/process", "tokio/io-util"]
 # Off by default; enables `store` — the durable model around a graph (versioned
 # documents, run records, notes, proposals) and a JSON file-backed store for it.
 # A host with its own catalog or database wants none of it, so it is not part of
