@@ -299,7 +299,7 @@ enum ChildOutcome {
 /// input for `once`, the current element for `per_item`), and `child_input` is
 /// the item array seeded into the child run.
 ///
-/// Returns `Ok(None)` when the parent run cancelled this child mid-flight
+/// Returns [`ChildOutcome::Cancelled`] when the parent run cancelled this child mid-flight
 /// (`ctx.token` is set): the child is a clean cooperative wind-down, not a
 /// failure, so it emits no item and lets the parent settle as cancelled. A child
 /// that stops for any *other* reason (a `requires_approval` pause, or a cancel
@@ -429,14 +429,7 @@ async fn run_child(
         // payload carries the full list, and a host may approve several at once
         // — the next re-run seeds all of them, so a child with N gates need not
         // cost N round trips.
-        return Ok(NodeOutput::interrupt(
-            namespaced[0].clone(),
-            json!({
-                "kind": "sub_workflow_approval",
-                "node": ctx.node.id,
-                "pending": namespaced,
-            }),
-        ));
+        return Ok(ChildOutcome::Paused(namespaced));
     }
     if outcome.cancelled {
         // Two cancellations look the same on the child's `RunOutcome` but mean
@@ -459,7 +452,7 @@ async fn run_child(
                 node = %ctx.node.id,
                 "sub_workflow: child wound down under the parent's cancellation; emitting no output"
             );
-            return Ok(None);
+            return Ok(ChildOutcome::Cancelled);
         }
         return Err(EngineError::Capability(format!(
             "sub_workflow node {:?}: child run was cancelled before completing; the parent \
@@ -468,7 +461,7 @@ async fn run_child(
         )));
     }
 
-    Ok(Some(crate::data::Item::new(outcome.output)))
+    Ok(ChildOutcome::Finished(crate::data::Item::new(outcome.output)))
 }
 
 #[cfg(test)]
