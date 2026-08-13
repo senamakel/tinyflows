@@ -35,8 +35,10 @@
 //!
 //! Behind the `testkit` feature, off by default.
 
+pub mod debug;
 pub mod mocks;
 pub mod trace;
 
+pub use debug::{BreakpointSpec, DebugCommand, DebugController, DebugSession, PauseSnapshot};
 pub use mocks::{CallLog, CallOutcome, CapCall, MockCaps, Respond, capability};
 pub use trace::{BindingTrace, RunTrace, RunTracer, TraceStatus, TraceStep};
