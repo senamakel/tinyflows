@@ -130,7 +130,11 @@ fn run_item_cap(run: &Value) -> Option<usize> {
         .and_then(|trigger| trigger.get("max_item_concurrency"))
         .and_then(Value::as_u64)
         .filter(|n| *n > 0)
-        .map(|n| usize::try_from(n).unwrap_or(MAX_CONCURRENCY).min(MAX_CONCURRENCY))
+        .map(|n| {
+            usize::try_from(n)
+                .unwrap_or(MAX_CONCURRENCY)
+                .min(MAX_CONCURRENCY)
+        })
 }
 
 #[must_use]
@@ -755,8 +759,14 @@ mod tests {
 
     #[test]
     fn options_read_every_item_error_policy() {
-        let policy =
-            |v| map_options(&json!({ "concurrency": 4, "on_item_error": v }), "n", &Value::Null).on_item_error;
+        let policy = |v| {
+            map_options(
+                &json!({ "concurrency": 4, "on_item_error": v }),
+                "n",
+                &Value::Null,
+            )
+            .on_item_error
+        };
         assert_eq!(policy("fail_fast"), ItemErrorPolicy::FailFast);
         assert_eq!(policy("skip"), ItemErrorPolicy::Skip);
         assert_eq!(policy("collect"), ItemErrorPolicy::Collect);
