@@ -40,7 +40,11 @@ fn graph_with_a_null_binding() -> WorkflowGraph {
     WorkflowGraph {
         name: "traced".to_string(),
         nodes: vec![
-            node("t", NodeKind::Trigger, json!({ "kind": TriggerKind::Manual })),
+            node(
+                "t",
+                NodeKind::Trigger,
+                json!({ "kind": TriggerKind::Manual }),
+            ),
             node(
                 "call",
                 NodeKind::ToolCall,
@@ -117,7 +121,11 @@ async fn a_binding_that_resolves_records_its_value() {
     let graph = WorkflowGraph {
         name: "resolves".to_string(),
         nodes: vec![
-            node("t", NodeKind::Trigger, json!({ "kind": TriggerKind::Manual })),
+            node(
+                "t",
+                NodeKind::Trigger,
+                json!({ "kind": TriggerKind::Manual }),
+            ),
             node(
                 "call",
                 NodeKind::ToolCall,
@@ -160,9 +168,17 @@ async fn a_failed_activation_is_recorded_with_its_error() {
     let graph = WorkflowGraph {
         name: "fails".to_string(),
         nodes: vec![
-            node("t", NodeKind::Trigger, json!({ "kind": TriggerKind::Manual })),
+            node(
+                "t",
+                NodeKind::Trigger,
+                json!({ "kind": TriggerKind::Manual }),
+            ),
             // No slug: the tool node fails deterministically.
-            node("call", NodeKind::ToolCall, json!({ "on_error": "continue" })),
+            node(
+                "call",
+                NodeKind::ToolCall,
+                json!({ "on_error": "continue" }),
+            ),
         ],
         edges: vec![edge("t", "call")],
         ..Default::default()

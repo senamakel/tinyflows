@@ -320,7 +320,9 @@ fn glob_matches(glob: &str, value: &str) -> bool {
         }
     }
     // A glob with no trailing `*` must have consumed everything.
-    parts.last().is_none_or(|last| last.is_empty() || rest.is_empty())
+    parts
+        .last()
+        .is_none_or(|last| last.is_empty() || rest.is_empty())
 }
 
 /// One programmed rule and how many times it has answered.
@@ -551,9 +553,13 @@ impl Double {
 impl LlmProvider for Double {
     async fn complete(&self, request: Value, conn: Option<&str>) -> Result<Value> {
         let conn = conn.map(str::to_string);
-        self.dispatch(capability::LLM, "complete", String::new(), request, |req| {
-            json!({ "completion": req, "connection": conn })
-        })
+        self.dispatch(
+            capability::LLM,
+            "complete",
+            String::new(),
+            request,
+            |req| json!({ "completion": req, "connection": conn }),
+        )
         .await
     }
 }
@@ -585,9 +591,13 @@ impl HttpClient for Double {
             .unwrap_or_default()
             .to_string();
         let conn = conn.map(str::to_string);
-        self.dispatch(capability::HTTP, "request", url, request, |req| {
-            json!({ "status": 200, "request": req, "connection": conn })
-        })
+        self.dispatch(
+            capability::HTTP,
+            "request",
+            url,
+            request,
+            |req| json!({ "status": 200, "request": req, "connection": conn }),
+        )
         .await
     }
 }
@@ -660,7 +670,12 @@ impl ShellRunner for Double {
 
 #[async_trait]
 impl AgentRunner for Double {
-    async fn run_agent(&self, agent_ref: &str, request: Value, conn: Option<&str>) -> Result<Value> {
+    async fn run_agent(
+        &self,
+        agent_ref: &str,
+        request: Value,
+        conn: Option<&str>,
+    ) -> Result<Value> {
         let name = agent_ref.to_string();
         let conn = conn.map(str::to_string);
         self.dispatch(
@@ -678,9 +693,13 @@ impl AgentRunner for Double {
 impl MemoryProvider for Double {
     async fn recall(&self, scope: &str, query: &str, opts: Value) -> Result<Value> {
         let request = json!({ "scope": scope, "query": query, "opts": opts });
-        self.dispatch(capability::MEMORY, "recall", scope.to_string(), request, |_| {
-            json!({ "results": [] })
-        })
+        self.dispatch(
+            capability::MEMORY,
+            "recall",
+            scope.to_string(),
+            request,
+            |_| json!({ "results": [] }),
+        )
         .await
     }
 
@@ -698,9 +717,13 @@ impl MemoryProvider for Double {
 
     async fn people(&self, query: Option<&str>) -> Result<Value> {
         let request = json!({ "query": query });
-        self.dispatch(capability::MEMORY, "people", String::new(), request, |_| {
-            json!({ "people": [] })
-        })
+        self.dispatch(
+            capability::MEMORY,
+            "people",
+            String::new(),
+            request,
+            |_| json!({ "people": [] }),
+        )
         .await
     }
 
@@ -773,9 +796,15 @@ impl StateStore for Double {
 #[async_trait]
 impl WorkflowResolver for Double {
     async fn resolve(&self, workflow_id: &str) -> Result<WorkflowGraph> {
-        self.mocks.workflows.get(workflow_id).cloned().ok_or_else(|| {
-            EngineError::Capability(format!("testkit: no workflow registered as {workflow_id:?}"))
-        })
+        self.mocks
+            .workflows
+            .get(workflow_id)
+            .cloned()
+            .ok_or_else(|| {
+                EngineError::Capability(format!(
+                    "testkit: no workflow registered as {workflow_id:?}"
+                ))
+            })
     }
 }
 

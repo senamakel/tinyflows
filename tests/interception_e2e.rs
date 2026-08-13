@@ -464,7 +464,9 @@ async fn a_recovered_retry_reports_no_error_to_the_interceptor() {
             _conn: Option<&str>,
         ) -> tinyflows::error::Result<Value> {
             if self.0.fetch_add(1, Ordering::SeqCst) == 0 {
-                Err(tinyflows::error::EngineError::Capability("transient".into()))
+                Err(tinyflows::error::EngineError::Capability(
+                    "transient".into(),
+                ))
             } else {
                 Ok(json!({ "ok": true }))
             }

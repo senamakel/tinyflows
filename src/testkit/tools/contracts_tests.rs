@@ -82,15 +82,16 @@ fn names_are_unique_and_namespaced() {
 
 #[test]
 fn every_debug_tool_takes_a_session_id() {
-    for tool in all_tools().iter().filter(|t| t.name.starts_with("flow_debug.")) {
+    for tool in all_tools()
+        .iter()
+        .filter(|t| t.name.starts_with("flow_debug."))
+    {
         // Except the one that creates the session.
         if tool.name == "flow_debug.start" {
             continue;
         }
         assert!(
-            tool.input_schema["properties"]
-                .get("session_id")
-                .is_some(),
+            tool.input_schema["properties"].get("session_id").is_some(),
             "{} should take a session_id",
             tool.name
         );
@@ -101,8 +102,14 @@ fn every_debug_tool_takes_a_session_id() {
 fn read_only_tools_are_not_marked_mutating() {
     // A host may gate mutating calls behind confirmation, so the flag has to be
     // right rather than merely present.
-    let read_only = ["flow_test.run", "flow_test.trace", "flow_test.node",
-                     "flow_debug.wait", "flow_debug.status", "flow_debug.trace"];
+    let read_only = [
+        "flow_test.run",
+        "flow_test.trace",
+        "flow_test.node",
+        "flow_debug.wait",
+        "flow_debug.status",
+        "flow_debug.trace",
+    ];
     for name in read_only {
         let tool = tool_for(name).expect("tool exists");
         assert!(!tool.mutating, "{name} does not change session state");

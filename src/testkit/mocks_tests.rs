@@ -38,7 +38,10 @@ fn a_leading_star_matches_a_suffix() {
 
 #[test]
 fn an_inner_star_matches_around_a_literal() {
-    assert!(glob_matches("https://*/webhook", "https://example.com/webhook"));
+    assert!(glob_matches(
+        "https://*/webhook",
+        "https://example.com/webhook"
+    ));
     assert!(!glob_matches(
         "https://*/webhook",
         "https://example.com/other"
@@ -150,7 +153,11 @@ async fn a_schema_rule_synthesizes_a_conforming_value() {
     });
     let caps = mocks.capabilities();
 
-    let out = caps.tools.invoke("shaped", json!({}), None).await.expect("call");
+    let out = caps
+        .tools
+        .invoke("shaped", json!({}), None)
+        .await
+        .expect("call");
     assert_eq!(out, json!({ "name": "sample", "count": 0 }));
 }
 
@@ -201,8 +208,14 @@ async fn counting_and_filtering_the_log() {
     let mocks = mocks(|m| m);
     let caps = mocks.capabilities();
 
-    caps.tools.invoke("gh.a", json!({}), None).await.expect("call");
-    caps.tools.invoke("gh.b", json!({}), None).await.expect("call");
+    caps.tools
+        .invoke("gh.a", json!({}), None)
+        .await
+        .expect("call");
+    caps.tools
+        .invoke("gh.b", json!({}), None)
+        .await
+        .expect("call");
     caps.tools
         .invoke("slack.send", json!({}), None)
         .await
@@ -279,7 +292,11 @@ async fn a_delayed_response_still_answers() {
     });
     let caps = mocks.capabilities();
 
-    let out = caps.tools.invoke("slow", json!({}), None).await.expect("call");
+    let out = caps
+        .tools
+        .invoke("slow", json!({}), None)
+        .await
+        .expect("call");
     assert_eq!(out, json!("late"));
 }
 

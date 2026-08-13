@@ -61,7 +61,10 @@ async fn a_missing_argument_is_refused_with_a_stable_code() {
 async fn a_malformed_graph_is_refused_rather_than_panicking() {
     let registry = TestkitRegistry::new();
     let err = registry
-        .dispatch("flow_test.run", json!({ "graph": { "nodes": "not a list" } }))
+        .dispatch(
+            "flow_test.run",
+            json!({ "graph": { "nodes": "not a list" } }),
+        )
         .await
         .expect_err("a malformed graph is refused");
     assert_eq!(err.code, ToolErrorCode::InvalidGraph);
@@ -106,13 +109,19 @@ async fn a_programmed_mock_answers_the_run() {
 
     let run_id = result["runId"].as_str().expect("runId");
     let node = registry
-        .dispatch("flow_test.node", json!({ "run_id": run_id, "node_id": "call" }))
+        .dispatch(
+            "flow_test.node",
+            json!({ "run_id": run_id, "node_id": "call" }),
+        )
         .await
         .expect("node");
 
     assert_eq!(node["ran"], true);
     assert_eq!(node["calls"][0]["target"], "svc.do");
-    assert_eq!(node["activations"][0]["output"][0]["json"]["json"], json!({ "ok": true }));
+    assert_eq!(
+        node["activations"][0]["output"][0]["json"]["json"],
+        json!({ "ok": true })
+    );
 }
 
 #[tokio::test]
@@ -147,7 +156,10 @@ async fn a_sequenced_mock_is_programmable_over_json() {
 
     assert_eq!(result["status"], "completed");
     assert!(
-        result["summary"].as_str().expect("summary").contains("0 failed"),
+        result["summary"]
+            .as_str()
+            .expect("summary")
+            .contains("0 failed"),
         "a recovered retry is not a failure: {}",
         result["summary"]
     );
@@ -217,7 +229,10 @@ async fn a_full_debug_session_can_be_driven_entirely_over_json() {
         .dispatch("flow_debug.start", json!({ "graph": graph() }))
         .await
         .expect("start");
-    let session_id = started["sessionId"].as_str().expect("sessionId").to_string();
+    let session_id = started["sessionId"]
+        .as_str()
+        .expect("sessionId")
+        .to_string();
 
     let bp = registry
         .dispatch(
@@ -281,7 +296,10 @@ async fn breakpoints_can_be_listed_and_cleared_over_json() {
         .dispatch("flow_debug.start", json!({ "graph": graph() }))
         .await
         .expect("start");
-    let session_id = started["sessionId"].as_str().expect("sessionId").to_string();
+    let session_id = started["sessionId"]
+        .as_str()
+        .expect("sessionId")
+        .to_string();
 
     let bp = registry
         .dispatch(
@@ -334,7 +352,10 @@ async fn an_on_error_breakpoint_defaults_to_the_after_phase() {
         .dispatch("flow_debug.start", json!({ "graph": broken }))
         .await
         .expect("start");
-    let session_id = started["sessionId"].as_str().expect("sessionId").to_string();
+    let session_id = started["sessionId"]
+        .as_str()
+        .expect("sessionId")
+        .to_string();
 
     registry
         .dispatch(
@@ -377,7 +398,10 @@ async fn releasing_an_unknown_pause_is_refused() {
         .dispatch("flow_debug.start", json!({ "graph": graph() }))
         .await
         .expect("start");
-    let session_id = started["sessionId"].as_str().expect("sessionId").to_string();
+    let session_id = started["sessionId"]
+        .as_str()
+        .expect("sessionId")
+        .to_string();
 
     let err = registry
         .dispatch(
@@ -402,7 +426,10 @@ async fn waiting_on_a_run_with_no_breakpoints_reports_not_paused() {
         .dispatch("flow_debug.start", json!({ "graph": graph() }))
         .await
         .expect("start");
-    let session_id = started["sessionId"].as_str().expect("sessionId").to_string();
+    let session_id = started["sessionId"]
+        .as_str()
+        .expect("sessionId")
+        .to_string();
 
     let waited = registry
         .dispatch(

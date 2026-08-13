@@ -155,7 +155,10 @@ impl TestkitRegistry {
                 format!("no run recorded as {run_id:?}"),
             )
         })?;
-        Ok(project_trace(trace, args.get("node_id").and_then(Value::as_str)))
+        Ok(project_trace(
+            trace,
+            args.get("node_id").and_then(Value::as_str),
+        ))
     }
 
     fn node(&self, args: Value) -> Result<Value, ToolError> {
@@ -552,7 +555,10 @@ fn breakpoint_spec(args: &Value) -> Result<BreakpointSpec, ToolError> {
         }
     };
 
-    let on_error = args.get("on_error").and_then(Value::as_bool).unwrap_or(false);
+    let on_error = args
+        .get("on_error")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
     // An on-error breakpoint has to break *after* the node — that is the only
     // phase at which a failure exists — so default the phase to match the
     // intent rather than making the caller work it out.
@@ -597,15 +603,12 @@ fn breakpoint_spec(args: &Value) -> Result<BreakpointSpec, ToolError> {
 
 /// The command a `flow_debug.release` call described.
 fn debug_command(args: &Value) -> Result<DebugCommand, ToolError> {
-    let command = args
-        .get("command")
-        .and_then(Value::as_str)
-        .ok_or_else(|| {
-            ToolError::new(
-                ToolErrorCode::InvalidArguments,
-                "release needs a command".to_string(),
-            )
-        })?;
+    let command = args.get("command").and_then(Value::as_str).ok_or_else(|| {
+        ToolError::new(
+            ToolErrorCode::InvalidArguments,
+            "release needs a command".to_string(),
+        )
+    })?;
     Ok(match command {
         "continue" => DebugCommand::Continue,
         "step" => DebugCommand::Step,
@@ -630,10 +633,7 @@ fn debug_command(args: &Value) -> Result<DebugCommand, ToolError> {
             };
             DebugCommand::Override {
                 items,
-                port: args
-                    .get("port")
-                    .and_then(Value::as_str)
-                    .map(str::to_string),
+                port: args.get("port").and_then(Value::as_str).map(str::to_string),
             }
         }
         other => {

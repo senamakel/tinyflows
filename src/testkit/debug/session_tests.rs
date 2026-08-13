@@ -43,7 +43,11 @@ fn graph() -> WorkflowGraph {
     WorkflowGraph {
         name: "debugged".to_string(),
         nodes: vec![
-            node("t", NodeKind::Trigger, json!({ "kind": TriggerKind::Manual })),
+            node(
+                "t",
+                NodeKind::Trigger,
+                json!({ "kind": TriggerKind::Manual }),
+            ),
             node("call", NodeKind::ToolCall, json!({ "slug": "svc.do" })),
             node(
                 "after",
@@ -189,9 +193,7 @@ async fn a_conditional_breakpoint_only_fires_when_it_holds() {
     // A condition that cannot hold, so the run must finish without parking.
     session
         .controller()
-        .set_breakpoint(
-            BreakpointSpec::before("call").when(Condition::Expr("=false".into())),
-        )
+        .set_breakpoint(BreakpointSpec::before("call").when(Condition::Expr("=false".into())))
         .expect("registers");
 
     let parked = session.next_pause(Duration::from_millis(500)).await;
@@ -215,7 +217,10 @@ async fn breaking_on_error_catches_a_failing_node() {
         .set_breakpoint(BreakpointSpec::on_error())
         .expect("registers");
 
-    let pause = session.next_pause(WAIT).await.expect("parks on the failure");
+    let pause = session
+        .next_pause(WAIT)
+        .await
+        .expect("parks on the failure");
     assert_eq!(pause.node_id, "call");
     assert_eq!(pause.phase, "after");
     assert!(

@@ -157,7 +157,9 @@ fn an_any_target_matches_every_node() {
 #[test]
 fn a_spec_round_trips_through_json() {
     // Breakpoints arrive over the tool surface as JSON.
-    let spec = BreakpointSpec::before("send").when(Condition::Activation(2)).once();
+    let spec = BreakpointSpec::before("send")
+        .when(Condition::Activation(2))
+        .once();
     let encoded = serde_json::to_string(&spec).expect("serialize");
     let decoded: BreakpointSpec = serde_json::from_str(&encoded).expect("deserialize");
     assert_eq!(spec, decoded);

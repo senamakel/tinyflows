@@ -32,7 +32,11 @@ fn graph(call_config: Value) -> WorkflowGraph {
     WorkflowGraph {
         name: "harnessed".to_string(),
         nodes: vec![
-            node("t", NodeKind::Trigger, json!({ "kind": TriggerKind::Manual })),
+            node(
+                "t",
+                NodeKind::Trigger,
+                json!({ "kind": TriggerKind::Manual }),
+            ),
             node("call", NodeKind::ToolCall, call_config),
         ],
         edges: vec![edge("t", "call")],
@@ -159,7 +163,11 @@ async fn a_per_node_mock_leaves_other_nodes_alone() {
     let graph = WorkflowGraph {
         name: "two_callers".to_string(),
         nodes: vec![
-            node("t", NodeKind::Trigger, json!({ "kind": TriggerKind::Manual })),
+            node(
+                "t",
+                NodeKind::Trigger,
+                json!({ "kind": TriggerKind::Manual }),
+            ),
             node("a", NodeKind::ToolCall, json!({ "slug": "svc.do" })),
             node("b", NodeKind::ToolCall, json!({ "slug": "svc.do" })),
         ],
@@ -188,5 +196,9 @@ async fn the_trace_is_available_for_anything_the_assertions_do_not_cover() {
 
     let trace = run.trace();
     assert_eq!(trace.steps.len(), 1, "one non-trigger node ran");
-    assert!(trace.summary().contains("1 steps"), "got {}", trace.summary());
+    assert!(
+        trace.summary().contains("1 steps"),
+        "got {}",
+        trace.summary()
+    );
 }
