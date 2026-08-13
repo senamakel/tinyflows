@@ -18,8 +18,10 @@ pub mod transform;
 
 pub use condition::ConditionNode;
 pub use dedup::DedupNode;
+pub use gather::GatherNode;
 pub use loop_node::{DEFAULT_MAX_ITERATIONS, LoopNode};
 pub use merge::MergeNode;
+pub use scatter::{MAX_LANES, ScatterNode};
 pub use split_out::SplitOutNode;
 pub use switch::SwitchNode;
 pub use transform::TransformNode;
