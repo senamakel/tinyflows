@@ -108,12 +108,27 @@ pub fn validate_all(graph: &WorkflowGraph) -> Vec<ValidationError> {
         match on_error {
             "stop" | "continue" => {}
             "route" => {
-                let has_error_edge = graph
-                    .edges
-                    .iter()
-                    .any(|e| e.from_node == node.id && e.from_port == "error");
-                if !has_error_edge {
-                    errors.push(ValidationError::MissingErrorRoute(node.id.clone()));
+                if node.kind == NodeKind::Void {
+                    // An `error` edge is still an outgoing edge, which the
+                    // `void` check below forbids. Caught here instead of
+                    // letting `MissingErrorRoute` fire, or the author would be
+                    // told to add an edge that the next rule then rejects —
+                    // advice with no fixed point.
+                    errors.push(ValidationError::InvalidNodeConfig {
+                        node: node.id.clone(),
+                        reason: "`void` is a terminal sink, so on_error \"route\" has nowhere to \
+                                 route to (an `error` edge is an outgoing edge); use \"stop\" or \
+                                 \"continue\""
+                            .to_string(),
+                    });
+                } else {
+                    let has_error_edge = graph
+                        .edges
+                        .iter()
+                        .any(|e| e.from_node == node.id && e.from_port == "error");
+                    if !has_error_edge {
+                        errors.push(ValidationError::MissingErrorRoute(node.id.clone()));
+                    }
                 }
             }
             other => {
