@@ -371,3 +371,72 @@ async fn a_child_paused_at_a_gate_pauses_the_parent_and_resumes() {
         "the parent continues past the sub-workflow once the child's gate clears"
     );
 }
+
+/// A `per_item` sub-workflow fan-out where several children pause reports
+/// **all** their gates at once, not one per resume round-trip.
+///
+/// Each element gets its own child run, so N elements means N independent gates.
+/// Surfacing only the first would make a host discover them one at a time, each
+/// costing a full re-run of the whole fan-out.
+#[tokio::test]
+async fn a_per_item_fan_out_reports_every_paused_child() {
+    let child = json!({
+        "name": "gated_child",
+        "nodes": [
+            { "id": "ct", "kind": "trigger", "type_version": 1, "name": "ct", "config": null },
+            { "id": "cgate", "kind": "output_parser", "type_version": 1, "name": "cgate",
+              "config": { "requires_approval": true } }
+        ],
+        "edges": [
+            { "from_node": "ct", "from_port": "main", "to_node": "cgate", "to_port": "main" }
+        ]
+    });
+
+    let graph = WorkflowGraph {
+        name: "per_item_gated".to_string(),
+        nodes: vec![
+            node("t", NodeKind::Trigger, Value::Null),
+            node("split", NodeKind::SplitOut, json!({ "path": "rows" })),
+            node(
+                "sw",
+                NodeKind::SubWorkflow,
+                json!({ "workflow": child, "execution": "per_item", "concurrency": 3 }),
+            ),
+        ],
+        edges: vec![edge("t", "split"), edge("split", "sw")],
+        ..Default::default()
+    };
+    let compiled = compile(&graph).expect("compile");
+    let caps = mock_capabilities();
+
+    let resumable = run_resumable(&compiled, json!({ "rows": [1, 2, 3] }), &caps)
+        .await
+        .expect("the fan-out should pause rather than fail");
+
+    // Every child paused at the same gate id, so the namespaced set collapses to
+    // one entry — the point being that it is reported, and reported once, rather
+    // than the node failing or hiding the pause behind a single child.
+    assert_eq!(
+        resumable.outcome().pending_approvals,
+        vec!["sw::cgate".to_string()],
+        "the fan-out's paused children surface as a namespaced gate"
+    );
+
+    let done = resumable
+        .resume(vec!["sw::cgate".to_string()])
+        .await
+        .expect("resume");
+    assert!(
+        done.pending_approvals.is_empty(),
+        "approving the gate clears every child in the fan-out, got {:?}",
+        done.pending_approvals
+    );
+    assert_eq!(
+        done.output["nodes"]["sw"]["items"]
+            .as_array()
+            .map(Vec::len)
+            .unwrap_or(0),
+        3,
+        "all three children ran to completion once approved"
+    );
+}
