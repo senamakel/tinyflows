@@ -214,6 +214,16 @@ pub fn contract_for(kind: &str) -> Option<NodeKindContract> {
                      away.",
                 ),
                 ConfigField::optional(
+                    "max_concurrency",
+                    "number",
+                    "How many branches of one super-step may run at once, across the whole graph                      (default: unbounded, clamped to 256). This is ADMISSION CONTROL, not                      backpressure: a super-step engine cannot block a producer mid-step, so the                      only lever is how many activations are allowed to start.",
+                ),
+                ConfigField::optional(
+                    "max_item_concurrency",
+                    "number",
+                    "A run-level ceiling on every node's per-item `concurrency`, declared once                      here instead of edited into each node. It only ever LOWERS a node's own                      value. Note the dials MULTIPLY: peak in-flight work is roughly                      min(max_concurrency, active branches) x per-node concurrency.",
+                ),
+                ConfigField::optional(
                     "node_timeout_secs",
                     "number",
                     "Bounds each individual node ATTEMPT (not the whole retry loop), so a node \
