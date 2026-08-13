@@ -726,20 +726,23 @@ where
                         )
                         .await;
                 }
-                // Split the step into the branches that interrupted and the
-                // branches that finished. Only the interrupted ones are
-                // rescheduled; a branch that completed keeps its result and has
-                // its successors routed now, so a resume never runs it again.
+                // Split the step three ways: branches that ran to a result,
+                // branches that interrupted, and — under sequential execution —
+                // branches that were never started at all.
                 //
-                // Under parallel execution "the branches after the interrupt"
-                // is not the same as "the branches that did not run" — the whole
-                // active set runs before anything is folded. Rescheduling by
-                // position would re-run completed work and fire its side effects
-                // a second time.
-                let interrupted_indices: HashSet<usize> =
-                    interrupts.iter().map(|(index, _)| *index).collect();
+                // A branch that ran keeps its result and has its successors
+                // routed now, so a resume never runs it again. Only the
+                // interrupted and never-started ones are rescheduled.
+                //
+                // Position is not the discriminator. Under parallel execution the
+                // whole active set runs before anything is folded, so "after the
+                // interrupt" and "did not run" are different sets; rescheduling
+                // by position would re-run completed work and fire its side
+                // effects a second time. Under sequential execution they happen
+                // to coincide, which is exactly why `completed_indices` is
+                // reported by the runner rather than inferred here.
                 let (completed, completed_goto) =
-                    Self::partition_completed(&active, &goto_map, &interrupted_indices);
+                    Self::partition_completed(&active, &goto_map, &completed_indices);
                 let successors = match self.route_completed(
                     &completed,
                     &completed_goto,
