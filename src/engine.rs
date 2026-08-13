@@ -1721,6 +1721,44 @@ fn build_graph(
                                     Command::goto(vec![node.id.clone()]).with_update(update),
                                 ));
                             }
+                            // Open a lane per entry: schedule every successor
+                            // once for each, each carrying its own work.
+                            //
+                            // This is the one routing decision a node makes that
+                            // the graph's edges cannot express. `Send` packets
+                            // are the reason it works at all — plain
+                            // activations dedupe by node id, so repeating a
+                            // target would collapse back to one.
+                            Some(crate::nodes::NodeControl::Scatter { lanes }) => {
+                                let count = lanes.len();
+                                let mut routed: Vec<RouteTarget> = Vec::new();
+                                for (index, lane_items) in lanes.iter().enumerate() {
+                                    for target in &plain_targets {
+                                        let envelope = lane_envelope(
+                                            &node.id, index, count, lane_items,
+                                        )?;
+                                        routed.push(RouteTarget::Send(
+                                            crate::graph::Send::new(target.clone(), envelope),
+                                        ));
+                                    }
+                                }
+                                // The scatter's own slot records how many lanes
+                                // it opened; a gather counts arrivals against it
+                                // rather than guessing from what turned up.
+                                let mut update = items_update_with_meta(
+                                    &node.id,
+                                    &output.items,
+                                    port,
+                                    output.meta.as_ref(),
+                                )?;
+                                stamp_activation_step(&mut update, &node.id, ctx.step);
+                                tracing::debug!(
+                                    node = %node.id, lanes = count, "scatter: opened lanes"
+                                );
+                                return Ok(NodeResult::Command(
+                                    Command::route(routed).with_update(update),
+                                ));
+                            }
                             None => {}
                         }
 
