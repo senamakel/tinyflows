@@ -52,6 +52,24 @@ pub(crate) fn from_parts(json: Value, text: Option<String>, raw: Value) -> Value
     json!({ "json": json, "text": text, "raw": raw })
 }
 
+/// Like [`from_parts`], plus a `meta` key carrying per-node execution facts the
+/// payload itself cannot express.
+///
+/// Used by the `agent` node to publish *how* a run ended — `meta.stop` is
+/// `"finished"`, `"limit_stop"`, or `"paused"` — so a downstream `condition` can
+/// branch on whether the agent actually reached an answer rather than assuming
+/// it did. Purely additive: `json` / `text` / `raw` are byte-identical to
+/// [`from_parts`], so every existing `=item.json.…` binding is unaffected.
+#[must_use]
+pub(crate) fn from_parts_with_meta(
+    json: Value,
+    text: Option<String>,
+    raw: Value,
+    meta: Value,
+) -> Value {
+    json!({ "json": json, "text": text, "raw": raw, "meta": meta })
+}
+
 /// Wraps a capability's return `value` in the stable envelope, deriving `json`
 /// and `text` from it. Used by the pure capability nodes (`tool_call`,
 /// `http_request`, `code`) whose structured payload *is* the raw return.
