@@ -32,17 +32,29 @@ pub mod catalog;
 pub mod companion;
 pub mod compiler;
 pub mod data;
+/// Reading a run's steps for the failures a green outcome hides: null bindings,
+/// empty agent prompts, errors an `on_error` policy swallowed, and nodes a
+/// branch routed past.
+pub mod diagnostics;
 pub mod engine;
 pub mod error;
+/// Bounding what a run hands back — durable records and tool replies alike —
+/// so one large item cannot bloat every future read of it.
+pub mod evidence;
 pub mod expr;
 /// Authoring gates: what is *guaranteed* wrong with a graph, caught before a
 /// write lands rather than as a silent null at run time.
 pub mod gates;
 pub mod graph;
 pub mod graph_ops;
-// Only the file-backed store and the process-backed capabilities need unique
-// scratch names, and both are optional.
-#[cfg(any(test, feature = "store", feature = "host-caps"))]
+/// The engine's execution-gating hook: unlike a `RunObserver`, what a
+/// `StepInterceptor` returns is obeyed. What breakpoints and output overrides
+/// are built on.
+pub mod interception;
+// Only the file-backed store, the process-backed capabilities, and the
+// testkit's debug sessions need unique scratch names, and all three are
+// optional.
+#[cfg(any(test, feature = "store", feature = "host-caps", feature = "testkit"))]
 mod ids;
 pub mod migrate;
 pub mod model;
@@ -52,6 +64,11 @@ pub mod observability;
 /// and a file-backed store for it. Behind the `store` feature.
 #[cfg(any(test, feature = "store"))]
 pub mod store;
+/// Testing, mocking, and live debugging for workflows: programmable capability
+/// doubles, a structured run trace, breakpoints, and an agent-facing tool
+/// surface over all of it. Behind the `testkit` feature.
+#[cfg(any(test, feature = "testkit"))]
+pub mod testkit;
 pub mod validate;
 /// Render workflow structure to PNG or JPEG files for visual debugging.
 #[cfg(feature = "graph-debug")]

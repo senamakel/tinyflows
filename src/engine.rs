@@ -58,6 +58,7 @@ use crate::caps::Capabilities;
 use crate::compiler::CompiledWorkflow;
 use crate::data::Item;
 use crate::error::{EngineError, Result, ValidationError};
+use crate::interception::{StepAction, StepFrame, StepInterceptor, StepPhase};
 use crate::model::NodeKind;
 use crate::nodes::{NodeContext, executor_for};
 use crate::observability::{ExecutionStep, Run, RunObserver, RunStatus, StepStatus};
@@ -249,6 +250,9 @@ pub use api::{
 
 mod build;
 use build::build_graph;
+
+mod run_config;
+use run_config::RunConfig;
 
 mod run_state;
 pub use run_state::resume;

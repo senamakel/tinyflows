@@ -15,47 +15,11 @@ use crate::error::Result;
 use async_trait::async_trait;
 use serde_json::{Value, json};
 
-/// Synthesize a value satisfying a JSON Schema well enough to pass validation.
-///
-/// Deliberately shallow — it honours `type`, `properties`, `required`, and
-/// `enum`, which is what node schemas in practice use. Anything it does not
-/// understand becomes null, and a schema strict enough to reject that is a
-/// schema whose graph deserves a real run before being trusted.
-pub fn sample_for_schema(schema: &Value) -> Value {
-    let Some(object) = schema.as_object() else {
-        return Value::Null;
-    };
-    if let Some(first) = object
-        .get("enum")
-        .and_then(Value::as_array)
-        .and_then(|v| v.first())
-    {
-        return first.clone();
-    }
-    match object.get("type").and_then(Value::as_str) {
-        Some("object") => {
-            let mut out = serde_json::Map::new();
-            if let Some(properties) = object.get("properties").and_then(Value::as_object) {
-                // Every declared property, not only the required ones: a graph
-                // binding `=item.json.optional_field` should still resolve.
-                for (name, property) in properties {
-                    out.insert(name.clone(), sample_for_schema(property));
-                }
-            }
-            Value::Object(out)
-        }
-        Some("array") => match object.get("items") {
-            // One element, so a downstream `per_item` node has something to map
-            // over and a `[0]` expression resolves.
-            Some(items) => json!([sample_for_schema(items)]),
-            None => json!([]),
-        },
-        Some("string") => json!("sample"),
-        Some("integer") | Some("number") => json!(0),
-        Some("boolean") => json!(false),
-        _ => Value::Null,
-    }
-}
+// The sample synthesizer moved to [`crate::caps::schema`]: the `testkit`
+// auto-mock needs the same function and should not have to enable `host-caps`
+// — and so pull in a process runner and an HTTP client — to reach it.
+// Re-exported here because this is where callers have always found it.
+pub use crate::caps::sample_for_schema;
 
 /// The `output_parser.schema` a request declares, if any.
 fn declared_schema(request: &Value) -> Option<&Value> {

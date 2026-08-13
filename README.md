@@ -198,6 +198,101 @@ Omitting `--features mock` is harmless: the demo body is
 `#[cfg(feature = "mock")]`-gated, so a default build stays green and the example
 just prints a hint to re-run with the feature enabled.
 
+### Testing and debugging workflows
+
+Enable `testkit` for programmable mocks, a structured run trace, and real
+breakpoints:
+
+```toml
+tinyflows = { version = "0.8", features = ["testkit"] }
+```
+
+The problem it exists for: a workflow that runs *green* and does nothing. Every
+node ran, nothing errored, the output is an object — and a binding read from a
+field no node produces, resolved to `null`, and sent an empty value onward. Null
+is a legal value, so the engine has no complaint.
+
+```rust,no_run
+# async fn example(graph: tinyflows::model::WorkflowGraph) -> tinyflows::error::Result<()> {
+use tinyflows::testkit::{Respond, TestHarness};
+use serde_json::json;
+
+let run = TestHarness::new(&graph)
+    .trigger(json!({ "repo": "acme/api" }))
+    .mock_tool("slack.send", Respond::value(json!({ "ok": true })))
+    // First call rate-limits, the retry succeeds — a flaky dependency
+    // without a flaky test.
+    .mock_tool("gh.issues.*", Respond::sequence([
+        Respond::error("429 rate limited"),
+        Respond::value(json!({ "number": 7 })),
+    ]))
+    .run()
+    .await?;
+
+run.assert_completed();
+run.assert_node_ran("send_email");
+run.assert_no_null_bindings();   // the check a green run hides
+run.assert_call_count("tools", Some("slack.send"), 1);
+# Ok(())
+# }
+```
+
+A failing `assert_no_null_bindings` names the binding *and* the upstream node it
+was reading from, so it points at the node that should have produced the value
+rather than only at the one that went without it.
+
+Breakpoints pause a live run so another task can look at it and change it:
+
+```rust,no_run
+# async fn example(compiled: tinyflows::compiler::CompiledWorkflow) -> tinyflows::error::Result<()> {
+use std::time::Duration;
+use tinyflows::caps::mock::mock_capabilities;
+use tinyflows::testkit::debug::{BreakpointSpec, DebugCommand, DebugSession};
+use serde_json::json;
+
+let mut session = DebugSession::start_quiet(compiled, json!({}), mock_capabilities())?;
+session.controller().set_breakpoint(BreakpointSpec::before("send_email"))?;
+
+if let Some(pause) = session.next_pause(Duration::from_secs(5)).await {
+    println!("about to run with: {:?}", pause.input);
+    println!("empty bindings: {:?}", pause.null_bindings);
+    session.controller().release(pause.pause_id, DebugCommand::Continue)?;
+}
+session.finish().await?;
+# Ok(())
+# }
+```
+
+A paused run cannot wedge: a pause times out, detaching releases it, and
+dropping the session winds it down.
+
+#### For agents
+
+Workflows here are written by agents as often as by people, and an agent that
+cannot debug what it wrote can only guess at why it failed. `testkit::tools`
+exposes all of the above as named tools with real JSON Schemas and a
+JSON-in/JSON-out dispatcher, so a host can hand the whole module to an agent
+without writing an adapter:
+
+```rust,no_run
+# async fn example() -> Result<(), tinyflows::testkit::tools::ToolError> {
+use tinyflows::testkit::tools::{TestkitRegistry, all_tools};
+use serde_json::json;
+
+for tool in all_tools() {
+    println!("{} — {}", tool.name, tool.summary);
+}
+
+let registry = TestkitRegistry::new();
+let result = registry.dispatch("flow_test.run", json!({ "graph": { /* … */ } })).await?;
+println!("{}", result["nullBindings"]);
+# Ok(())
+# }
+```
+
+tinyflows registers nothing and talks to no model — the host owns registration,
+the same division `catalog` already draws for the node-kind contracts.
+
 ### Visual graph debugging
 
 Enable `graph-debug` to render a workflow's nodes, port-labelled edges, branch
