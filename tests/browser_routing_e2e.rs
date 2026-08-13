@@ -1,6 +1,6 @@
 //! Mixed browser and integration routing through ordinary `tool_call` nodes.
 
-#![cfg(feature = "mock")]
+#![cfg(all(feature = "mock", feature = "chrome-extension"))]
 
 use std::sync::{Arc, Mutex};
 

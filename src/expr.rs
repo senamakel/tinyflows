@@ -295,11 +295,6 @@ fn is_ident(seg: &str) -> bool {
     chars.all(|c| c == '_' || c == '-' || c.is_ascii_alphanumeric())
 }
 
-/// jaq standard-library builtins that must not be exposed to workflow
-/// expressions. `env` (aka `$ENV`) reads the embedding process's environment
-/// and would leak host secrets into node output; it is stripped before compile.
-const EXPR_DENIED_BUILTINS: &[&str] = &["env"];
-
 /// Repairs a hybrid expression that mixes the simple-path shorthand's bare
 /// scope key (e.g. `item`, with no leading dot) with a real jq pipe, such as
 /// `"item.labels | any(.name == \"in progress\") | not"`. That whole string
@@ -375,17 +370,48 @@ fn run_jq(program: &str, scope: &Value) -> Value {
         return Value::Null;
     };
 
+    // `jaq-std` keeps its jq-authored definitions in one file, including
+    // wrappers around optional native functions. Keep the definitions that
+    // compile against `base_funs`; omit wrappers for the disabled bundles.
     let defs = jaq_core::defs()
-        .chain(jaq_std::defs())
+        .chain(jaq_std::defs().filter(|def| {
+            !(matches!(
+                def.name,
+                "stderr"
+                    | "debug"
+                    | "halt_error"
+                    | "logb"
+                    | "significand"
+                    | "pow10"
+                    | "drem"
+                    | "nexttoward"
+                    | "scalb"
+                    | "gamma"
+                    | "capture_of_match"
+                    | "test"
+                    | "scan"
+                    | "match"
+                    | "capture"
+                    | "splits"
+                    | "sub"
+                    | "gsub"
+                    | "todate"
+                    | "fromdate"
+                    | "@html"
+                    | "@htmld"
+                    | "@uri"
+                    | "@urid"
+                    | "@base64"
+                    | "@base64d"
+            ) || (def.name == "split" && def.args.len() == 2))
+        }))
         .chain(jaq_json::defs());
-    // Security: workflow expressions are host/agent-authored data, so the jq
-    // standard library's process-facing builtins must not be reachable. In
-    // particular jaq-std's `env`/`$ENV` dumps the embedding process's entire
-    // environment (API keys, tokens) into node output — a secret-exfiltration
-    // vector. A `Fun` is a `(name, …, …)` tuple, so we filter jaq-std's set by
-    // name before compiling. jaq-core/jaq-json builtins are pure and kept whole.
+    // Keep the minimal, value-generic standard library. Supplementary native
+    // builtins are deliberately not compiled: besides pulling in time, regex,
+    // formatting, and specialist-math stacks, that set includes process-facing
+    // `env`/`$ENV`, which could leak host secrets into workflow output.
     let funs = jaq_core::funs()
-        .chain(jaq_std::funs().filter(|fun| !EXPR_DENIED_BUILTINS.contains(&fun.0)))
+        .chain(jaq_std::base_funs())
         .chain(jaq_json::funs());
 
     let loader = Loader::new(defs);
@@ -444,9 +470,31 @@ mod tests {
         assert_eq!(evaluate(&json!("=env"), &scope), Value::Null);
         assert_eq!(evaluate(&json!("=env.PATH"), &scope), Value::Null);
         assert_eq!(evaluate(&json!("=$ENV.PATH"), &scope), Value::Null);
-        // A pure jq builtin (from jaq-core/jaq-json) still works — we only
-        // stripped the process-facing one.
+        // A pure jq builtin still works; only supplementary native builtins
+        // are omitted.
         assert_eq!(evaluate(&json!("=[1,2,3]|length"), &scope), json!(3));
+    }
+
+    #[test]
+    fn optional_native_builtins_are_not_reachable() {
+        let scope = json!({});
+        assert_eq!(evaluate(&json!("=now | ."), &scope), Value::Null);
+        assert_eq!(
+            evaluate(&json!("=\"<b>\" | escape_html"), &scope),
+            Value::Null
+        );
+        assert_eq!(
+            evaluate(&json!("=\"abc\" | matches(\"a\"; \"\")"), &scope),
+            Value::Null
+        );
+        assert_eq!(
+            evaluate(
+                &json!("=\"2024-01-01T00:00:00Z\" | fromdateiso8601"),
+                &scope
+            ),
+            Value::Null
+        );
+        assert_eq!(evaluate(&json!("=9 | sqrt"), &scope), Value::Null);
     }
 
     #[test]

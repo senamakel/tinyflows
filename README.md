@@ -85,7 +85,8 @@ Rust 2024 · MSRV 1.85 · `#![forbid(unsafe_code)]` · GPL-3.0-or-later.
   secrets; the crate never sees them.
 - Versioned wire format: graph `schema_version` and per-node `type_version`, with
   a `migrate` framework for load-time upgrades.
-- Optional Chrome workflow companion: a native loopback relay and MV3 extension
+- Optional Chrome workflow companion (behind the `chrome-extension` Cargo
+  feature): a native loopback relay and MV3 extension
   execute explicit `tool_call` nodes with `slug: "browser"` in user-shared tabs,
   while every other tool remains with the embedding host's invoker.
 
@@ -293,7 +294,7 @@ Install Rust 1.85 or newer with [rustup](https://rustup.rs/), then:
 ```sh
 cargo build
 cargo test                 # unit + compiler + engine tests (mocks auto-available)
-cargo test --all-features  # also exercises the `mock` capability impls explicitly
+cargo test --all-features  # also exercises optional host and Chrome support
 ```
 
 The Chrome extension is a separate local package:

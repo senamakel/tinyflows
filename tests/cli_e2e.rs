@@ -1,5 +1,7 @@
 //! CLI smoke tests for the tinyflows binary.
 
+#![cfg(feature = "chrome-extension")]
+
 use std::path::PathBuf;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};

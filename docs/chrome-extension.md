@@ -2,24 +2,44 @@
 
 TinyFlows can drive ordinary signed-in Chrome tabs through an unpacked Manifest V3 extension. The native companion remains the workflow runtime: it validates and executes `WorkflowGraph`s, owns retries and credentials, and dispatches non-browser integrations. The extension receives only a correlated browser action and the tab already bound to that run.
 
-## Build, install, and pair
+The Rust protocol, relay, and companion CLI are behind the `chrome-extension`
+Cargo feature. They are absent from the default engine-only build.
+
+Install the companion CLI from crates.io with:
 
 ```bash
-cd extension
-npm ci
-npm run verify
-npm run build
-cd ..
-cargo run -- extension path
+cargo install tinyflows --features chrome-extension
+```
+
+## Install, build, and pair
+
+After `cargo install`, the `tinyflows` binary is on your `PATH`. It materializes
+its embedded, versioned extension into a local directory and drives the
+companion, so nothing below needs a source checkout:
+
+```bash
+tinyflows extension path
 ```
 
 Open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select the printed directory. The CLI materializes its embedded, versioned extension there, so the path remains valid after `cargo install` removes its build sources. Copy the extension id shown by Chrome, then start the companion:
 
 ```bash
-cargo run -- pair
-cargo run -- companion start \
+tinyflows pair
+tinyflows companion start \
   --extension-id <32-character-extension-id> \
   --workflows-dir "$PWD/workflows"
+```
+
+To rebuild and test the extension from a source checkout instead, build the
+package first and then compile the companion from that checkout so the fresh
+`extension/dist` output is embedded:
+
+```bash
+cd extension
+npm ci
+npm run verify
+cd ..
+cargo run --features chrome-extension -- extension path
 ```
 
 `pair` prints a loopback relay URL and a pairing token. Paste both into the toolbar popup. The token is stored in `~/.tinyflows/credentials/chrome-extension-relay.secret` with mode `0600` on Unix. It is carried in `Sec-WebSocket-Protocol`, never in the URL. Rotate it with `tinyflows pair --rotate`, restart the companion, and pair the extension again.
