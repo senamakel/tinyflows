@@ -39,6 +39,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **New node kind: `void`, a terminal sink.** It accepts items on `main`,
+  discards them, and activates nothing — the branch ends there, on purpose. A
+  branch could always dead-end (a node with no outgoing edges terminates), but
+  an unwired port reads exactly like a forgotten one, so there was no way to
+  declare "this is a side effect and nothing waits on it". `spawn → void` is now
+  the explicit spelling of a ticket no `gate` will collect; the abandon
+  semantics are unchanged from leaving it unwired. It adds **no** concurrency:
+  work upstream still runs inline in its own super-step, and only the result is
+  dropped. Its slot is `{items: [], port: null, discarded: N}`, which keeps
+  "never activated" (no slot at all), "activated with nothing to drop" and
+  "dropped N items" distinguishable.
+
+  Validation refuses a `void` with any outgoing edge — including the `error`
+  edge `on_error: "route"` would otherwise demand, which is reported directly
+  rather than as a `MissingErrorRoute` the next rule would then reject — and one
+  with no incoming edge, since a node with no effect and no input declares
+  nothing.
+
+  The scatter-lane dead-end rule is relaxed accordingly: a lane branch ending in
+  a `void` is now legal, making it the one dead end a lane may have. The rule
+  exists to catch *accidental* invisibility (a lane activation never writes the
+  node's top-level slot), and a `void` is the author declaring it. A `scatter`
+  with no `gather` anywhere is still refused, void downstream or not.
+
+  Not included, deliberately: no lint for a `spawn` with neither a `gate` nor a
+  `void` downstream. `validate_all` has no severity tier, and making it a hard
+  error would break the documented "fire-and-forget is legal" contract. A
+  possible future addition if a warning channel ever lands.
+
 - **Configurable agents.** An `agent` node can now be given dynamic context,
   an explicit tool allow-list, a model and provider, a working directory,
   advisory limits, and arbitrary harness metadata — while the agent
