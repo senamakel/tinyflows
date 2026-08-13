@@ -420,6 +420,7 @@ mod tests {
             run: &run_meta,
             nodes: &Value::Null,
             caps: &caps,
+            agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
         };
@@ -434,6 +435,7 @@ mod tests {
         config: Value,
         input_items: Vec<crate::data::Item>,
         caps: &Capabilities,
+        agents: &[],
     ) -> NodeOutput {
         let mut sw = node("sw", NodeKind::SubWorkflow);
         sw.config = config;
@@ -699,6 +701,7 @@ mod tests {
         config: Value,
         run_meta: Value,
         caps: &Capabilities,
+        agents: &[],
     ) -> Result<NodeOutput, EngineError> {
         let mut sw = node("sw", NodeKind::SubWorkflow);
         sw.config = config;
@@ -1043,6 +1046,7 @@ mod cancellation_propagation_tests {
     async fn run_cancelling_on_slow(
         graph: &WorkflowGraph,
         caps: &Capabilities,
+        agents: &[],
         token: CancellationToken,
         slow_started: Arc<Notify>,
     ) -> (RunOutcome, Duration) {

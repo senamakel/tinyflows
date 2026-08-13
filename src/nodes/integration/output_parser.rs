@@ -82,6 +82,7 @@ mod tests {
             run: &Value::Null,
             nodes: &Value::Null,
             caps: &caps,
+            agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
         };
@@ -111,6 +112,7 @@ mod tests {
             run: &Value::Null,
             nodes: &Value::Null,
             caps: &caps,
+            agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
         };
@@ -167,6 +169,7 @@ mod tests {
         node: &Node,
         input: Vec<Item>,
         caps: &crate::caps::Capabilities,
+        agents: &[],
     ) -> Result<Vec<Item>> {
         let run_meta = Value::Null;
         let ctx = NodeContext {
