@@ -243,8 +243,8 @@ async fn a_sibling_that_completed_is_not_re_run_on_resume() {
         async fn invoke(
             &self,
             _slug: &str,
-            _args: &Value,
-            _connection: Option<&str>,
+            _args: Value,
+            _conn: Option<&str>,
         ) -> tinyflows::error::Result<Value> {
             self.0.fetch_add(1, Ordering::SeqCst);
             Ok(json!({ "ok": true }))
