@@ -69,6 +69,23 @@ pub enum NodeKind {
     /// [`crate::nodes::control_flow::dedup`] for the full `StateStore` key
     /// contract this kind depends on.
     Dedup,
+    /// Starts work **without waiting for it** and emits a ticket per started
+    /// task, so the branch carries on while the work runs. A downstream
+    /// [`NodeKind::Gate`] collects the results.
+    ///
+    /// Needs the [`TaskRunner`](crate::caps::TaskRunner) capability to actually
+    /// overlap; with none injected the work runs inline and the ticket comes
+    /// back already settled, so the graph still computes the right answer
+    /// without the concurrency.
+    Spawn,
+    /// Waits for tickets — from [`NodeKind::Spawn`], or named by expression —
+    /// and emits their results once its release policy is satisfied.
+    ///
+    /// The policy (`all` / `any` / `first_n` / `quorum` / `timeout_partial`)
+    /// is what makes this more than a barrier: a gate can proceed on a quorum
+    /// and leave the stragglers, or settle for whatever arrived before its
+    /// deadline. See [`crate::nodes::release`].
+    Gate,
 }
 
 /// How a [`NodeKind::Trigger`] node is fired.
