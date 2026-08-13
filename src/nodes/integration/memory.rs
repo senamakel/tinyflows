@@ -412,6 +412,8 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            step: 0,
         };
         let out = MemoryNode.execute(ctx).await.expect("execute");
         assert_eq!(out.items.len(), 2, "per_item default maps over input");
@@ -469,6 +471,8 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            step: 0,
         };
         let out = MemoryNode.execute(ctx).await.expect("execute");
         assert_eq!(out.items[0].json["json"]["opts"]["operation"], "search");
@@ -490,6 +494,8 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            step: 0,
         };
         let err = MemoryNode
             .execute(ctx)
@@ -518,6 +524,8 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            step: 0,
         };
         let err = MemoryNode
             .execute(ctx)
@@ -563,6 +571,8 @@ mod tests {
                 agents: &[],
                 observer: &crate::observability::NoopObserver,
                 token: crate::engine::CancellationToken::new(),
+                lane: None,
+                step: 0,
             };
             let err = MemoryNode
                 .execute(ctx)
@@ -590,6 +600,8 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            step: 0,
         };
         let err = MemoryNode
             .execute(ctx)
@@ -617,6 +629,8 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            step: 0,
         };
         let err = MemoryNode
             .execute(ctx)
@@ -648,6 +662,8 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            step: 0,
         };
         let out = MemoryNode.execute(ctx).await.expect("execute");
         assert_eq!(out.items.len(), 1, "once mode emits a single item");

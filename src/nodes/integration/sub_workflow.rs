@@ -423,6 +423,8 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            step: 0,
         };
         SubWorkflowNode
             .execute(ctx)
@@ -448,6 +450,8 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            step: 0,
         };
         SubWorkflowNode.execute(ctx).await.expect("execute")
     }
@@ -714,6 +718,8 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            step: 0,
         };
         SubWorkflowNode.execute(ctx).await
     }

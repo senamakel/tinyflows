@@ -85,6 +85,8 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            step: 0,
         };
         let out = OutputParserNode.execute(ctx).await.expect("execute");
         assert_eq!(out.items, input);
@@ -115,6 +117,8 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            step: 0,
         };
         OutputParserNode.execute(ctx).await.expect("execute").items
     }
@@ -180,6 +184,8 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            step: 0,
         };
         OutputParserNode.execute(ctx).await.map(|o| o.items)
     }

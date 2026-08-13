@@ -562,6 +562,8 @@ mod tests {
                     agents: &[],
                     observer: &crate::observability::NoopObserver,
                     token: crate::engine::CancellationToken::new(),
+                    lane: None,
+                    step: 0,
                 })
                 .await;
             assert!(
@@ -588,6 +590,8 @@ mod tests {
                 agents: &[],
                 observer: &crate::observability::NoopObserver,
                 token: crate::engine::CancellationToken::new(),
+                lane: None,
+                step: 0,
             })
             .await
             .expect("execute");
@@ -619,6 +623,8 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            step: 0,
         };
         let scope = expr_scope(&ctx);
         // Existing keys unchanged (back-compat).
@@ -651,6 +657,8 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            step: 0,
         };
         let scope = expr_scope(&ctx);
         assert_eq!(scope["nodes"], json!({}));

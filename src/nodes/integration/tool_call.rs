@@ -182,6 +182,8 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            step: 0,
         };
         let err = ToolCallNode
             .execute(ctx)
@@ -210,6 +212,8 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            step: 0,
         };
         let out = ToolCallNode.execute(ctx).await.expect("execute");
         assert_eq!(out.items[0].json["json"]["tool"], "x.y");
@@ -237,6 +241,8 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            step: 0,
         };
         let out = ToolCallNode.execute(ctx).await.expect("execute");
         assert_eq!(out.items[0].json["json"]["args"]["to"], Value::Null);
@@ -260,6 +266,8 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            step: 0,
         };
         let out = ToolCallNode.execute(ctx).await.expect("execute");
         assert_eq!(out.items.len(), 1);
@@ -289,6 +297,8 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            step: 0,
         };
         let out = ToolCallNode.execute(ctx).await.expect("execute");
         assert_eq!(out.items.len(), 3, "one output per input item");
@@ -319,6 +329,8 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            step: 0,
         };
         let out = ToolCallNode.execute(ctx).await.expect("execute");
         assert_eq!(out.items.len(), 1, "once mode emits a single item");

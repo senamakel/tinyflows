@@ -94,6 +94,8 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            step: 0,
         };
         let out = SwitchNode.execute(ctx).await.expect("execute");
         (out.port.expect("switch always routes to a port"), out.items)
@@ -118,6 +120,8 @@ mod tests {
             agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
+            lane: None,
+            step: 0,
         };
         let out = SwitchNode.execute(ctx).await.expect("execute");
         assert_eq!(out.port.as_deref(), Some("urgent"));
