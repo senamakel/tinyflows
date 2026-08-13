@@ -354,11 +354,91 @@ impl HandlerData {
         // is observed promptly instead of after the whole delay elapses.
         const BACKOFF_POLL_MS: u64 = 25;
 
+        // The pre-execution interception point.
+        //
+        // Deliberately here and nowhere else:
+        //  - *after* the cancellation check and the approval gate, so an
+        //    interceptor is never shown an activation the engine had already
+        //    decided to skip or pause;
+        //  - *after* input resolution, so the frame carries the node's real
+        //    items and its real bindings rather than a promise of them;
+        //  - *outside* the retry loop, so it fires once per activation instead
+        //    of once per attempt — a breakpoint that fired three times because
+        //    the node was configured with `retry.max_attempts: 3` would be
+        //    reporting an implementation detail as a decision;
+        //  - *outside* the per-attempt timeout race below, so time spent parked
+        //    at a breakpoint is never charged against `node_timeout_secs`.
+        //
+        // A substituted output skips the executor entirely and then rejoins the
+        // ordinary path, so it is recorded as a step, reported to the observer,
+        // and routed through the same port and lane logic as real output.
+        let mut state_patch: Option<Value> = None;
+        let mut substituted: Option<crate::nodes::NodeOutput> = None;
+        let mut injected_err: Option<EngineError> = None;
+        if let Some(hook) = interceptor.as_ref() {
+            let action = hook
+                .intercept(StepFrame {
+                    phase: StepPhase::Before,
+                    node: &node,
+                    step: activation_step,
+                    attempts: 0,
+                    input: &input,
+                    run: &run_meta,
+                    nodes: &nodes_state,
+                    state: &state,
+                    lane: lane.as_ref(),
+                    resume: resume_value.as_ref(),
+                    output: None,
+                    error: None,
+                })
+                .await;
+            match action {
+                StepAction::Continue { state_patch: None } => {}
+                StepAction::Continue {
+                    state_patch: Some(patch),
+                } => {
+                    merge(&mut state, patch.clone());
+                    let (i, r, n) = derive(&state);
+                    input = i;
+                    run_meta = r;
+                    nodes_state = n;
+                    state_patch = Some(patch);
+                }
+                StepAction::Replace { items, port } => {
+                    substituted = Some(crate::nodes::NodeOutput {
+                        port,
+                        ..crate::nodes::NodeOutput::main(items)
+                    });
+                }
+                StepAction::Skip => {
+                    substituted = Some(crate::nodes::NodeOutput::empty());
+                }
+                StepAction::Fail { message } => {
+                    injected_err = Some(EngineError::Capability(message));
+                }
+                StepAction::Interrupt { id, payload } => {
+                    tracing::info!(node = %node.id, gate = %id, "interceptor paused the run");
+                    return Ok(NodeResult::Interrupt(Interrupt {
+                        id,
+                        node: node.id.clone().into(),
+                        payload,
+                    }));
+                }
+            }
+        }
+
         observer.on_step_start(&node.id);
-        let mut output = None;
-        let mut last_err: Option<EngineError> = None;
+        let mut output = substituted;
+        let mut last_err: Option<EngineError> = injected_err;
+        let mut attempts_used: u32 = 0;
         let started = Instant::now();
-        for attempt in 0..max_attempts {
+        // An interceptor that substituted an output or injected a failure has
+        // already decided this activation's outcome, so the executor does not
+        // run — and an injected failure does not consume retry attempts, which
+        // is what keeps a debugger from sitting through synthetic ones.
+        let run_executor = output.is_none() && last_err.is_none();
+        for attempt in 0..(if run_executor { max_attempts } else { 0 }) {
+            attempts_used = attempt + 1;
             // Cooperative cancellation inside the retry loop. Without this a
             // node with a large `max_attempts`/`backoff_ms` keeps retrying
             // and sleeping through its whole budget after `cancel()`; check
