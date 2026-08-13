@@ -78,7 +78,21 @@ impl Shape {
             }
             // Each pass costs the body plus the head itself.
             Self::Loop { max_iter, body } => (max_iter + 1) * (body.step_budget() + 1),
+            Self::Gate(rest) => 1 + rest.step_budget(),
         }
+    }
+
+    /// The ids of every approval gate this shape will contain, in the order
+    /// [`Builder`] hands ids out.
+    ///
+    /// A caller needs these up front to pre-approve a run or to resume one, and
+    /// recomputing them by walking the built graph would just be re-deriving
+    /// what the builder already knew.
+    #[must_use]
+    pub fn gate_ids(&self) -> Vec<String> {
+        let mut builder = Builder::new();
+        builder.build(self);
+        builder.gates
     }
 }
 
