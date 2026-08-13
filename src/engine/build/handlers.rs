@@ -52,6 +52,7 @@ pub(super) fn register_handlers(
         let caps = capabilities.clone();
         let agents = agents.clone();
         let observer = observer.clone();
+        let interceptor = interceptor.cloned();
         let steps = steps.clone();
         let terminal_error = terminal_error.clone();
         let token = token.clone();
