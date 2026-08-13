@@ -113,10 +113,8 @@ pub(super) async fn build_and_run(
         capabilities,
         observer,
         &steps,
-        checkpointer,
-        journal,
-        token.clone(),
         &terminal_error,
+        &config,
     )?;
 
     let seed_items = items_update(&trigger_id, &[Item::new(trigger.clone())], None)
