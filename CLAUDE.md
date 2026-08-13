@@ -6,8 +6,7 @@ Guidance for Claude Code when working in this repository.
 
 A **Rust-native workflow automation engine**, shipped as a library crate. A
 workflow is a directed graph of typed nodes (`WorkflowGraph`) that is validated,
-compiled onto the [`tinyagents`](https://crates.io/crates/tinyagents) state-graph
-engine, and run. It is **host-agnostic**: the crate never hard-codes a vendor —
+compiled onto the in-crate [`graph`](src/graph) state-graph runtime, and run. It is **host-agnostic**: the crate never hard-codes a vendor —
 everything that touches the outside world (LLMs, tools, HTTP, code execution,
 persistence) goes through **capability traits** the embedding app implements.
 OpenHuman is the first downstream host; tinyflows is published to crates.io and
@@ -17,7 +16,7 @@ consumed there via a thin adapter seam.
 
 ```
 model::WorkflowGraph  →  validate  →  compiler::compile  →  engine::run
-   (typed graph)        (structural)   (lowers to tinyagents)  (drives to completion)
+   (typed graph)        (structural)   (lowers to crate::graph)  (drives to completion)
                                               ▲
                           caps traits (LlmProvider / ToolInvoker /
                           HttpClient / CodeRunner / StateStore) — host-injected
@@ -49,6 +48,10 @@ model::WorkflowGraph  →  validate  →  compiler::compile  →  engine::run
   split_out/…) and `integration.rs` (agent/tool_call/http_request/code/…).
 - `compiler.rs` — compiles a validated graph into runnable form.
 - `engine.rs` — `engine::run`, drives a compiled workflow to completion.
+- `graph/` — the in-crate state-graph runtime `engine.rs` lowers onto (builder,
+  superstep executor, channels, checkpointing, interrupts, event journal).
+  Vendored out of `tinyagents` and trimmed: agents themselves are a host concern
+  reached through `caps`, so the crate carries no agent-harness dependency.
 - `error.rs` — shared error types across validate/compile/execute (thiserror).
 - `lib.rs` — crate surface + module declarations; `main.rs` — thin binary stub.
 
@@ -91,7 +94,7 @@ When you make a design decision, record it in `local/docs/11-decisions.md`.
 
 ## Status
 
-Working runtime. The engine (`engine::run`, lowering onto tinyagents with item-based
+Working runtime. The engine (`engine::run`, lowering onto `crate::graph` with item-based
 data flow), the full node catalog (control-flow + capability-backed), conditional +
 parallel routing with a merge barrier, per-node error handling (`on_error`/retry/error
 port), `tracing`/`RunObserver` observability, HITL approval gating + `engine::resume`,
