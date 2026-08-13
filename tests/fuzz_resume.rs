@@ -52,7 +52,7 @@ use support::graphgen::{Shape, arb_gated_shape, graph_of};
 use tinyflows::caps::mock::mock_capabilities;
 use tinyflows::compiler::compile;
 use tinyflows::engine::{
-    InMemoryCheckpointer, run, run_with_checkpointer, resume_with_checkpointer,
+    InMemoryCheckpointer, resume_with_checkpointer, run, run_with_checkpointer,
 };
 
 /// How long any single run may take before it is called a hang.
@@ -122,13 +122,7 @@ fn run_both_ways(shape: &Shape) -> Option<(Value, Value)> {
         let thread_id = "fuzz-resume";
         let mut outcome = tokio::time::timeout(
             GUARD,
-            run_with_checkpointer(
-                &compiled,
-                json!({}),
-                &caps,
-                checkpointer.clone(),
-                thread_id,
-            ),
+            run_with_checkpointer(&compiled, json!({}), &caps, checkpointer.clone(), thread_id),
         )
         .await
         .expect("suspending run hung")

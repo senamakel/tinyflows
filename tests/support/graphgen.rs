@@ -73,9 +73,7 @@ impl Shape {
         match self {
             Self::Linear(n) => *n as u64 + 1,
             Self::Branch(a, b) => 2 + a.step_budget().max(b.step_budget()),
-            Self::Fanout(branches) => {
-                2 + branches.iter().map(Self::step_budget).max().unwrap_or(0)
-            }
+            Self::Fanout(branches) => 2 + branches.iter().map(Self::step_budget).max().unwrap_or(0),
             // Each pass costs the body plus the head itself.
             Self::Loop { max_iter, body } => (max_iter + 1) * (body.step_budget() + 1),
             Self::Gate(rest) => 1 + rest.step_budget(),
