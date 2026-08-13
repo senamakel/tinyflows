@@ -46,6 +46,11 @@ tempfile = { version = "3", optional = true }
 # `store` only: the advisory file lock that keeps two processes from deciding
 # the same proposal at once.
 fs2 = { version = "0.4", optional = true }
+# `graph-debug` only: self-contained raster output and a tiny bitmap font. The
+# renderer deliberately does not shell out to Graphviz, so it works anywhere
+# the library does.
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"], optional = true }
+font8x8 = { version = "0.3", default-features = false, features = ["unicode"], optional = true }
 jaq-core = "3.1.0"
 jaq-std = { version = "3.0.1", default-features = false }
 jaq-json = { version = "2.0.1", features = ["serde"] }
@@ -70,6 +75,8 @@ host-caps = ["dep:reqwest", "dep:sha2", "dep:tempfile", "tokio/fs", "tokio/proce
 # A host with its own catalog or database wants none of it, so it is not part of
 # the engine. Always available inside this crate's own tests.
 store = ["dep:sha2", "dep:fs2"]
+# A file-writing graph visualizer intended for development and diagnostics.
+graph-debug = ["dep:image", "dep:font8x8"]
 
 [dev-dependencies]
 proptest = "1"

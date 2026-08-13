@@ -198,6 +198,25 @@ Omitting `--features mock` is harmless: the demo body is
 `#[cfg(feature = "mock")]`-gated, so a default build stays green and the example
 just prints a hint to re-run with the feature enabled.
 
+### Visual graph debugging
+
+Enable `graph-debug` to render a workflow's nodes, port-labelled edges, branch
+flows, loops, and even dangling references to a standalone PNG or JPEG. The
+renderer is part of the library and does not require Graphviz:
+
+```toml
+tinyflows = { version = "0.6", features = ["graph-debug"] }
+```
+
+```rust,no_run
+use tinyflows::model::WorkflowGraph;
+use tinyflows::visualization::render_graph;
+
+let graph = WorkflowGraph::default();
+render_graph(&graph, "workflow.png")?; // .jpg and .jpeg are supported too
+# Ok::<(), tinyflows::visualization::GraphRenderError>(())
+```
+
 Run all of them in one go:
 
 ```sh
