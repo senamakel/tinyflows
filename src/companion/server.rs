@@ -31,7 +31,8 @@ use crate::observability::{ExecutionStep, RunObserver, StepStatus};
 
 use super::{
     Authenticator, CompanionControlRequest, CompanionControlResponse, PROTOCOL_SUBPROTOCOL,
-    PairingSecret, RelayPolicy, RelayState, RunEvent, TabId, WebSocketHandshake, WorkflowSummary,
+    PairingSecret, RelayPolicy, RelayState, RunEvent, SharedTab, TabId, WebSocketHandshake,
+    WorkflowSummary,
 };
 
 /// Configuration for the native Chrome companion.
@@ -44,9 +45,15 @@ pub struct CompanionServerConfig {
     /// Host-local pairing secret required in a WebSocket subprotocol.
     pub pairing_secret: PairingSecret,
     /// Directory containing workflow JSON files exposed to the side panel.
+    /// Ignored for listing/running when `run_host` is set.
     pub workflows_dir: PathBuf,
     /// Host capabilities used for every non-browser effect.
     pub capabilities: Capabilities,
+    /// Optional embedding-host seam. When set, workflow listing + execution
+    /// (over both the WS control channel and the HTTP native endpoints) delegate
+    /// to the host instead of `workflows_dir` + [`CompanionServer::start_workflow`].
+    /// `None` preserves the built-in standalone behaviour.
+    pub run_host: Option<Arc<dyn super::CompanionRunHost>>,
 }
 
 /// Errors produced by companion configuration, I/O, or workflow startup.
@@ -77,6 +84,7 @@ struct ServerInner {
     pending: tokio::sync::Mutex<HashMap<String, PendingSender>>,
     workflows_dir: PathBuf,
     capabilities: Capabilities,
+    run_host: Option<Arc<dyn super::CompanionRunHost>>,
     runs: Mutex<HashMap<String, CancellationToken>>,
     next_session: AtomicU64,
     next_run: AtomicU64,
@@ -105,6 +113,7 @@ impl CompanionServer {
                 pending: tokio::sync::Mutex::new(HashMap::new()),
                 workflows_dir: config.workflows_dir,
                 capabilities: config.capabilities,
+                run_host: config.run_host,
                 runs: Mutex::new(HashMap::new()),
                 next_session: AtomicU64::new(0),
                 next_run: AtomicU64::new(0),
@@ -136,6 +145,132 @@ impl CompanionServer {
     /// Lists valid workflow JSON files from the configured directory.
     pub fn workflows(&self) -> Result<Vec<WorkflowSummary>, CompanionServerError> {
         list_workflows(&self.inner.workflows_dir)
+    }
+
+    /// Lists workflows via the configured [`CompanionRunHost`](super::CompanionRunHost)
+    /// if present, else from `workflows_dir`. Used by both request paths.
+    async fn dispatch_list_workflows(&self) -> Result<Vec<WorkflowSummary>, String> {
+        match &self.inner.run_host {
+            Some(host) => host.list_workflows().await,
+            None => self.workflows().map_err(|error| error.to_string()),
+        }
+    }
+
+    /// Starts a run via the run host if present, else via the built-in
+    /// [`start_workflow`](Self::start_workflow). Returns the run id.
+    async fn dispatch_start_run(
+        &self,
+        workflow_id: &str,
+        tab_id: TabId,
+        input: Value,
+    ) -> Result<String, String> {
+        match &self.inner.run_host {
+            Some(host) => host.start_run(workflow_id, tab_id, input).await,
+            None => self
+                .start_workflow(workflow_id, tab_id, input)
+                .await
+                .map_err(|error| error.to_string()),
+        }
+    }
+
+    /// Cancels a run via the run host if present, else via the built-in
+    /// [`cancel_workflow`](Self::cancel_workflow).
+    async fn dispatch_cancel_run(&self, run_id: &str) -> bool {
+        match &self.inner.run_host {
+            Some(host) => host.cancel_run(run_id).await,
+            None => self.cancel_workflow(run_id).await,
+        }
+    }
+
+    /// Returns a browser relay handle usable by an **external** workflow runner
+    /// (an embedding host that drives its own engine rather than calling
+    /// [`start_workflow`](Self::start_workflow)). The returned handle shares this
+    /// server's live WebSocket session and pending-response map, so wrapping it in
+    /// a [`RoutingToolInvoker`](crate::browser::RoutingToolInvoker) lets a host
+    /// route `slug:"browser"` tool calls to the paired extension.
+    ///
+    /// The handle is always valid; if no extension is currently connected each
+    /// `execute` fails closed with `relay_disconnected`.
+    pub fn browser_relay(&self) -> Arc<dyn BrowserRelay> {
+        Arc::new(SocketRelay {
+            inner: self.inner.clone(),
+        })
+    }
+
+    /// Whether a paired extension currently holds an authenticated relay session.
+    /// External hosts use this to gate author-time / run-time browser readiness.
+    pub fn is_extension_connected(&self) -> bool {
+        self.inner
+            .relay
+            .lock()
+            .map(|relay| relay.is_connected())
+            .unwrap_or(false)
+    }
+
+    /// Snapshot of the tabs the user has explicitly shared with the companion.
+    /// Empty when no extension is connected or nothing is shared.
+    pub fn shared_tabs(&self) -> Vec<SharedTab> {
+        self.inner
+            .relay
+            .lock()
+            .map(|relay| relay.tabs().list().into_iter().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    /// Binds a workflow run to an explicitly-shared tab so an **external**
+    /// runner's `slug:"browser"` calls (dispatched through the handle from
+    /// [`browser_relay`](Self::browser_relay)) are authorized against that tab.
+    /// This mirrors what [`start_workflow`](Self::start_workflow) does
+    /// internally for native runs — an embedding host must call this before
+    /// executing a graph that contains browser nodes, or every browser action
+    /// fails with `tab_not_shared`. External runners are not registered in the
+    /// native run table, so their cancellation path must call
+    /// [`cancel_bound_run`](Self::cancel_bound_run) before unbinding.
+    pub fn bind_run(
+        &self,
+        run_id: impl Into<String>,
+        tab_id: TabId,
+    ) -> Result<(), CompanionServerError> {
+        self.inner
+            .relay
+            .lock()
+            .map_err(|_| lock_error())?
+            .tabs_mut()
+            .bind_run(run_id.into(), tab_id)
+            .map_err(super::RelayError::from)?;
+        Ok(())
+    }
+
+    /// Releases a run→tab binding after an external run settles. Idempotent.
+    ///
+    /// This does not cancel in-flight browser actions. On cancellation, call
+    /// [`cancel_bound_run`](Self::cancel_bound_run) instead so the extension and
+    /// pending relay requests are both notified.
+    pub fn unbind_run(&self, run_id: &str) {
+        if let Ok(mut relay) = self.inner.relay.lock() {
+            relay.tabs_mut().unbind_run(run_id);
+        }
+    }
+
+    /// Cancels browser work for an externally-owned run and releases its tab
+    /// binding.
+    ///
+    /// An embedding host should call this alongside cancellation of its own
+    /// workflow engine. Unlike [`cancel_workflow`](Self::cancel_workflow), this
+    /// method does not expect the run to exist in the companion's native run
+    /// table. Returns whether the run had a live tab binding.
+    pub async fn cancel_bound_run(&self, run_id: &str) -> bool {
+        let (was_bound, responses) = self
+            .inner
+            .relay
+            .lock()
+            .map(|mut relay| {
+                let was_bound = relay.tabs().binding(run_id).is_some();
+                (was_bound, relay.cancel_run(run_id))
+            })
+            .unwrap_or_default();
+        self.dispatch(responses).await;
+        was_bound
     }
 
     /// Starts a native run bound to one explicit shared tab.
@@ -236,7 +371,10 @@ impl CompanionServer {
         Ok(run_id)
     }
 
-    /// Cancels a live run and its in-flight browser action.
+    /// Cancels a companion-native run and its in-flight browser action.
+    ///
+    /// Runs registered only through [`bind_run`](Self::bind_run) are externally
+    /// owned and must use [`cancel_bound_run`](Self::cancel_bound_run).
     pub async fn cancel_workflow(&self, run_id: &str) -> bool {
         let token = self
             .inner
@@ -246,13 +384,7 @@ impl CompanionServer {
             .and_then(|runs| runs.get(run_id).cloned());
         let Some(token) = token else { return false };
         token.cancel();
-        let responses = self
-            .inner
-            .relay
-            .lock()
-            .map(|mut relay| relay.cancel_run(run_id))
-            .unwrap_or_default();
-        self.dispatch(responses).await;
+        self.cancel_bound_run(run_id).await;
         true
     }
 
@@ -473,7 +605,7 @@ async fn native_workflows(State(server): State<CompanionServer>, headers: Header
     if !native_authorized(&server, &headers) {
         return StatusCode::UNAUTHORIZED.into_response();
     }
-    match server.workflows() {
+    match server.dispatch_list_workflows().await {
         Ok(workflows) => Json(json!({
             "protocol_version":BROWSER_PROTOCOL_VERSION,
             "workflows":workflows
@@ -481,7 +613,7 @@ async fn native_workflows(State(server): State<CompanionServer>, headers: Header
         .into_response(),
         Err(error) => (
             StatusCode::BAD_REQUEST,
-            Json(json!({"code":"workflow_list_failed","message":error.to_string()})),
+            Json(json!({"code":"workflow_list_failed","message":error})),
         )
             .into_response(),
     }
@@ -496,7 +628,7 @@ async fn native_run(
         return StatusCode::UNAUTHORIZED.into_response();
     }
     match server
-        .start_workflow(&request.workflow_id, request.tab_id, request.input)
+        .dispatch_start_run(&request.workflow_id, request.tab_id, request.input)
         .await
     {
         Ok(run_id) => Json(json!({
@@ -506,7 +638,7 @@ async fn native_run(
         .into_response(),
         Err(error) => (
             StatusCode::BAD_REQUEST,
-            Json(json!({"code":"workflow_start_failed","message":error.to_string()})),
+            Json(json!({"code":"workflow_start_failed","message":error})),
         )
             .into_response(),
     }
@@ -736,26 +868,28 @@ async fn handle_control(
         );
     }
     match request {
-        CompanionControlRequest::WorkflowList { .. } => match server.workflows() {
-            Ok(workflows) => CompanionControlResponse::Workflows {
-                protocol_version: BROWSER_PROTOCOL_VERSION,
-                request_id,
-                workflows,
-            },
-            Err(error) => control_error(request_id, "workflow_list_failed", &error.to_string()),
-        },
+        CompanionControlRequest::WorkflowList { .. } => {
+            match server.dispatch_list_workflows().await {
+                Ok(workflows) => CompanionControlResponse::Workflows {
+                    protocol_version: BROWSER_PROTOCOL_VERSION,
+                    request_id,
+                    workflows,
+                },
+                Err(error) => control_error(request_id, "workflow_list_failed", &error),
+            }
+        }
         CompanionControlRequest::WorkflowStart {
             workflow_id,
             tab_id,
             input,
             ..
-        } => match server.start_workflow(&workflow_id, tab_id, input).await {
+        } => match server.dispatch_start_run(&workflow_id, tab_id, input).await {
             Ok(run_id) => control_ok(request_id, json!({"run_id":run_id})),
-            Err(error) => control_error(request_id, "workflow_start_failed", &error.to_string()),
+            Err(error) => control_error(request_id, "workflow_start_failed", &error),
         },
         CompanionControlRequest::WorkflowCancel { run_id, .. } => control_ok(
             request_id,
-            json!({"cancelled":server.cancel_workflow(&run_id).await}),
+            json!({"cancelled":server.dispatch_cancel_run(&run_id).await}),
         ),
         CompanionControlRequest::RunSubscribe { run_id, .. } => {
             control_ok(request_id, json!({"subscribed":run_id}))
@@ -874,9 +1008,49 @@ fn control_error(request_id: String, code: &str, message: &str) -> CompanionCont
 mod tests {
     use super::*;
 
+    fn test_server(workflows_dir: PathBuf) -> CompanionServer {
+        CompanionServer::new(CompanionServerConfig {
+            policy: RelayPolicy::loopback(0),
+            extension_id: "a".repeat(32),
+            pairing_secret: PairingSecret::parse("a".repeat(32)).unwrap(),
+            workflows_dir,
+            capabilities: crate::caps::mock::mock_capabilities(),
+            run_host: None,
+        })
+        .unwrap()
+    }
+
     #[test]
     fn workflow_ids_cannot_escape_the_configured_directory() {
         let error = load_workflow(Path::new("/tmp"), "../secret").unwrap_err();
         assert!(error.to_string().contains("invalid workflow id"));
+    }
+
+    #[tokio::test]
+    async fn external_run_cancellation_clears_its_relay_binding() {
+        let server = test_server(PathBuf::from("."));
+        server
+            .inner
+            .relay
+            .lock()
+            .unwrap()
+            .tabs_mut()
+            .share(7, 1, "https://example.com", "Example")
+            .unwrap();
+        server.bind_run("external-1", 7).unwrap();
+
+        assert!(!server.cancel_workflow("external-1").await);
+        assert!(server.cancel_bound_run("external-1").await);
+        assert!(
+            server
+                .inner
+                .relay
+                .lock()
+                .unwrap()
+                .tabs()
+                .binding("external-1")
+                .is_none()
+        );
+        assert!(!server.cancel_bound_run("external-1").await);
     }
 }
