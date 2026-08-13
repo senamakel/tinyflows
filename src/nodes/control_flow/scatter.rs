@@ -49,10 +49,7 @@ fn split(items: &[Item], lanes: Option<usize>) -> Vec<Vec<Item>> {
     // Ceiling division, so the last chunk is the short one rather than the
     // split producing more chunks than lanes were asked for.
     let per_lane = items.len().div_ceil(requested);
-    items
-        .chunks(per_lane)
-        .map(<[Item]>::to_vec)
-        .collect()
+    items.chunks(per_lane).map(<[Item]>::to_vec).collect()
 }
 
 #[async_trait]
@@ -115,13 +112,12 @@ impl NodeExecutor for ScatterNode {
             items = items.len(),
             "scatter: splitting work into lanes"
         );
-        Ok(NodeOutput::scatter(
-            lanes.clone(),
-            json!({ "lane_count": lanes.len() }),
+        Ok(
+            NodeOutput::scatter(lanes.clone(), json!({ "lane_count": lanes.len() }))
+                // The scatter's own slot keeps the items it fanned out, so the run
+                // state still shows what went in even though the lanes carry the work.
+                .with_meta(json!({ "lane_count": lanes.len() })),
         )
-        // The scatter's own slot keeps the items it fanned out, so the run
-        // state still shows what went in even though the lanes carry the work.
-        .with_meta(json!({ "lane_count": lanes.len() })))
     }
 }
 

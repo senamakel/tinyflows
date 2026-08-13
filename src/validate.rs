@@ -1119,7 +1119,12 @@ fn region_members<'a>(
             reached_a_gather = true;
             continue;
         }
-        let Some(id) = graph.nodes.iter().find(|n| n.id == node).map(|n| n.id.as_str()) else {
+        let Some(id) = graph
+            .nodes
+            .iter()
+            .find(|n| n.id == node)
+            .map(|n| n.id.as_str())
+        else {
             continue;
         };
         if !members.insert(id) {
@@ -1133,7 +1138,11 @@ fn region_members<'a>(
                 .map(|e| e.to_node.as_str()),
         );
     }
-    if reached_a_gather { members } else { HashSet::new() }
+    if reached_a_gather {
+        members
+    } else {
+        HashSet::new()
+    }
 }
 
 fn path_exists(graph: &WorkflowGraph, start: &str, target: &str) -> bool {

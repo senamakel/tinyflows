@@ -199,13 +199,15 @@ impl NodeExecutor for GatherNode {
             ))),
             Release::Emit => {
                 let partial = arrived.len() < expected;
-                Ok(NodeOutput::main(emit_items(arrived, on_lane_error)).with_meta(json!({
-                    POLLS_KEY: polls + 1,
-                    "lanes": expected,
-                    "arrived": meta["arrived"],
-                    "failed": meta["failed"],
-                    "partial": partial,
-                })))
+                Ok(
+                    NodeOutput::main(emit_items(arrived, on_lane_error)).with_meta(json!({
+                        POLLS_KEY: polls + 1,
+                        "lanes": expected,
+                        "arrived": meta["arrived"],
+                        "failed": meta["failed"],
+                        "partial": partial,
+                    })),
+                )
             }
         }
     }

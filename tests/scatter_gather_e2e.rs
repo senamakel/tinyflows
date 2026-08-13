@@ -64,7 +64,11 @@ fn scatter_graph(scatter_config: Value, gather_config: Value) -> WorkflowGraph {
             ),
             node("collect", NodeKind::Gather, gather),
         ],
-        edges: vec![edge("t", "fan"), edge("fan", "work"), edge("work", "collect")],
+        edges: vec![
+            edge("t", "fan"),
+            edge("fan", "work"),
+            edge("work", "collect"),
+        ],
         ..Default::default()
     }
 }
@@ -185,7 +189,9 @@ async fn a_lane_spanning_several_nodes_runs_each_of_them_per_lane() {
         json!({ "set": { "stage": 2 } }),
     ));
     // Re-wire: fan -> work -> second -> collect.
-    graph.edges.retain(|e| !(e.from_node == "work" && e.to_node == "collect"));
+    graph
+        .edges
+        .retain(|e| !(e.from_node == "work" && e.to_node == "collect"));
     graph.edges.push(edge("work", "second"));
     graph.edges.push(edge("second", "collect"));
     for n in &mut graph.nodes {

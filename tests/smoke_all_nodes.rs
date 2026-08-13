@@ -334,3 +334,41 @@ async fn smoke_gate_collects_a_spawn() {
     assert_eq!(items.len(), 1, "one spawned task, one collected result");
     assert!(items[0].get("json").is_some());
 }
+
+/// `scatter` and `gather` are only meaningful as a pair, so the smoke test
+/// drives the real shape rather than either alone.
+#[tokio::test]
+async fn smoke_scatter_gather() {
+    let graph = WorkflowGraph {
+        name: "smoke_scatter".to_string(),
+        nodes: vec![
+            trigger("t", TriggerKind::Manual),
+            node("fan", NodeKind::Scatter, json!({ "path": "rows" })),
+            node(
+                "work",
+                NodeKind::Transform,
+                json!({ "set": { "seen": "=item.v" } }),
+            ),
+            node("n", NodeKind::Gather, json!({ "from": ["work"] })),
+        ],
+        edges: vec![
+            edge("t", "main", "fan"),
+            edge("fan", "main", "work"),
+            edge("work", "main", "n"),
+        ],
+        ..Default::default()
+    };
+    let compiled = compile(&graph).expect("compile");
+    let outcome = run(
+        &compiled,
+        json!({ "rows": [{ "v": 1 }, { "v": 2 }] }),
+        &mock_capabilities(),
+    )
+    .await
+    .expect("run should succeed");
+
+    let items = outcome.output["nodes"]["n"]["items"]
+        .as_array()
+        .expect("the gather should produce an items array");
+    assert_eq!(items.len(), 2, "two lanes, two collected results");
+}
