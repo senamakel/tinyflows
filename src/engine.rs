@@ -1950,12 +1950,18 @@ async fn build_and_run(
         }
     };
 
-    // Nodes that paused the run awaiting approval, surfaced from the interrupts
+    // Gates that paused the run awaiting approval, surfaced from the interrupts
     // the runtime returned at the boundary.
+    //
+    // Keyed by the interrupt's `id`, not by the node that raised it. For an
+    // ordinary `requires_approval` gate the two are the same string. They differ
+    // where one node speaks for gates that are not its own — a `sub_workflow`
+    // node reports its child's gates as `<node>::<child gate>`, because parent
+    // and child are separate graphs whose ids would otherwise collide.
     let pending_approvals: Vec<String> = execution
         .interrupts
         .iter()
-        .map(|interrupt| interrupt.node.as_str().to_string())
+        .map(|interrupt| interrupt.id.clone())
         .collect();
 
     tracing::info!(
@@ -2157,7 +2163,7 @@ impl ResumableRun {
         let pending_approvals: Vec<String> = execution
             .interrupts
             .iter()
-            .map(|interrupt| interrupt.node.as_str().to_string())
+            .map(|interrupt| interrupt.id.clone())
             .collect();
 
         Ok(RunOutcome {
@@ -2534,7 +2540,7 @@ async fn resume_with_checkpointer_inner(
     let pending_approvals: Vec<String> = execution
         .interrupts
         .iter()
-        .map(|interrupt| interrupt.node.as_str().to_string())
+        .map(|interrupt| interrupt.id.clone())
         .collect();
 
     let graph_run_ids = GraphRunIds {
