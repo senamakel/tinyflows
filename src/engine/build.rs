@@ -24,17 +24,17 @@ mod wiring;
 /// # Errors
 /// Returns an [`EngineError`] if the workflow has no trigger or if compilation
 /// fails.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn build_graph(
     workflow: &CompiledWorkflow,
     capabilities: &Capabilities,
     observer: &Arc<dyn RunObserver>,
     steps: &Arc<Mutex<Vec<ExecutionStep>>>,
-    checkpointer: Arc<dyn Checkpointer<Value>>,
-    journal: Option<Arc<dyn GraphEventJournal>>,
-    token: CancellationToken,
     terminal_error: &Arc<Mutex<Option<EngineError>>>,
+    config: &RunConfig,
 ) -> Result<(CompiledGraph<Value, Value>, String)> {
+    let checkpointer = config.checkpointer.clone();
+    let journal = config.journal.clone();
+    let token = config.token.clone();
     let graph = &workflow.graph;
 
     let trigger = graph
