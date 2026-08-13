@@ -138,22 +138,22 @@ fn durable_step_evidence_is_bounded_without_changing_small_values() {
     let small = json!({ "answer": "still structured" });
     assert_eq!(bounded_evidence(&small), small);
 
-    let large = json!({ "body": "x".repeat(run::MAX_EVIDENCE_BYTES * 2) });
+    let large = json!({ "body": "x".repeat(crate::evidence::MAX_EVIDENCE_BYTES * 2) });
     let bounded = bounded_evidence(&large);
     assert_eq!(bounded[TRUNCATED_KEY], true);
     assert!(is_truncated(&bounded));
-    assert!(bounded["originalBytes"].as_u64().unwrap() > run::MAX_EVIDENCE_BYTES as u64);
+    assert!(bounded["originalBytes"].as_u64().unwrap() > crate::evidence::MAX_EVIDENCE_BYTES as u64);
     assert!(
-        serde_json::to_vec(&bounded).unwrap().len() <= run::MAX_EVIDENCE_BYTES,
+        serde_json::to_vec(&bounded).unwrap().len() <= crate::evidence::MAX_EVIDENCE_BYTES,
         "the persisted summary itself must remain bounded"
     );
 
-    let escaping = json!({ "body": "\\\"".repeat(run::MAX_EVIDENCE_BYTES) });
+    let escaping = json!({ "body": "\\\"".repeat(crate::evidence::MAX_EVIDENCE_BYTES) });
     assert!(
         serde_json::to_vec(&bounded_evidence(&escaping))
             .unwrap()
             .len()
-            <= run::MAX_EVIDENCE_BYTES
+            <= crate::evidence::MAX_EVIDENCE_BYTES
     );
 }
 

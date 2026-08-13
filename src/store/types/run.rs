@@ -17,7 +17,6 @@ use crate::diagnostics::Diagnosis;
 pub use crate::evidence::{
     LEGACY_TRUNCATED_KEY, TRUNCATED_KEY, bounded_evidence, bounded_within, is_truncated,
 };
-pub(crate) use crate::evidence::MAX_EVIDENCE_BYTES;
 
 /// One run's identifier. Doubles as the engine checkpointer's `thread_id`, which
 /// is what makes a paused run resumable across process restarts.
