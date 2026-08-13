@@ -344,7 +344,11 @@ where
     ///
     /// Only use this where every destination genuinely always runs. A node that
     /// picks between ports must use [`Self::with_command_destinations`].
-    pub fn with_unconditional_fanout<I, N>(mut self, node: impl Into<NodeId>, destinations: I) -> Self
+    pub fn with_unconditional_fanout<I, N>(
+        mut self,
+        node: impl Into<NodeId>,
+        destinations: I,
+    ) -> Self
     where
         I: IntoIterator<Item = N>,
         N: Into<NodeId>,

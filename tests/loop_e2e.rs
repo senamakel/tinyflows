@@ -44,7 +44,6 @@ impl RunObserver for Trace {
     }
 }
 
-
 /// Builds a node with the given id, kind, and config (no ports, no position).
 fn node(id: &str, kind: NodeKind, config: Value) -> Node {
     Node {
@@ -470,8 +469,16 @@ async fn a_diamond_inside_the_loop_body_iterates() {
                 json!({ "max_iterations": 3, "on_exceeded": "continue" }),
             ),
             node("apex", NodeKind::OutputParser, Value::Null),
-            node("arm_a", NodeKind::Transform, json!({ "set": { "arm": "a" } })),
-            node("arm_b", NodeKind::Transform, json!({ "set": { "arm": "b" } })),
+            node(
+                "arm_a",
+                NodeKind::Transform,
+                json!({ "set": { "arm": "a" } }),
+            ),
+            node(
+                "arm_b",
+                NodeKind::Transform,
+                json!({ "set": { "arm": "b" } }),
+            ),
             node("join", NodeKind::Merge, Value::Null),
             node("out", NodeKind::OutputParser, Value::Null),
         ],
@@ -534,7 +541,10 @@ async fn a_diamond_inside_the_loop_body_iterates() {
             _ => {}
         }
     }
-    assert_eq!(joins, 3, "the merge should fire once per pass. Trace: {order:?}");
+    assert_eq!(
+        joins, 3,
+        "the merge should fire once per pass. Trace: {order:?}"
+    );
 }
 
 /// The case that stays refused: a merge on the cycle that also waits on a
