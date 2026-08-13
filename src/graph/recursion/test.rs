@@ -3,7 +3,7 @@
 //! superstep executor.
 
 use super::*;
-use crate::GraphError;
+use crate::graph::error::GraphError;
 use crate::graph::builder::{GraphBuilder, NodeContext};
 use crate::graph::checkpoint::{Checkpointer, InMemoryCheckpointer};
 use crate::graph::command::NodeResult;
