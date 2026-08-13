@@ -287,6 +287,76 @@ fn merge(base: &mut Value, update: Value) {
     }
 }
 
+/// Builds a lane activation's state update.
+///
+/// A lane writes under `nodes.<id>.lanes.<lane id>` and **never** touches the
+/// slot's top-level `items`/`port`. That is the whole reason N concurrent
+/// activations of one node do not clobber each other: the reducer merges
+/// objects key-by-key, so distinct lane keys are collision-free without the
+/// reducer needing to know lanes exist.
+///
+/// This is the single writer of lane slots, deliberately — the "lanes never
+/// write the top level" rule is structural, enforced by there being one
+/// constructor, rather than by anything the engine checks at run time.
+fn lane_items_update(
+    node_id: &str,
+    lane: &crate::nodes::LaneContext,
+    items: &[Item],
+    port: Option<&str>,
+    status: &str,
+    meta: Option<&Value>,
+) -> Result<Value> {
+    let mut slot = json!({
+        "items": serde_json::to_value(items).map_err(|e| EngineError::Capability(e.to_string()))?,
+        "port": port.map(Value::from).unwrap_or(Value::Null),
+        "status": status,
+        "index": lane.index,
+    });
+    if let (Some(Value::Object(extra)), Some(map)) = (meta, slot.as_object_mut()) {
+        for (key, value) in extra {
+            map.insert(key.clone(), value.clone());
+        }
+    }
+    Ok(json!({ "nodes": { node_id: { "lanes": { lane.id.clone(): slot } } } }))
+}
+
+/// The lane envelope a fan-out schedules one activation with.
+fn lane_envelope(
+    origin: &str,
+    index: usize,
+    count: usize,
+    items: &[Item],
+) -> Result<Value> {
+    Ok(json!({
+        LANE_KEY: {
+            "id": format!("{origin}#{index}"),
+            "origin": origin,
+            "index": index,
+            "count": count,
+        },
+        "items": serde_json::to_value(items)
+            .map_err(|e| EngineError::Capability(e.to_string()))?,
+    }))
+}
+
+/// Reads a lane activation's items back out of its envelope.
+///
+/// A lane takes its input from here rather than from [`collect_input`], and
+/// must: every branch of a super-step reads the same committed snapshot, so
+/// `collect_input` would hand all N lanes the identical items.
+fn lane_input(send_arg: Option<&Value>) -> Vec<Item> {
+    send_arg
+        .and_then(|arg| arg.get("items"))
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| serde_json::from_value::<Item>(item.clone()).ok())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// The key a lane envelope records its lane identity under, inside the
 /// `send_arg` a fan-out schedules each concurrent activation with.
 ///
