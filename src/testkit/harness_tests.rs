@@ -52,7 +52,7 @@ async fn a_mocked_tool_answers_and_is_counted() {
     run.assert_completed();
     run.assert_node_ran("call");
     run.assert_call_count(super::super::capability::TOOLS, Some("svc.do"), 1);
-    assert_eq!(run.node_output("call")[0], json!({ "ok": true }));
+    assert_eq!(run.node_output("call")[0]["json"], json!({ "ok": true }));
 }
 
 #[tokio::test]
@@ -125,18 +125,12 @@ async fn a_sequenced_mock_drives_a_retry() {
         ]),
     )
     .run()
-    .await;
-    let run = match run {
-        Ok(run) => run,
-        Err(err) => panic!("run failed: {err}"),
-    };
-    eprintln!(
-        "CALLS: {:#?}",
-        run.mocks().log().calls().iter().map(|c| (c.seq, c.target.clone(), c.outcome.clone())).collect::<Vec<_>>()
-    );
+    .await
+    .expect("the retry recovers");
+
     run.assert_completed();
     run.assert_call_count(super::super::capability::TOOLS, Some("svc.do"), 2);
-    assert_eq!(run.node_output("call")[0], json!({ "ok": true }));
+    assert_eq!(run.node_output("call")[0]["json"], json!({ "ok": true }));
 }
 
 #[tokio::test]
@@ -180,9 +174,9 @@ async fn a_per_node_mock_leaves_other_nodes_alone() {
         .await
         .expect("run");
 
-    assert_eq!(run.node_output("a")[0], json!({ "stubbed": true }));
+    assert_eq!(run.node_output("a")[0]["json"], json!({ "stubbed": true }));
     // `b` fell through to the default echo rather than the stub.
-    assert_eq!(run.node_output("b")[0]["tool"], json!("svc.do"));
+    assert_eq!(run.node_output("b")[0]["json"]["tool"], json!("svc.do"));
 }
 
 #[tokio::test]
