@@ -27,7 +27,7 @@ fn graph_json() -> Value {
             "id": "triager",
             "name": "Issue triager",
             "description": "Labels and routes inbound issues.",
-            "instructions": "You triage issues for =inputs.repo.",
+            "instructions": "You triage issues.",
             "model": "sonnet",
             "provider": "anthropic",
             "working_dir": "/srv/checkout",
@@ -87,8 +87,9 @@ async fn a_graph_declared_agent_reaches_the_harness_merged_and_narrowed() {
 
     assert_eq!(request["agent"], "triager");
     assert_eq!(
-        request["instructions"], "You triage issues for acme/api.\n\nPrefer `bug` when a stack trace is present.",
-        "the definition's instructions resolved their =expression and the node's appended"
+        request["instructions"],
+        "You triage issues.\n\nPrefer `bug` when a stack trace is present.",
+        "the node's instructions append to the definition's rather than replacing them"
     );
     assert_eq!(request["model"], "opus", "the node overrode the model");
     assert_eq!(request["provider"], "anthropic", "the definition's provider survived");
@@ -144,7 +145,9 @@ async fn a_legacy_harness_still_receives_the_raw_config() {
     // The non-breaking guarantee through the whole engine: `MockAgentRunner`
     // implements only `run_agent`, so the default `run` shim forwards the node's
     // resolved config exactly as it did before the typed seam existed.
-    let graph = parse(graph_json());
+    let mut json = graph_json();
+    json["agents"][0]["context"] = json!([]);
+    let graph = parse(json);
     let caps = mock_capabilities_with_agent(MockAgentRunner);
     let item = run_triage(&graph, &caps).await;
 
@@ -196,4 +199,38 @@ async fn the_registry_survives_a_json_round_trip() {
     assert_eq!(agent.working_dir.as_deref(), Some("/srv/checkout"));
     assert_eq!(agent.limits.tool_timeout_secs, Some(30));
     assert_eq!(agent.tools.len(), 2);
+}
+
+#[tokio::test]
+async fn a_host_context_source_a_harness_cannot_expand_fails_loudly() {
+    // `MockAgentRunner` implements only `run_agent`, so `resolve_context`
+    // defaults to `Ok(None)`. The author declared context that cannot be
+    // delivered, and the node must say so rather than run the agent on a
+    // silently smaller context — an agent missing its conventions still answers,
+    // confidently and wrongly.
+    let graph = parse(graph_json());
+    let compiled = compile(&graph).expect("compile");
+    let input = RunInput::new(Value::Null).with_inputs(
+        json!({ "repo": "acme/api" })
+            .as_object()
+            .expect("inputs object")
+            .clone(),
+    );
+    let err = run(&compiled, input, &mock_capabilities_with_agent(MockAgentRunner))
+        .await
+        .expect_err("an unresolvable required context source must fail the run");
+    let message = err.to_string();
+    assert!(message.contains("repo_conventions"), "{message}");
+    assert!(message.contains("optional"), "{message}");
+}
+
+#[tokio::test]
+async fn marking_that_source_optional_makes_it_survivable() {
+    let mut json = graph_json();
+    json["agents"][0]["context"][0]["optional"] = json!(true);
+    let graph = parse(json);
+    let item = run_triage(&graph, &mock_capabilities_with_agent(MockAgentRunner)).await;
+
+    // The run completes, and the block is simply absent from the request.
+    assert_eq!(item["raw"]["agent"], "triager");
 }
