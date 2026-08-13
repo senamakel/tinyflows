@@ -738,7 +738,7 @@ where
                 let interrupted_indices: HashSet<usize> =
                     interrupts.iter().map(|(index, _)| *index).collect();
                 let (completed, completed_goto) =
-                    Self::partition_completed(active, &goto_map, &interrupted_indices);
+                    Self::partition_completed(&active, &goto_map, &interrupted_indices);
                 let successors = match self.route_completed(
                     &completed,
                     &completed_goto,
