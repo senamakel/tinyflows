@@ -27,7 +27,7 @@
 //!             Respond::error("429 rate limited"),
 //!             Respond::value(json!({ "number": 7 })),
 //!         ]),
-//!     );
+//!     ));
 //! let capabilities = mocks.capabilities();
 //! ```
 //!
