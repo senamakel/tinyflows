@@ -25,8 +25,16 @@ use super::error::{ToolError, ToolErrorCode};
 pub const SESSION_IDLE_TIMEOUT: Duration = Duration::from_secs(900);
 
 /// A live debug session plus the bookkeeping the registry needs.
+///
+/// The controller is held separately from the session, and deliberately so:
+/// setting a breakpoint or releasing a pause must not have to wait on whoever
+/// is currently blocked in `flow_debug.wait`. The controller is `Sync` and
+/// needs no lock; only the session itself — whose `next_pause`/`finish` take
+/// `&mut self` — sits behind one, and it is an async lock so a waiting call
+/// never blocks the registry.
 struct Entry {
-    session: DebugSession,
+    session: Arc<tokio::sync::Mutex<Option<DebugSession>>>,
+    controller: Arc<crate::testkit::debug::DebugController>,
     mocks: Arc<MockCaps>,
     tracer: Arc<crate::testkit::trace::RunTracer>,
     last_touched: Instant,
@@ -87,9 +95,7 @@ impl TestkitRegistry {
     /// Drop sessions nobody has touched in a while.
     fn reap_idle(&self) {
         let mut sessions = self.sessions.lock().expect("sessions poisoned");
-        sessions.retain(|_, entry| {
-            entry.last_touched.elapsed() < SESSION_IDLE_TIMEOUT && !entry.session.is_finished()
-        });
+        sessions.retain(|_, entry| entry.last_touched.elapsed() < SESSION_IDLE_TIMEOUT);
     }
 
     // ---- flow_test ------------------------------------------------------
@@ -138,7 +144,7 @@ impl TestkitRegistry {
             "summary": trace.summary(),
             "diagnosis": trace.diagnosis,
             "nullBindings": null_binding_report(&trace),
-            "output": outcome.ok().map(|o| crate::evidence::bounded_evidence(&o.output)),
+            "output": outcome.ok().map(|(outcome, _resumable)| crate::evidence::bounded_evidence(&outcome.output)),
         }))
     }
 
@@ -204,12 +210,14 @@ impl TestkitRegistry {
         )
         .map_err(|err| ToolError::new(ToolErrorCode::SessionFailed, err.to_string()))?;
         session.controller().use_mocks(mocks.clone());
+        let controller = session.controller().clone();
 
         let session_id = crate::ids::token();
         self.sessions.lock().expect("sessions poisoned").insert(
             session_id.clone(),
             Entry {
-                session,
+                session: Arc::new(tokio::sync::Mutex::new(Some(session))),
+                controller,
                 mocks,
                 tracer,
                 last_touched: Instant::now(),
@@ -246,7 +254,7 @@ impl TestkitRegistry {
             .unwrap_or("set")
             .to_string();
         self.with_session(&args, |entry| {
-            let controller = entry.session.controller();
+            let controller = &entry.controller;
             match action.as_str() {
                 "list" => Ok(json!({ "breakpoints": controller.breakpoints() })),
                 "clear" => {
@@ -288,7 +296,7 @@ impl TestkitRegistry {
         // holding it would block every other tool call on this registry,
         // including the release that would free the run.
         let session_id = str_arg(&args, "session_id")?;
-        let pause = {
+        let handle = {
             let mut sessions = self.sessions.lock().expect("sessions poisoned");
             let entry = sessions.get_mut(&session_id).ok_or_else(|| {
                 ToolError::new(
@@ -297,9 +305,15 @@ impl TestkitRegistry {
                 )
             })?;
             entry.last_touched = Instant::now();
-            entry.session.next_pause(timeout)
-        }
-        .await;
+            entry.session.clone()
+        };
+        let pause = {
+            let mut guard = handle.lock().await;
+            match guard.as_mut() {
+                Some(session) => session.next_pause(timeout).await,
+                None => None,
+            }
+        };
 
         Ok(match pause {
             Some(pause) => json!({ "paused": true, "pause": pause }),
@@ -312,16 +326,18 @@ impl TestkitRegistry {
 
     fn status(&self, args: Value) -> Result<Value, ToolError> {
         self.with_session(&args, |entry| {
-            let status = match entry.session.status() {
-                SessionStatus::Running => "running",
-                SessionStatus::Paused(_) => "paused",
-                SessionStatus::Finished => "finished",
-                SessionStatus::Failed(_) => "failed",
+            let parked = entry.controller.pauses();
+            let status = if !parked.is_empty() {
+                "paused"
+            } else if entry.controller.is_detached() {
+                "detached"
+            } else {
+                "running"
             };
             Ok(json!({
                 "status": status,
-                "pauses": entry.session.controller().pauses(),
-                "breakpoints": entry.session.controller().breakpoints(),
+                "pauses": parked,
+                "breakpoints": entry.controller.breakpoints(),
             }))
         })
     }
@@ -339,8 +355,7 @@ impl TestkitRegistry {
         let command = debug_command(&args)?;
         self.with_session(&args, |entry| {
             entry
-                .session
-                .controller()
+                .controller
                 .release(pause_id, command)
                 .map_err(|err| ToolError::new(ToolErrorCode::UnknownPause, err.to_string()))?;
             Ok(json!({ "released": pause_id }))
@@ -372,7 +387,13 @@ impl TestkitRegistry {
             })?;
         let trace = entry.tracer.trace();
         let _ = entry.mocks;
-        let outcome = entry.session.finish().await;
+        let session = entry.session.lock().await.take();
+        let outcome = match session {
+            Some(session) => session.finish().await,
+            None => Err(crate::error::EngineError::Capability(
+                "this session was already stopped".to_string(),
+            )),
+        };
         Ok(json!({
             "stopped": true,
             "summary": trace.summary(),
