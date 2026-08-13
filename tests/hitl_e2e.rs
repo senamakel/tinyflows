@@ -261,8 +261,16 @@ async fn a_sibling_that_completed_is_not_re_run_on_resume() {
         name: "sibling_not_rerun".to_string(),
         nodes: vec![
             node("t", NodeKind::Trigger, Value::Null),
-            node("gate", NodeKind::OutputParser, json!({ "requires_approval": true })),
-            node("effect", NodeKind::ToolCall, json!({ "slug": "side.effect" })),
+            node(
+                "gate",
+                NodeKind::OutputParser,
+                json!({ "requires_approval": true }),
+            ),
+            node(
+                "effect",
+                NodeKind::ToolCall,
+                json!({ "slug": "side.effect" }),
+            ),
         ],
         edges: vec![edge("t", "gate"), edge("t", "effect")],
         ..Default::default()
