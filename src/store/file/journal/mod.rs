@@ -45,4 +45,5 @@ pub fn mint_id(recorded_at: u64) -> NoteId {
 }
 
 #[cfg(test)]
+#[path = "journal_tests.rs"]
 mod tests;

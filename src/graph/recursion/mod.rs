@@ -31,4 +31,5 @@ mod types;
 pub use types::{ChildRun, ChildRunSink, RecursionFrame, RecursionPolicy, RecursionStack, RunTree};
 
 #[cfg(test)]
+#[path = "recursion_tests.rs"]
 mod test;

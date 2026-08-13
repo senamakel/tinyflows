@@ -145,4 +145,5 @@ impl Interrupt {
 }
 
 #[cfg(test)]
+#[path = "command_tests.rs"]
 mod test;

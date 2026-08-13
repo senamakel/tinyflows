@@ -52,4 +52,5 @@ impl GraphRunStatus {
 }
 
 #[cfg(test)]
+#[path = "status_tests.rs"]
 mod test;

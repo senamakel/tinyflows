@@ -1,0 +1,113 @@
+use crate::caps::mock::mock_capabilities;
+use crate::compiler::compile;
+use crate::engine::run;
+use crate::model::{Edge, Node, NodeKind, WorkflowGraph};
+use serde_json::{Value, json};
+
+fn wf(kind: NodeKind, config: Value) -> WorkflowGraph {
+    WorkflowGraph {
+        nodes: vec![
+            Node {
+                id: "t".into(),
+                kind: NodeKind::Trigger,
+                type_version: 1,
+                name: "t".into(),
+                config: Value::Null,
+                ports: vec![],
+                position: None,
+            },
+            Node {
+                id: "n".into(),
+                kind,
+                type_version: 1,
+                name: "n".into(),
+                config,
+                ports: vec![],
+                position: None,
+            },
+        ],
+        edges: vec![Edge {
+            from_node: "t".into(),
+            from_port: "main".into(),
+            to_node: "n".into(),
+            to_port: "main".into(),
+        }],
+        ..Default::default()
+    }
+}
+
+#[tokio::test]
+async fn code_returns_mock_result() {
+    let graph = wf(
+        NodeKind::Code,
+        json!({ "language": "javascript", "source": "return 1;" }),
+    );
+    let compiled = compile(&graph).expect("compile");
+    let out = run(&compiled, json!({ "seed": 1 }), &mock_capabilities())
+        .await
+        .expect("run");
+    assert!(out.output["nodes"]["n"]["items"][0]["json"]["result"].is_array());
+}
+
+use super::CodeNode;
+use crate::data::Item;
+use crate::nodes::{NodeContext, NodeExecutor};
+
+fn code_node(config: Value) -> Node {
+    Node {
+        id: "n".into(),
+        kind: NodeKind::Code,
+        type_version: 1,
+        name: "n".into(),
+        config,
+        ports: vec![],
+        position: None,
+    }
+}
+
+async fn run_code(config: Value, input: Vec<Item>) -> Vec<Item> {
+    let node = code_node(config);
+    let caps = mock_capabilities();
+    let run_meta = Value::Null;
+    let ctx = NodeContext {
+        node: &node,
+        input: &input,
+        run: &run_meta,
+        nodes: &Value::Null,
+        caps: &caps,
+        agents: &[],
+        observer: &crate::observability::NoopObserver,
+        token: crate::engine::CancellationToken::new(),
+        lane: None,
+        resume: None,
+        step: 0,
+    };
+    CodeNode.execute(ctx).await.expect("execute").items
+}
+
+#[tokio::test]
+async fn passes_input_items_through_to_the_runner() {
+    // The mock runner returns the serialized input items under `result`.
+    let out = run_code(
+        json!({ "source": "noop" }),
+        vec![
+            Item::new(json!({ "seed": 1 })),
+            Item::new(json!({ "seed": 2 })),
+        ],
+    )
+    .await;
+    assert_eq!(out.len(), 1);
+    let result = &out[0].json["result"];
+    assert!(result.is_array());
+    assert_eq!(result[0]["json"]["seed"], 1);
+    assert_eq!(result[1]["json"]["seed"], 2);
+}
+
+#[tokio::test]
+async fn defaults_language_and_source_when_absent() {
+    // No `language`/`source` keys: language defaults to JavaScript and source
+    // to empty; the call still succeeds and returns the (empty) input.
+    let out = run_code(Value::Null, vec![]).await;
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0].json["result"], json!([]));
+}

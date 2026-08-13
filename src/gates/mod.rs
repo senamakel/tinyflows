@@ -160,4 +160,5 @@ fn binding_failures(graph: &WorkflowGraph) -> Vec<String> {
 }
 
 #[cfg(test)]
+#[path = "gates_tests.rs"]
 mod tests;

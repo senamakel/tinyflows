@@ -493,4 +493,5 @@ impl<State, Update> CompiledGraph<State, Update> {
 }
 
 #[cfg(test)]
+#[path = "compiled_tests.rs"]
 mod test;

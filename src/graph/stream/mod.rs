@@ -78,4 +78,5 @@ impl GraphEventSink for CollectingSink {
 }
 
 #[cfg(test)]
+#[path = "stream_tests.rs"]
 mod test;
