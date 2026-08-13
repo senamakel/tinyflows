@@ -21,10 +21,10 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use serde_json::{Map, Value, json};
 use crate::graph::{
     Command, CompiledGraph, END, GraphBuilder, GraphError, Interrupt, NodeResult, StateReducer,
 };
+use serde_json::{Map, Value, json};
 
 /// Checkpointer types re-exported from `tinyagents` so a host can name and
 /// implement them without taking a direct dependency on `tinyagents`.

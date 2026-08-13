@@ -33,8 +33,8 @@ use super::{
     Checkpoint, CheckpointConfig, CheckpointMetadata, CheckpointTuple, Checkpointer, PendingWrite,
     merge_writes,
 };
-use crate::graph::ids::CheckpointId;
 use crate::graph::error::{GraphError, Result};
+use crate::graph::ids::CheckpointId;
 
 /// File extension for per-thread checkpoint logs.
 const THREAD_EXT: &str = "jsonl";

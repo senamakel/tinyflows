@@ -6,9 +6,9 @@ use super::*;
 use crate::graph::builder::{GraphBuilder, GraphDefaults, NodeContext, Route};
 use crate::graph::checkpoint::{Checkpointer, InMemoryCheckpointer};
 use crate::graph::command::{Command, Interrupt, NodeResult, Send};
+use crate::graph::ids::ExecutionStatus;
 use crate::graph::reducer::ClosureStateReducer;
 use crate::graph::stream::{CollectingSink, GraphEvent};
-use crate::graph::ids::ExecutionStatus;
 use serde_json::json;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering as AtomicOrdering};
@@ -171,10 +171,7 @@ async fn invalid_command_goto_is_not_persisted_as_next_node() {
         .with_checkpointer(cp.clone());
 
     let err = graph.run_with_thread("bad-goto", 0).await.unwrap_err();
-    assert!(
-        matches!(err, GraphError::MissingNode(_)),
-        "got {err:?}"
-    );
+    assert!(matches!(err, GraphError::MissingNode(_)), "got {err:?}");
     assert_eq!(
         cp.count("bad-goto"),
         0,
@@ -2045,8 +2042,6 @@ fn flaky_graph(fail_times: usize, attempts: Arc<AtomicUsize>) -> CompiledGraph<i
         .compile()
         .unwrap()
 }
-
-
 
 #[tokio::test]
 async fn node_failure_without_retry_policy_is_resumable() {

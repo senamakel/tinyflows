@@ -33,10 +33,10 @@ pub mod data;
 pub mod engine;
 pub mod error;
 pub mod expr;
-pub mod graph;
 /// Authoring gates: what is *guaranteed* wrong with a graph, caught before a
 /// write lands rather than as a silent null at run time.
 pub mod gates;
+pub mod graph;
 pub mod graph_ops;
 // Only the file-backed store and the process-backed capabilities need unique
 // scratch names, and both are optional.

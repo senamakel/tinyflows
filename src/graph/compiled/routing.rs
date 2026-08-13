@@ -5,8 +5,8 @@
 //! Split out of `compiled/mod.rs`; see that module's doc comment for the
 //! executor's overall design.
 
-use crate::graph::error::{GraphError, Result};
 use super::*;
+use crate::graph::error::{GraphError, Result};
 
 impl<State, Update> CompiledGraph<State, Update>
 where
@@ -199,12 +199,15 @@ where
         }
         if let Some(branch) = self.branches.get(node_id) {
             let route = (branch.router)(state);
-            let target = branch.routes.get(&route).cloned().ok_or_else(|| {
-                GraphError::MissingRoute {
-                    node: node_id.to_string(),
-                    route,
-                }
-            })?;
+            let target =
+                branch
+                    .routes
+                    .get(&route)
+                    .cloned()
+                    .ok_or_else(|| GraphError::MissingRoute {
+                        node: node_id.to_string(),
+                        route,
+                    })?;
             return Ok(vec![RouteTarget::Node(target)]);
         }
         // Sink: no outgoing routing, the branch ends here.

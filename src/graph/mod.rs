@@ -49,7 +49,9 @@ pub use observability::{
     GraphObservation, GraphStatusStore, GraphStepLatency, InMemoryGraphEventJournal,
     InMemoryGraphStatusStore, JournalGraphSink,
 };
-pub use recursion::{ChildRun, ChildRunSink, RecursionFrame, RecursionPolicy, RecursionStack, RunTree};
+pub use recursion::{
+    ChildRun, ChildRunSink, RecursionFrame, RecursionPolicy, RecursionStack, RunTree,
+};
 pub use reducer::{
     AppendReducer, ClosureReducer, ClosureStateReducer, MaxReducer, MinReducer, OverwriteReducer,
     OverwriteStateReducer, Reducer, SetUnionReducer, StateReducer,

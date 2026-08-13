@@ -3,12 +3,12 @@
 //! namespaced subgraph observations.
 
 use super::*;
-use crate::graph::error::GraphError;
 use crate::graph::builder::{GraphBuilder, NodeContext};
 use crate::graph::command::NodeResult;
 use crate::graph::compiled::CompiledGraph;
-use crate::graph::stream::{CollectingSink, GraphEvent, GraphEventSink};
+use crate::graph::error::GraphError;
 use crate::graph::ids::{ExecutionStatus, GraphId, NodeId, RunId};
+use crate::graph::stream::{CollectingSink, GraphEvent, GraphEventSink};
 use std::sync::Arc;
 
 /// A two-node line graph over `i32` with overwrite semantics: `a -> b`.
@@ -430,7 +430,6 @@ async fn journal_sink_used_directly_forwards_to_inner() {
     assert_eq!(obs[1].step, 1); // RouteSelected inherits the last seen step
     assert_eq!(obs[2].offset, 2);
 }
-
 
 #[test]
 fn graph_event_kind_and_step_are_stable() {

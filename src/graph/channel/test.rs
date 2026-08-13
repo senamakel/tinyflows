@@ -4,9 +4,9 @@
 //! detection on non-aggregate channels.
 
 use super::*;
-use crate::graph::error::GraphError;
 use crate::graph::builder::{GraphBuilder, NodeContext};
 use crate::graph::command::{Command, NodeResult};
+use crate::graph::error::GraphError;
 use serde_json::{Value, json};
 
 // --- per-channel merge rules ---

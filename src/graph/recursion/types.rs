@@ -9,8 +9,8 @@ use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 
-use crate::graph::ids::{GraphId, NodeId, RunId, TaskId};
 use crate::graph::error::{GraphError, Result};
+use crate::graph::ids::{GraphId, NodeId, RunId, TaskId};
 
 /// One level of the graph/subgraph/sub-agent recursion tree.
 ///

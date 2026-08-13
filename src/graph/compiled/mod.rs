@@ -86,16 +86,16 @@ use crate::graph::checkpoint::{
     PendingActivation,
 };
 use crate::graph::command::{Command, Interrupt, NodeResult, RouteTarget};
+use crate::graph::error::GraphError;
+use crate::graph::ids::{
+    CheckpointId, ExecutionStatus, GraphId, InterruptId, NodeId, RunId, ThreadId,
+};
 use crate::graph::recursion::{
     ChildRun, ChildRunSink, RecursionFrame, RecursionPolicy, RecursionStack,
 };
 use crate::graph::reducer::StateReducer;
 use crate::graph::status::GraphRunStatus;
 use crate::graph::stream::{GraphEvent, GraphEventSink};
-use crate::graph::ids::{
-    CheckpointId, ExecutionStatus, GraphId, InterruptId, NodeId, RunId, ThreadId,
-};
-use crate::graph::error::GraphError;
 
 /// Allocates a fresh checkpoint id (string form) that is collision-free across
 /// process restarts.
@@ -106,9 +106,7 @@ use crate::graph::error::GraphError;
 /// process-local counter this used to build ids from restarted at `0` every
 /// process and did exactly that.
 fn next_checkpoint_id() -> String {
-    crate::graph::ids::new_checkpoint_id()
-        .as_str()
-        .to_string()
+    crate::graph::ids::new_checkpoint_id().as_str().to_string()
 }
 
 /// Projects a loaded [`CheckpointTuple`] onto a [`StateSnapshot`] for the
@@ -374,7 +372,6 @@ impl<State, Update> CompiledGraph<State, Update> {
         self.durability = durability;
         self
     }
-
 
     /// Bounds the whole run by a wall-clock `deadline`, checked at every
     /// super-step boundary.

@@ -28,8 +28,8 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 
-use crate::graph::ids::CheckpointId;
 use crate::graph::error::{GraphError, Result};
+use crate::graph::ids::CheckpointId;
 
 /// Persists and retrieves graph checkpoints keyed by thread.
 #[async_trait]

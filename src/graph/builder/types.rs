@@ -6,10 +6,10 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::graph::error::Result;
 use crate::graph::command::NodeResult;
-use crate::graph::reducer::StateReducer;
+use crate::graph::error::Result;
 use crate::graph::ids::{GraphId, NodeId, RunId, ThreadId};
+use crate::graph::reducer::StateReducer;
 
 /// The reserved virtual entry node.
 pub const START: &str = "__start__";

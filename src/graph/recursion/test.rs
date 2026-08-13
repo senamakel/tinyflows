@@ -3,12 +3,12 @@
 //! superstep executor.
 
 use super::*;
-use crate::graph::error::GraphError;
 use crate::graph::builder::{GraphBuilder, NodeContext};
 use crate::graph::checkpoint::{Checkpointer, InMemoryCheckpointer};
 use crate::graph::command::NodeResult;
-use crate::graph::stream::{CollectingSink, GraphEvent};
+use crate::graph::error::GraphError;
 use crate::graph::ids::{GraphId, NodeId, RunId};
+use crate::graph::stream::{CollectingSink, GraphEvent};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -86,10 +86,7 @@ fn node_visit_limit_trips() {
     stack.record_node_visit(&mut counts, &node).unwrap();
     stack.record_node_visit(&mut counts, &node).unwrap();
     let err = stack.record_node_visit(&mut counts, &node).unwrap_err();
-    assert!(matches!(
-        err,
-        GraphError::NodeVisitLimit { limit: 2, .. }
-    ));
+    assert!(matches!(err, GraphError::NodeVisitLimit { limit: 2, .. }));
 }
 
 #[test]
@@ -154,10 +151,7 @@ async fn policy_node_visit_limit_trips_in_executor() {
         });
 
     let err = graph.run(0).await.unwrap_err();
-    assert!(matches!(
-        err,
-        GraphError::NodeVisitLimit { limit: 2, .. }
-    ));
+    assert!(matches!(err, GraphError::NodeVisitLimit { limit: 2, .. }));
 }
 
 #[tokio::test]

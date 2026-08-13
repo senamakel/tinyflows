@@ -25,9 +25,9 @@ use std::sync::Arc;
 
 use crate::graph::command::NodeResult;
 use crate::graph::compiled::CompiledGraph;
-use crate::graph::reducer::{OverwriteStateReducer, StateReducer};
-use crate::graph::ids::{GraphId, NodeId};
 use crate::graph::error::{GraphError, Result};
+use crate::graph::ids::{GraphId, NodeId};
+use crate::graph::reducer::{OverwriteStateReducer, StateReducer};
 
 /// A relief registration for a mixed fan-in barrier.
 ///

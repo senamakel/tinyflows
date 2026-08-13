@@ -48,8 +48,8 @@ use std::sync::Arc;
 
 use serde_json::Value;
 
-use crate::graph::reducer::StateReducer;
 use crate::graph::error::{GraphError, Result};
+use crate::graph::reducer::StateReducer;
 
 // --- Channel merge rules ---
 
@@ -101,8 +101,7 @@ impl Channel for Delta {
     }
 
     fn merge(&self, current: Option<Value>, incoming: Value) -> Result<Value> {
-        let add_err =
-            || GraphError::Graph("Delta channel only accepts numeric writes".to_string());
+        let add_err = || GraphError::Graph("Delta channel only accepts numeric writes".to_string());
         let incoming_num = incoming.as_f64().ok_or_else(add_err)?;
         let Some(current) = current else {
             return Ok(incoming);

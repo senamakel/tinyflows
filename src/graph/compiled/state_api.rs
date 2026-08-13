@@ -4,8 +4,8 @@
 //! Split out of `compiled/mod.rs`; see that module's doc comment for the
 //! executor's overall durability design.
 
-use crate::graph::error::{GraphError, Result};
 use super::*;
+use crate::graph::error::{GraphError, Result};
 
 impl<State, Update> CompiledGraph<State, Update>
 where

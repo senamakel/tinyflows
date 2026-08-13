@@ -9,12 +9,12 @@ use crate::graph::checkpoint::{
     CheckpointConfig, CheckpointMetadata, Checkpointer, DurabilityMode,
 };
 use crate::graph::command::Interrupt;
+use crate::graph::ids::{CheckpointId, GraphId, NodeId, RunId};
 use crate::graph::observability::{GraphEventJournal, GraphStatusStore};
 use crate::graph::recursion::{ChildRun, RunTree};
 use crate::graph::reducer::StateReducer;
 use crate::graph::status::GraphRunStatus;
 use crate::graph::stream::GraphEventSink;
-use crate::graph::ids::{CheckpointId, GraphId, NodeId, RunId};
 
 /// An immutable, validated graph ready to execute.
 ///
@@ -221,7 +221,10 @@ impl AsyncCheckpointWrites {
 
     /// Maps one settled join result onto its error, if any.
     fn harvest(
-        joined: std::result::Result<crate::graph::error::Result<CheckpointId>, tokio::task::JoinError>,
+        joined: std::result::Result<
+            crate::graph::error::Result<CheckpointId>,
+            tokio::task::JoinError,
+        >,
     ) -> Option<crate::graph::error::GraphError> {
         match joined {
             Ok(Ok(_)) => None,

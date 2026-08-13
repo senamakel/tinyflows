@@ -3,8 +3,8 @@
 //! rejection of nodes that mix command routing with static/conditional edges.
 
 use super::*;
-use crate::graph::error::GraphError;
 use crate::graph::command::NodeResult;
+use crate::graph::error::GraphError;
 
 type S = i32;
 
