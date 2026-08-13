@@ -445,6 +445,7 @@ mod tests {
             run: &run_meta,
             nodes: &Value::Null,
             caps,
+            agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
         };
@@ -710,6 +711,7 @@ mod tests {
             run: &run_meta,
             nodes: &Value::Null,
             caps,
+            agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
         };
@@ -1044,7 +1046,6 @@ mod cancellation_propagation_tests {
     async fn run_cancelling_on_slow(
         graph: &WorkflowGraph,
         caps: &Capabilities,
-        agents: &[],
         token: CancellationToken,
         slow_started: Arc<Notify>,
     ) -> (RunOutcome, Duration) {
