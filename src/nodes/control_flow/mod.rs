@@ -26,3 +26,4 @@ pub use scatter::{MAX_LANES, ScatterNode};
 pub use split_out::SplitOutNode;
 pub use switch::SwitchNode;
 pub use transform::TransformNode;
+pub use void::VoidNode;
