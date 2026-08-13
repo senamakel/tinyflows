@@ -48,6 +48,7 @@ impl HandlerData {
             has_error_edge,
             is_trigger,
             node_timeout,
+            interceptor,
         } = self;
 
         // The resume value delivered to this node on a checkpointed resume, if
