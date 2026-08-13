@@ -72,6 +72,27 @@ fn node_kinds_has_21_entries_including_the_async_and_lane_pairs() {
 }
 
 #[test]
+fn void_contract_takes_no_config_and_declares_no_output_port() {
+    // The two claims an authoring tool acts on: there is nothing to configure,
+    // and there is nowhere to draw an edge to. Both are enforced by validation,
+    // so the contract must not suggest otherwise.
+    let c = contract_for("void").expect("void contract exists");
+    assert!(
+        c.config_fields.is_empty(),
+        "void takes no config; the reason goes in the node's name"
+    );
+    assert_eq!(c.ports, PortSpec::new(&["main"], &[]));
+    assert!(
+        c.notes.iter().any(|n| n.contains("outgoing edge")),
+        "the contract must say an outgoing edge is refused"
+    );
+    assert!(
+        c.notes.iter().any(|n| n.contains("spawn -> void")),
+        "the contract must document the ungathered-ticket spelling"
+    );
+}
+
+#[test]
 fn memory_contract_documents_the_six_operations_and_scope_enum() {
     let c = contract_for("memory").expect("memory contract exists");
     let operation_field = c
