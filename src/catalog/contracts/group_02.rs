@@ -371,8 +371,9 @@ pub(super) fn contract_spawn() -> NodeKindContract {
                  the same, the concurrency is not. That is a silent performance cliff, so check \
                  the host wires a TaskRunner before relying on overlap."
                 .to_string(),
-            "Fire-and-forget is legal — a spawn no gate ever collects simply runs. If that \
-                 is not what you meant, wire a `gate`."
+            "Fire-and-forget is legal — a spawn no gate ever collects simply runs. Wire the \
+                 spawn into a `void` to say that on purpose; wire it into a `gate` if you \
+                 actually wanted the results."
                 .to_string(),
         ],
     }
