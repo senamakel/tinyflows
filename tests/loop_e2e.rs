@@ -426,3 +426,106 @@ async fn max_node_visits_bounds_a_cycle_and_names_the_node() {
         "the failure should name the node and its visit cap, got: {message}"
     );
 }
+
+/// A diamond **inside** the loop body iterates: the body fans out into two arms
+/// and rejoins at a `merge`, and that merge fires once per pass.
+///
+/// This used to be refused outright as an illegal cycle. It is legal because
+/// barrier arrivals refill — the arrival set is cleared when the barrier fires,
+/// so it re-arms — and both arms are themselves on the cycle, so both re-run on
+/// every pass and complete the set every pass.
+///
+/// The iteration count is the assertion that matters. A merge that fired only
+/// on the first pass would still let the run finish, so only the count
+/// separates a working diamond from one that quietly stalls the loop.
+#[tokio::test]
+async fn a_diamond_inside_the_loop_body_iterates() {
+    let graph = WorkflowGraph {
+        name: "diamond_in_loop".to_string(),
+        nodes: vec![
+            node("t", NodeKind::Trigger, Value::Null),
+            node(
+                "l",
+                NodeKind::Loop,
+                json!({ "max_iterations": 3, "on_exceeded": "continue" }),
+            ),
+            node("apex", NodeKind::OutputParser, Value::Null),
+            node("arm_a", NodeKind::Transform, json!({ "set": { "arm": "a" } })),
+            node("arm_b", NodeKind::Transform, json!({ "set": { "arm": "b" } })),
+            node("join", NodeKind::Merge, Value::Null),
+            node("out", NodeKind::OutputParser, Value::Null),
+        ],
+        edges: vec![
+            edge("t", "l"),
+            port_edge("l", "body", "apex"),
+            // Both arms leave `apex` on the same port: a parallel fan-out.
+            edge("apex", "arm_a"),
+            edge("apex", "arm_b"),
+            edge("arm_a", "join"),
+            edge("arm_b", "join"),
+            edge("join", "l"), // the back-edge closing the cycle
+            port_edge("l", "done", "out"),
+        ],
+        ..Default::default()
+    };
+
+    let errors = tinyflows::validate::validate_all(&graph);
+    assert!(
+        errors.is_empty(),
+        "a diamond whose arms are both on the cycle is legal, got: {errors:?}"
+    );
+
+    let outcome = run_guarded(&graph)
+        .await
+        .expect("the loop should iterate rather than deadlock at the merge");
+
+    assert_eq!(
+        outcome.output["nodes"]["l"]["iteration"], 3,
+        "every pass should complete the merge barrier; a lower count means the \
+         barrier stopped re-arming after the first pass"
+    );
+}
+
+/// The case that stays refused: a merge on the cycle that also waits on a
+/// predecessor from **outside** the cycle.
+///
+/// The off-cycle arm runs once, on the seeding pass, and never activates again,
+/// so from the second iteration the barrier can never complete its required set
+/// and the loop stops dead. Refusing it beats hanging.
+#[tokio::test]
+async fn a_merge_on_the_cycle_waiting_on_an_off_cycle_arm_is_refused() {
+    let graph = WorkflowGraph {
+        name: "off_cycle_arm".to_string(),
+        nodes: vec![
+            node("t", NodeKind::Trigger, Value::Null),
+            // `outside` runs once from the trigger and is not on the cycle.
+            node("outside", NodeKind::OutputParser, Value::Null),
+            node(
+                "l",
+                NodeKind::Loop,
+                json!({ "max_iterations": 3, "on_exceeded": "continue" }),
+            ),
+            node("work", NodeKind::OutputParser, Value::Null),
+            node("join", NodeKind::Merge, Value::Null),
+            node("out", NodeKind::OutputParser, Value::Null),
+        ],
+        edges: vec![
+            edge("t", "l"),
+            edge("t", "outside"),
+            port_edge("l", "body", "work"),
+            edge("work", "join"),
+            edge("outside", "join"), // the off-cycle arm
+            edge("join", "l"),
+            port_edge("l", "done", "out"),
+        ],
+        ..Default::default()
+    };
+
+    let errors = tinyflows::validate::validate_all(&graph);
+    assert!(
+        errors
+            .iter()
+            .any(|e| matches!(e, ValidationError::IllegalCycle(id) if id == "join")),
+        "a merge waiting on an off-cycle arm should still be refused, got: {errors:?}"
+    );
+}
