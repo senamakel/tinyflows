@@ -244,10 +244,19 @@ pub(crate) fn nodes_scope(nodes: &Value) -> Value {
             let mut entry = serde_json::json!({ "item": first, "items": jsons });
             // Slot state a node recorded about itself via `NodeOutput::meta`,
             // promoted so expressions can read it the same way they read items.
-            // Currently just the `loop` node's pass counter, which is what makes
-            // `=nodes.<loop id>.iteration` resolve from anywhere in the graph.
-            if let Some(iteration) = slot.get("iteration") {
-                entry["iteration"] = iteration.clone();
+            // This is what makes `=nodes.<loop id>.iteration` and
+            // `=nodes.<loop id>.state` resolve from anywhere in the graph.
+            //
+            // Promoted by exclusion rather than by an allow-list: `items` and
+            // `port` are the slot's own structure and are already projected
+            // above, and `_`-prefixed keys are engine bookkeeping. Everything
+            // else is something a node chose to record about itself, and a list
+            // naming each one would need a line per new meta key.
+            for (key, value) in slot.as_object().into_iter().flatten() {
+                if key == "items" || key == "port" || key.starts_with('_') {
+                    continue;
+                }
+                entry[key.as_str()] = value.clone();
             }
             scope.insert(id.clone(), entry);
         }
