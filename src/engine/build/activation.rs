@@ -437,6 +437,18 @@ impl HandlerData {
         // run — and an injected failure does not consume retry attempts, which
         // is what keeps a debugger from sitting through synthetic ones.
         let run_executor = output.is_none() && last_err.is_none();
+        // An interceptor may give this activation its own capability bundle, so
+        // that every outside call it makes can be attributed to *this* node —
+        // which nothing else can recover once several nodes are calling at once.
+        // Resolved once per activation rather than per attempt: a retry is the
+        // same node calling again, not a different caller.
+        let caps = match interceptor
+            .as_ref()
+            .and_then(|hook| hook.capabilities_for(&node, &caps))
+        {
+            Some(scoped) => scoped,
+            None => caps,
+        };
         for attempt in 0..(if run_executor { max_attempts } else { 0 }) {
             attempts_used = u32::try_from(attempt + 1).unwrap_or(u32::MAX);
             // Cooperative cancellation inside the retry loop. Without this a
