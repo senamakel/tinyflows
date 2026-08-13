@@ -109,7 +109,7 @@ async fn a_void_that_never_runs_leaves_no_slot_at_all() {
         name: "void_untaken".to_string(),
         nodes: vec![
             node("t", NodeKind::Trigger, Value::Null),
-            node("check", NodeKind::Condition, json!({ "when": "=false" })),
+            node("check", NodeKind::Condition, json!({ "field": "=false" })),
             node(
                 "taken",
                 NodeKind::Transform,
