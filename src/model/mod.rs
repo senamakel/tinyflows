@@ -232,6 +232,27 @@ impl WorkflowGraph {
         self.nodes.iter().find(|n| n.id == id)
     }
 
+    /// Looks up an in-graph [`AgentDefinition`] by id.
+    ///
+    /// Returns `None` when the graph declares no such agent — a normal outcome,
+    /// not a failure: the `agent` node then falls back to the harness's registry
+    /// and finally to passing the ref through as an id.
+    ///
+    /// ```
+    /// use tinyflows::model::WorkflowGraph;
+    ///
+    /// let graph: WorkflowGraph = serde_json::from_str(
+    ///     r#"{"agents":[{"id":"triager","model":"claude-opus-5"}],"nodes":[],"edges":[]}"#,
+    /// )
+    /// .unwrap();
+    /// assert_eq!(graph.agent("triager").unwrap().model.as_deref(), Some("claude-opus-5"));
+    /// assert!(graph.agent("nobody").is_none());
+    /// ```
+    #[must_use]
+    pub fn agent(&self, id: &str) -> Option<&AgentDefinition> {
+        self.agents.iter().find(|a| a.id == id)
+    }
+
     /// Returns the ids of the **direct** successors of `start` — the target node
     /// of each edge leaving it (immediate neighbors only, not the transitive
     /// closure; ids may repeat if multiple edges connect the same pair).
