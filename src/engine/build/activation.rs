@@ -28,7 +28,7 @@ pub(super) struct HandlerData {
 impl HandlerData {
     pub(super) async fn execute(
         self,
-        state: Value,
+        mut state: Value,
         ctx: crate::graph::NodeContext,
     ) -> crate::graph::Result<NodeResult<Value>> {
         let Self {
