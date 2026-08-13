@@ -240,6 +240,19 @@ pub struct AgentRunRequest {
     /// run acts as.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub connection_ref: Option<String>,
+    /// Working directory the agent should run in, when it runs somewhere with a
+    /// filesystem. `None` means the harness's default applies.
+    ///
+    /// Surfaced here as well as on
+    /// [`agent.working_dir`](crate::model::AgentDefinition::working_dir)
+    /// because a harness reaching for it should not have to know whether the
+    /// definition or the node supplied it — this is the merged, effective value.
+    ///
+    /// **Untrusted authoring input**: the engine never touches the filesystem
+    /// and never checks that this exists or is permitted. Validate it against
+    /// your own allowed roots before handing it to a process.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub working_dir: Option<String>,
     /// Run identity, for host-side tracing and budgeting.
     #[serde(default)]
     pub identity: AgentRunIdentity,
