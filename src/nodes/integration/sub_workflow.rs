@@ -88,6 +88,60 @@ use crate::nodes::{NodeContext, NodeExecutor, NodeOutput};
 pub struct SubWorkflowNode;
 
 /// Reads the current nesting depth from the run metadata (`0` at the top level).
+/// Separates a `sub_workflow` node's id from a gate id inside its child.
+///
+/// Parent and child are separate graphs with separate id spaces, so a child's
+/// gate `approve` and a parent's gate `approve` are different gates that would
+/// otherwise be indistinguishable in one pending set.
+const GATE_NAMESPACE: &str = "::";
+
+/// Qualifies a child gate id with the node that ran the child.
+fn namespaced_gate(node_id: &str, gate: &str) -> String {
+    format!("{node_id}{GATE_NAMESPACE}{gate}")
+}
+
+/// The child-gate ids approved for `node_id`, taken from the parent run's
+/// accumulated approvals with the namespace stripped.
+///
+/// This is how an approval crosses the boundary. `engine::resume` unions newly
+/// approved ids into `run.trigger.approvals`, so on the re-run this node finds
+/// the ones addressed to it and hands them to the child as *its* approvals.
+/// Ids belonging to the parent or to a different `sub_workflow` node are left
+/// alone.
+fn approvals_for_child(run: &Value, node_id: &str) -> Vec<String> {
+    let prefix = format!("{node_id}{GATE_NAMESPACE}");
+    run.get("trigger")
+        .and_then(|trigger| trigger.get("approvals"))
+        .and_then(Value::as_array)
+        .map(|approvals| {
+            approvals
+                .iter()
+                .filter_map(Value::as_str)
+                .filter_map(|id| id.strip_prefix(prefix.as_str()))
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Seeds `approvals` into a child's trigger payload, preserving whatever else
+/// the payload carries.
+///
+/// A non-object trigger (a bare scalar or array a graph passes straight
+/// through) cannot hold approvals; it is returned untouched rather than being
+/// silently replaced, since destroying the child's input to deliver an approval
+/// would trade one bug for a worse one.
+fn seed_child_approvals(trigger: Value, approvals: Vec<String>) -> Value {
+    if approvals.is_empty() {
+        return trigger;
+    }
+    let mut trigger = trigger;
+    if let Some(map) = trigger.as_object_mut() {
+        map.insert("approvals".to_string(), json!(approvals));
+    }
+    trigger
+}
+
 fn current_depth(run: &Value) -> u64 {
     run.get("sub_workflow_depth")
         .and_then(Value::as_u64)
