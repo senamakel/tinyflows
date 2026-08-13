@@ -683,7 +683,6 @@ mod tests {
         );
     }
 
-    #[test]
     /// The run-level cap lowers a node that asked for more, and leaves alone a
     /// node that asked for less — it is a ceiling, not an assignment.
     #[test]
