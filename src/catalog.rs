@@ -603,11 +603,15 @@ pub fn contract_for(kind: &str) -> Option<NodeKindContract> {
         "loop" => NodeKindContract {
             kind: "loop".to_string(),
             summary: "Repeat a section of the workflow a bounded number of times.".to_string(),
-            description: "Emits its input on the `body` port until either config.max_iterations \
-                is reached or config.condition goes falsey, then emits on `done`. Close the loop \
-                by wiring the last node of the body back to this node; that back-edge is what \
-                makes the section repeat. The current pass number is readable anywhere in the \
-                graph as \"=nodes.<loop id>.iteration\"."
+            description: "Repeats a section, optionally CARRYING STATE across the passes. Emits \
+                its input on `body` until an exit fires, then on `done` (or `success`). Close the \
+                loop by wiring the last node of the body back to this node; that back-edge is \
+                what makes the section repeat.\n\n\
+                With config.state the loop becomes a fold: `init` seeds an accumulator and \
+                `update` folds each pass's output into it, so a refinement loop can remember what \
+                it already tried. The accumulator and the pass number are readable anywhere in \
+                the graph as \"=nodes.<loop id>.state\" and \"=nodes.<loop id>.iteration\"; \
+                inside this node's own `update`/`until` the accumulator is just \"state\"."
                 .to_string(),
             config_fields: vec![
                 ConfigField::optional(
@@ -631,8 +635,40 @@ pub fn contract_for(kind: &str) -> Option<NodeKindContract> {
                      falsey result routes to `done` without consuming an iteration. Checked \
                      before the cap, so a loop that finishes on its own terms never errors.",
                 ),
+                ConfigField::optional(
+                    "state",
+                    "object",
+                    "{init, update} — the accumulator. `init` is a literal or \"=expr\" resolved \
+                     once when the loop starts; `update` folds each pass into it and is either a \
+                     jq program producing the whole next accumulator, or an object of per-key \
+                     \"=expr\" merged over it (like transform.set). Inside `update` the previous \
+                     accumulator is \"state\" and the body's output is \"item\"/\"items\".",
+                ),
+                ConfigField::optional(
+                    "until",
+                    "\"=expr\"",
+                    "Stop when this goes truthy — the OPPOSITE polarity to `condition` (which \
+                     means keep going while). Evaluated against the accumulator AFTER the pass \
+                     is folded in, so \"=.state.score > 0.9\" tests the pass that just ran. \
+                     Checked before `condition` and before the cap, so converging beats both \
+                     running out of work and running out of tries.",
+                ),
+                ConfigField::optional(
+                    "emit",
+                    "enum",
+                    "What the exit port carries: \"items\" (default, the last pass's items) | \
+                     \"state\" (one item holding the accumulator) | \"both\".",
+                )
+                .with_enum(&["items", "state", "both"]),
+                ConfigField::optional(
+                    "success_port",
+                    "boolean",
+                    "Route an `until` exit to a separate `success` port instead of `done`, so a \
+                     loop that CONVERGED can be handled differently from one that ran out of \
+                     tries. Requires an edge on `success`, or the graph is refused.",
+                ),
             ],
-            ports: PortSpec::new(&["main"], &["body", "done"]),
+            ports: PortSpec::new(&["main"], &["body", "done", "success"]),
             example: json!({
                 "id": "retry_until_clean", "kind": "loop", "name": "Until tests pass",
                 "config": {
@@ -645,8 +681,20 @@ pub fn contract_for(kind: &str) -> Option<NodeKindContract> {
                 "The body must route back to this node or it runs once and stops — the \
                  back-edge is the loop."
                     .to_string(),
-                "A `merge` node inside the loop body deadlocks it: a merge is a fan-in barrier \
-                 that waits for every predecessor, which on a second pass never all arrive."
+                "A fan-in `merge` inside the loop body deadlocks it ONLY when one of the inputs \
+                 it waits for comes from OUTSIDE the cycle: that arm runs once, on the seeding \
+                 pass, and never again, so from the second iteration the barrier can never \
+                 complete. A merge whose arms are all on the cycle is fine — they all re-run \
+                 every pass."
+                    .to_string(),
+                "`exit_reason` is recorded alongside `iteration` and `state` (\"until\" | \
+                 \"condition\" | \"max_iterations\"), which is how downstream tells a loop that \
+                 CONVERGED from one that merely ran out of tries under on_exceeded:\"continue\"."
+                    .to_string(),
+                "The fold is at-least-once: if an activation is replayed after a resume the \
+                 update applies again. The iteration counter has always behaved this way; the \
+                 accumulator just makes it visible (a duplicated append). Prefer an idempotent \
+                 `update` — assign the next value rather than appending — where that matters."
                     .to_string(),
             ],
         },
