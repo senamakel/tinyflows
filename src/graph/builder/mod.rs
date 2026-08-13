@@ -332,6 +332,29 @@ where
         self
     }
 
+    /// Records destinations for a command node that fans out to **all** of
+    /// them, unconditionally, every time it runs.
+    ///
+    /// Like [`Self::with_command_destinations`], but additionally promises
+    /// there is no runtime choice among the destinations. Barrier relief relies
+    /// on that promise to walk forward through this node when deciding whether
+    /// a conditional branch was taken; without it, relief treats the node as an
+    /// unresolvable decision point, concludes the branch was untaken, and
+    /// clears a downstream barrier before its real predecessors have run.
+    ///
+    /// Only use this where every destination genuinely always runs. A node that
+    /// picks between ports must use [`Self::with_command_destinations`].
+    pub fn with_unconditional_fanout<I, N>(mut self, node: impl Into<NodeId>, destinations: I) -> Self
+    where
+        I: IntoIterator<Item = N>,
+        N: Into<NodeId>,
+    {
+        let node = node.into();
+        self = self.with_command_destinations(node.clone(), destinations);
+        self.node_meta.entry(node).or_default().command_fanout = true;
+        self
+    }
+
     /// Sets a human-readable kind for `node` (e.g. `model`, `tool`, `subgraph`)
     /// surfaced as [`crate::graph::NodeInfo::kind`] in the export.
     pub fn with_node_kind(mut self, node: impl Into<NodeId>, kind: impl Into<String>) -> Self {
