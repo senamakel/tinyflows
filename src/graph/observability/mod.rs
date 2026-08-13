@@ -598,8 +598,8 @@ fn duration_ms(start: SystemTime, end: SystemTime) -> Option<u64> {
 }
 
 /// Builds a uniform poisoned-lock validation error for the in-memory backends.
-fn poisoned<E: std::fmt::Display>(what: &str, err: E) -> crate::error::GraphError {
-    crate::error::GraphError::Validation(format!("{what} lock poisoned: {err}"))
+fn poisoned<E: std::fmt::Display>(what: &str, err: E) -> crate::graph::error::GraphError {
+    crate::graph::error::GraphError::Validation(format!("{what} lock poisoned: {err}"))
 }
 
 #[cfg(test)]

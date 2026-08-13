@@ -190,7 +190,7 @@ impl AsyncCheckpointWrites {
     /// Harvests writes that have already finished, without blocking on the
     /// ones still in flight. Returns the first error found (a failed `put` or
     /// a panicked task), or `None` when every finished write succeeded.
-    pub(crate) async fn take_failure(&mut self) -> Option<crate::error::GraphError> {
+    pub(crate) async fn take_failure(&mut self) -> Option<crate::graph::error::GraphError> {
         let mut failure = None;
         let mut remaining = Vec::with_capacity(self.handles.len());
         for handle in self.handles.drain(..) {
@@ -231,11 +231,11 @@ impl AsyncCheckpointWrites {
     /// Maps one settled join result onto its error, if any.
     fn harvest(
         joined: std::result::Result<crate::error::Result<CheckpointId>, tokio::task::JoinError>,
-    ) -> Option<crate::error::GraphError> {
+    ) -> Option<crate::graph::error::GraphError> {
         match joined {
             Ok(Ok(_)) => None,
             Ok(Err(err)) => Some(err),
-            Err(join_err) => Some(crate::error::GraphError::Checkpoint(format!(
+            Err(join_err) => Some(crate::graph::error::GraphError::Checkpoint(format!(
                 "background checkpoint write task failed: {join_err}"
             ))),
         }
