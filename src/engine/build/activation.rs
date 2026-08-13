@@ -544,7 +544,74 @@ impl HandlerData {
         }
         let duration_ms = started.elapsed().as_millis();
 
-        outcome::finish_execution(
+        // The post-execution interception point.
+        //
+        // Placed here — after the retry loop has settled, before
+        // `finish_execution` builds the `ExecutionStep` — so a rewritten
+        // outcome is what the run *records* and what `on_step_finish` reports.
+        // Intercepting any later would leave the observer and the committed
+        // state disagreeing about what the node produced.
+        //
+        // This is the only phase that can see a failure, and the only one that
+        // can rescue one: replacing a failed activation's output turns it into
+        // a success and bypasses `on_error` entirely, which is the point of
+        // "pretend that flaky call returned this".
+        if let Some(hook) = interceptor.as_ref() {
+            let action = hook
+                .intercept(StepFrame {
+                    phase: StepPhase::After,
+                    node: &node,
+                    step: activation_step,
+                    attempts: attempts_used,
+                    input: &input,
+                    run: &run_meta,
+                    nodes: &nodes_state,
+                    state: &state,
+                    lane: lane.as_ref(),
+                    resume: resume_value.as_ref(),
+                    output: output.as_ref(),
+                    error: last_err.as_ref(),
+                })
+                .await;
+            match action {
+                // A patch at `After` is ignored: the state this activation will
+                // write is already decided, so honouring one would misreport
+                // what the node actually saw.
+                StepAction::Continue { .. } => {}
+                StepAction::Replace { items, port } => {
+                    let mut replaced = output.take().unwrap_or_else(crate::nodes::NodeOutput::empty);
+                    replaced.items = items;
+                    replaced.port = port;
+                    // A control request belonged to the output the node really
+                    // produced. An overridden output is plain data, so it must
+                    // not still scatter, re-enter, or interrupt on its behalf.
+                    replaced.control = None;
+                    output = Some(replaced);
+                    last_err = None;
+                }
+                StepAction::Skip => {
+                    let mut skipped = output.take().unwrap_or_else(crate::nodes::NodeOutput::empty);
+                    skipped.items.clear();
+                    skipped.control = None;
+                    output = Some(skipped);
+                    last_err = None;
+                }
+                StepAction::Fail { message } => {
+                    output = None;
+                    last_err = Some(EngineError::Capability(message));
+                }
+                StepAction::Interrupt { id, payload } => {
+                    tracing::info!(node = %node.id, gate = %id, "interceptor paused the run");
+                    return Ok(NodeResult::Interrupt(Interrupt {
+                        id,
+                        node: node.id.clone().into(),
+                        payload,
+                    }));
+                }
+            }
+        }
+
+        let result = outcome::finish_execution(
             output,
             last_err,
             duration_ms,
