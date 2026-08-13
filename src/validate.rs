@@ -844,40 +844,50 @@ fn validate_loops(graph: &WorkflowGraph, errors: &mut Vec<ValidationError>) {
     // A real fan-in `merge` inside the loop body deadlocks it. A single-input
     // merge is a passthrough and is not lowered as a waiting barrier.
     //
-    // This refusal looks narrower than it needs to be, and it was tried: the
-    // barrier itself would cope, because arrivals refill (the arrival set is
-    // removed when the barrier fires, see
-    // `graph::compiled::routing::route_completed`), so a merge whose arms are
-    // all on the cycle would re-arm and re-fire every pass.
+    // The rule is narrower than "any fan-in merge on a cycle", and both halves
+    // of it are load bearing.
     //
-    // What defeats it is **barrier relief**, not the barrier. Arms inside a
-    // loop body are reachable only through the head's `body` port, so
-    // `conditional_predecessors` classifies them as conditional and registers a
-    // relief for each. Relief then injects phantom arrivals, and the merge
-    // fires *before* its arms have run — observed as the activation order
-    // `head, apex, join, arm_a, arm_b, …`, i.e. the join completing on data
-    // from the previous pass. That is silently wrong output rather than a hang,
-    // which is worse than refusing the graph.
+    // Why an all-on-the-cycle merge is fine: barrier arrivals refill. The
+    // arrival set is *removed* when the barrier fires (see
+    // `graph::compiled::routing::route_completed`), so it re-arms for the next
+    // pass. Every predecessor on the cycle runs again on every pass, so the set
+    // completes again on every pass and the merge fires once per iteration.
     //
-    // Relief cannot simply be skipped for on-cycle merges either: a `condition`
-    // *inside* a loop body is a real conditional whose untaken arm still needs
-    // relief every pass. Lifting this properly needs relief scoped to a single
-    // pass — arrivals keyed by `(node, iteration)` rather than by node — which
-    // is a change to the barrier's identity model, not to this predicate.
+    // Why an off-cycle predecessor still hangs: it runs once, on the seeding
+    // pass, and never activates again. From the second iteration the required
+    // set can never be completed and the loop stops dead at the merge.
+    //
+    // This lift also depended on a fix elsewhere, worth recording because the
+    // symptom pointed away from the cause. Loop-body arms are reachable only
+    // through the head's `body` port, so relief is registered for them; relief
+    // decides whether a branch was taken by walking forward through
+    // deterministic routing, and that walk used to stop at a fan-out (a command
+    // node has no static edge). It therefore concluded the arms were untaken
+    // and injected phantom arrivals, firing the merge *before* its arms ran —
+    // activation order `head, apex, join, arm_a, arm_b, …`, the join reading the
+    // previous pass's data. The walk now crosses unconditional fan-outs, which
+    // is what makes a diamond in a loop body correct rather than merely legal.
     for id in &on_a_cycle {
         let is_merge = graph
             .nodes
             .iter()
             .any(|n| n.id == *id && n.kind == NodeKind::Merge);
-        let forward_predecessors = graph
+        if !is_merge {
+            continue;
+        }
+        let forward_predecessors: Vec<&str> = graph
             .edges
             .iter()
             .filter(|edge| {
                 edge.to_node == **id
                     && !loop_edges.contains(&(edge.from_node.clone(), edge.to_node.clone()))
             })
-            .count();
-        if is_merge && forward_predecessors > 1 {
+            .map(|edge| edge.from_node.as_str())
+            .collect();
+        let waits_on_something_off_the_cycle = forward_predecessors
+            .iter()
+            .any(|pred| !on_a_cycle.contains(pred));
+        if forward_predecessors.len() > 1 && waits_on_something_off_the_cycle {
             errors.push(ValidationError::IllegalCycle((*id).to_string()));
         }
     }
