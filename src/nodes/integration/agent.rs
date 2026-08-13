@@ -220,6 +220,86 @@ async fn run_turn_indexed(
     Ok(Item::new(super::envelope::from_parts(json, text, raw)))
 }
 
+/// Turns a harness's [`AgentRunOutcome`] into the emitted [`Item`]: honor the
+/// stop reason, apply the output-parser sub-port, and publish the envelope.
+///
+/// The stop reason is read **before** the payload, which is the point of having
+/// one. A bare value cannot distinguish an agent that answered from one that ran
+/// out of budget one step short, and the workflow marches downstream with a
+/// partial answer either way.
+async fn finish_agent_run(
+    ctx: &NodeContext<'_>,
+    cfg: &Value,
+    conn: Option<&str>,
+    agent_ref: &str,
+    outcome: crate::caps::AgentRunOutcome,
+) -> Result<Item> {
+    use crate::caps::StopReason;
+
+    let mut meta = serde_json::json!({ "stop": outcome.stop.as_str(), "agent_ref": agent_ref });
+
+    match &outcome.stop {
+        StopReason::Finished => {}
+        StopReason::LimitStop { limit } => {
+            tracing::warn!(
+                node = %ctx.node.id,
+                agent_ref,
+                limit = %limit,
+                "agent node: the agent stopped on a limit; its output is partial"
+            );
+            meta["limit"] = Value::from(limit.clone());
+        }
+        StopReason::Paused { reason, .. } => {
+            // A pause is resumable, not finished — and the engine cannot yet
+            // route one into its checkpoint/resume machinery. Failing loudly
+            // beats emitting a half-run agent's output as if it were an answer;
+            // see `StopReason::Paused`.
+            return Err(crate::error::EngineError::Capability(format!(
+                "agent node {}: agent `{agent_ref}` paused ({reason}); resuming a paused agent \
+                 is not supported yet, so the run cannot continue",
+                ctx.node.id
+            )));
+        }
+    }
+
+    if let Some(usage) = outcome.usage {
+        meta["usage"] = serde_json::to_value(usage).unwrap_or(Value::Null);
+    }
+
+    // Output-parser sub-port. Deliberately skipped on a limit stop: validating
+    // a knowingly partial payload against the author's schema either fails for
+    // the wrong reason or, with `auto_fix`, spends a model call inventing the
+    // missing half.
+    let mut value = outcome.json;
+    if matches!(outcome.stop, StopReason::Finished)
+        && let Some(parser) = cfg.get("output_parser").filter(|p| !p.is_null())
+        && let Some(parser_schema) = parser.get("schema").filter(|s| !s.is_null())
+    {
+        let auto_fix = parser
+            .get("auto_fix")
+            .and_then(Value::as_bool)
+            .unwrap_or(true);
+        let parser_conn = parser
+            .get("connection_ref")
+            .and_then(Value::as_str)
+            .or(conn);
+        value =
+            schema::parse_and_validate(value, parser_schema, auto_fix, &ctx.caps.llm, parser_conn)
+                .await?;
+    }
+
+    let json = match value {
+        Value::Object(_) | Value::Array(_) => value,
+        _ => Value::Null,
+    };
+    Ok(Item::new(super::envelope::from_parts_with_meta(
+        json,
+        outcome.text,
+        outcome.raw,
+        meta,
+    )))
+}
+
 #[cfg(test)]
 mod tests {
     use crate::caps::mock::mock_capabilities;
