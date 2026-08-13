@@ -1,5 +1,9 @@
 /target
 
+# Local Git worktrees
+/worktrees/*
+!/worktrees/.gitkeep
+
 # macOS
 .DS_Store
 
