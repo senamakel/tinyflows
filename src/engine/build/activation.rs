@@ -438,7 +438,7 @@ impl HandlerData {
         // is what keeps a debugger from sitting through synthetic ones.
         let run_executor = output.is_none() && last_err.is_none();
         for attempt in 0..(if run_executor { max_attempts } else { 0 }) {
-            attempts_used = attempt + 1;
+            attempts_used = u32::try_from(attempt + 1).unwrap_or(u32::MAX);
             // Cooperative cancellation inside the retry loop. Without this a
             // node with a large `max_attempts`/`backoff_ms` keeps retrying
             // and sleeping through its whole budget after `cancel()`; check
