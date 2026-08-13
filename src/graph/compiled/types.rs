@@ -147,7 +147,7 @@ pub(crate) struct AsyncCheckpointWrites {
     /// In-flight (or finished-but-unharvested) background writes, in the order
     /// they were spawned. Because each spawn chains onto its predecessor, this
     /// holds at most the tail of the chain.
-    handles: Vec<tokio::task::JoinHandle<crate::error::Result<CheckpointId>>>,
+    handles: Vec<tokio::task::JoinHandle<crate::graph::error::Result<CheckpointId>>>,
 }
 
 impl AsyncCheckpointWrites {
@@ -160,7 +160,7 @@ impl AsyncCheckpointWrites {
     /// rather than deadlocking the chain.
     pub(crate) fn spawn_ordered<F>(&mut self, runtime: &tokio::runtime::Handle, write: F)
     where
-        F: std::future::Future<Output = crate::error::Result<CheckpointId>> + Send + 'static,
+        F: std::future::Future<Output = crate::graph::error::Result<CheckpointId>> + Send + 'static,
     {
         let previous = self.handles.pop();
         self.handles.push(runtime.spawn(async move {
@@ -204,7 +204,7 @@ impl AsyncCheckpointWrites {
     /// after all writes have settled. This is the "final await at run end":
     /// terminal, interrupt, and failure boundaries drain before returning so
     /// the run result reflects persistence failures.
-    pub(crate) async fn drain(&mut self) -> crate::error::Result<()> {
+    pub(crate) async fn drain(&mut self) -> crate::graph::error::Result<()> {
         let mut failure = None;
         for handle in self.handles.drain(..) {
             if let Some(err) = Self::harvest(handle.await)
@@ -221,7 +221,7 @@ impl AsyncCheckpointWrites {
 
     /// Maps one settled join result onto its error, if any.
     fn harvest(
-        joined: std::result::Result<crate::error::Result<CheckpointId>, tokio::task::JoinError>,
+        joined: std::result::Result<crate::graph::error::Result<CheckpointId>, tokio::task::JoinError>,
     ) -> Option<crate::graph::error::GraphError> {
         match joined {
             Ok(Ok(_)) => None,
