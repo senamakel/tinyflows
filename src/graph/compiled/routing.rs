@@ -251,7 +251,7 @@ where
                 }
             }
             // An unconditional fan-out: every declared destination runs.
-            if false && self
+            if self
                 .node_meta
                 .get(current)
                 .is_some_and(|meta| meta.command_fanout)
