@@ -4,6 +4,7 @@
 //! full executor design (superstep loop, concurrency, and resumable-failure
 //! semantics).
 
+use crate::graph::error::{GraphError, Result};
 use super::*;
 
 impl<State, Update> CompiledGraph<State, Update>

@@ -10,6 +10,7 @@
 //! - [`NodeResult::Interrupt`]: an [`Interrupt`] that pauses the run for
 //!   human-in-the-loop input.
 
+use crate::graph::error::{GraphError, Result};
 use crate::graph::ids::NodeId;
 
 /// The outcome of running a durable graph node.
