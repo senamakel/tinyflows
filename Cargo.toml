@@ -30,7 +30,19 @@ thiserror = "2"
 futures-timer = "3"
 futures-util = "0.3"
 getrandom = "0.4"
-tinyagents = { version = "2.1", path = "vendor/tinyagents" }
+# A registry coordinate, redirected to the vendored copy by the
+# `[patch.crates-io]` table at the bottom of this file — NOT a `path`
+# dependency, though the vendored tree is exactly what both resolve to when this
+# crate is the workspace root.
+#
+# The difference only shows when something *embeds* this crate. A path
+# dependency names a directory and cannot be redirected: `[patch.crates-io]` has
+# no effect on it. So an embedding host that vendors its own `tinyagents` — and
+# both known hosts do — ends up with two `tinyagents v2.1.0` packages at two
+# paths, which Cargo refuses outright ("package collision in the lockfile")
+# rather than resolving. Declared this way, a host's own patch table redirects
+# this dependency along with its own and the graph holds one copy.
+tinyagents = "2.1"
 tracing = "0.1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "sync", "time"] }
 axum = { version = "0.8", features = ["ws"] }
@@ -74,3 +86,9 @@ sha2 = "0.10"
 tempfile = "3"
 fs2 = "0.4"
 tokio = { version = "1", features = ["fs", "process", "io-util"] }
+
+# Applies only when this crate is the workspace root — an embedding host's own
+# table wins, which is the point: standalone builds and tests use the vendored
+# submodule, and a host redirects `tinyagents` to whichever copy it links.
+[patch.crates-io]
+tinyagents = { path = "vendor/tinyagents" }
