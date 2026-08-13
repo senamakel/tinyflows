@@ -247,9 +247,17 @@ impl NodeExecutor for SubWorkflowNode {
                     // exactly one output per input index, so stand in with an
                     // empty item — the whole node's output is discarded by the
                     // token check below, so this placeholder never surfaces.
-                    let child = run_child(ctx, &scope, std::slice::from_ref(item))
-                        .await?
-                        .unwrap_or_else(|| crate::data::Item::new(Value::Null));
+                    // A paused child is reported as a marker item rather than
+                    // an error: the map slots exactly one output per input
+                    // index, and the gates are collected across the whole batch
+                    // below so one pause does not hide the others.
+                    let child = match run_child(ctx, &scope, std::slice::from_ref(item)).await? {
+                        ChildOutcome::Finished(item) => item,
+                        ChildOutcome::Cancelled => crate::data::Item::new(Value::Null),
+                        ChildOutcome::Paused(gates) => {
+                            crate::data::Item::new(json!({ PAUSED_MARKER: gates }))
+                        }
+                    };
                     Ok((child, vec![]))
                 },
             )
@@ -262,18 +270,66 @@ impl NodeExecutor for SubWorkflowNode {
             if ctx.token.is_cancelled() {
                 return Ok(NodeOutput::empty());
             }
+            // Any child that paused pauses the whole node. Gates from every
+            // paused child are unioned, so a host sees all of them at once
+            // rather than discovering them one fan-out element at a time.
+            let paused: Vec<String> = items
+                .iter()
+                .filter_map(|item| item.json.get(PAUSED_MARKER))
+                .filter_map(Value::as_array)
+                .flatten()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect();
+            if !paused.is_empty() {
+                return Ok(pause_for_child_gates(&ctx.node.id, paused));
+            }
             return Ok(NodeOutput::main(items));
         }
 
         let scope = crate::nodes::expr_scope(&ctx);
         match run_child(&ctx, &scope, ctx.input).await? {
-            Some(item) => Ok(NodeOutput::main(vec![item])),
+            ChildOutcome::Finished(item) => Ok(NodeOutput::main(vec![item])),
             // Parent-initiated cancel wound the child down: emit nothing, the
             // same clean wind-down a top-level cancelled node performs. The
             // parent's next boundary check settles `cancelled = true`.
-            None => Ok(NodeOutput::empty()),
+            ChildOutcome::Cancelled => Ok(NodeOutput::empty()),
+            ChildOutcome::Paused(gates) => Ok(pause_for_child_gates(&ctx.node.id, gates)),
         }
     }
+}
+
+/// Marks a per-item child result that paused rather than finished.
+///
+/// Underscore-prefixed so it cannot collide with a child's own output keys. It
+/// never reaches downstream: the fan-out collects these, pauses the node, and
+/// the interrupt discards the items.
+const PAUSED_MARKER: &str = "_sub_workflow_paused";
+
+/// Builds the parent-side pause for a child that stopped at approval gates.
+///
+/// The interrupt id is the first gate, because a run's pending set is keyed by
+/// interrupt id and a node emits one interrupt. The payload carries the full
+/// list, and a host may approve several at once — the next re-run seeds all of
+/// them into the child, so a child with N gates need not cost N round trips.
+fn pause_for_child_gates(node_id: &str, gates: Vec<String>) -> NodeOutput {
+    tracing::info!(
+        node = %node_id,
+        ?gates,
+        "sub_workflow: child paused awaiting approval; pausing the parent"
+    );
+    let first = gates
+        .first()
+        .cloned()
+        .unwrap_or_else(|| node_id.to_string());
+    NodeOutput::interrupt(
+        first,
+        json!({
+            "kind": "sub_workflow_approval",
+            "node": node_id,
+            "pending": gates,
+        }),
+    )
 }
 
 /// What one child run produced, from the parent node's point of view.
