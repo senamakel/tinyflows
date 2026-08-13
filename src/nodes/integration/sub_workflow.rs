@@ -141,27 +141,7 @@ fn approvals_for_child(ctx: &NodeContext<'_>) -> Vec<String> {
     }
     approved.sort();
     approved.dedup();
-    eprintln!("DBG approvals_for_child node={} resume={:?} trigger={:?} -> {:?}",
-        ctx.node.id, ctx.resume, ctx.run.get("trigger"), approved);
     approved
-}
-
-/// Seeds `approvals` into a child's trigger payload, preserving whatever else
-/// the payload carries.
-///
-/// A non-object trigger (a bare scalar or array a graph passes straight
-/// through) cannot hold approvals; it is returned untouched rather than being
-/// silently replaced, since destroying the child's input to deliver an approval
-/// would trade one bug for a worse one.
-fn seed_child_approvals(trigger: Value, approvals: Vec<String>) -> Value {
-    if approvals.is_empty() {
-        return trigger;
-    }
-    let mut trigger = trigger;
-    if let Some(map) = trigger.as_object_mut() {
-        map.insert("approvals".to_string(), json!(approvals));
-    }
-    trigger
 }
 
 /// Reads the current nesting depth from the run metadata (`0` at the top level).
@@ -448,7 +428,11 @@ async fn run_child(
     // Approvals the parent has accumulated for *this* node's child gates. Empty
     // on a first run; populated after a resume, which is what lets the re-run
     // get past the gate that paused it.
-    let trigger = seed_child_approvals(trigger, approvals_for_child(ctx));
+    //
+    // Delivered through `RunInput::with_approvals` rather than written into the
+    // trigger payload: a child is seeded with its input *items*, so its trigger
+    // is an array and has nowhere to carry an `approvals` key.
+    let child_approvals = approvals_for_child(ctx);
     // Resolved against the same `scope` as `workflow_id`, so a `per_item` run
     // forwards values derived from *its* element (`"=item.repo"`) rather than
     // from the batch — the whole point of resolving inputs in here rather than
@@ -461,7 +445,9 @@ async fn run_child(
     // nesting chain shares one cancellation signal.
     let outcome = Box::pin(crate::engine::run_sub_workflow(
         &compiled,
-        crate::engine::RunInput::new(trigger).with_inputs(child_inputs),
+        crate::engine::RunInput::new(trigger)
+            .with_inputs(child_inputs)
+            .with_approvals(child_approvals),
         ctx.caps,
         child_depth,
         depth_cap,

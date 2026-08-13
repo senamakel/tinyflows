@@ -2117,7 +2117,11 @@ fn merge_approvals(input: impl Into<RunInput>, newly_approved: Vec<String>) -> R
         trigger = json!({ "approvals": approvals.clone() });
     }
 
-    RunInput { trigger, inputs }
+    RunInput {
+        trigger,
+        inputs,
+        approvals,
+    }
 }
 
 /// Like [`resume`], but observes `token`: cancelling it winds the resumed run
