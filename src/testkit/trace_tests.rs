@@ -9,7 +9,8 @@ use crate::caps::mock::mock_capabilities;
 use crate::compiler::compile;
 use crate::engine::{CancellationToken, run_intercepted};
 use crate::model::{Edge, TriggerKind};
-use crate::observability::{NoopObserver, RunObserver};
+use crate::observability::RunObserver;
+use crate::testkit::Respond;
 use std::sync::Arc;
 
 fn node(id: &str, kind: NodeKind, config: Value) -> Node {
