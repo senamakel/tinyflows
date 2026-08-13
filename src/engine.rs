@@ -2083,6 +2083,7 @@ fn merge_approvals(input: impl Into<RunInput>, newly_approved: Vec<String>) -> R
     let RunInput {
         mut trigger,
         inputs,
+        approvals: prior,
     } = input.into();
 
     let mut approvals: Vec<String> = trigger
