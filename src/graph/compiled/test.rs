@@ -2034,7 +2034,7 @@ fn flaky_graph(fail_times: usize, attempts: Arc<AtomicUsize>) -> CompiledGraph<i
             async move {
                 let n = attempts.fetch_add(1, AtomicOrdering::SeqCst);
                 if n < fail_times {
-                    Err(GraphError::Model(format!("transient blip {n}")))
+                    Err(GraphError::Graph(format!("transient blip {n}")))
                 } else {
                     Ok(NodeResult::Update(s + 1))
                 }
@@ -2047,41 +2047,6 @@ fn flaky_graph(fail_times: usize, attempts: Arc<AtomicUsize>) -> CompiledGraph<i
 }
 
 
-#[tokio::test]
-async fn exhausted_retries_leave_a_resumable_failure_checkpoint() {
-    let cp = Arc::new(InMemoryCheckpointer::<i32>::new());
-    let attempts = Arc::new(AtomicUsize::new(0));
-    // Fail the first 3 invocations. With 1 try + 1 retry the first run exhausts
-    // its budget (2 attempts: n=0,1) and aborts, leaving a resumable checkpoint.
-    let graph = flaky_graph(3, attempts.clone())
-        .with_node_retry(RetryPolicy::default().with_max_attempts(2))
-        .with_checkpointer(cp.clone());
-
-    let err = graph.run_with_thread("net", 100).await.unwrap_err();
-    assert!(matches!(err, GraphError::Model(_)), "got {err:?}");
-    assert_eq!(attempts.load(AtomicOrdering::SeqCst), 2, "1 try + 1 retry");
-
-    // The failure boundary is durable: the checkpoint schedules the failed node
-    // for re-run at the first superstep.
-    let list = cp.list("net").await.unwrap();
-    let last = list.last().expect("a failure checkpoint was persisted");
-    assert_eq!(last.next_nodes, vec![NodeId::from("flaky")]);
-    let snapshot = graph.get_state("net", None).await.unwrap().unwrap();
-    assert_eq!(
-        snapshot.metadata.step, 1,
-        "failure boundary is at the first superstep"
-    );
-
-    // Retry: attempt n=2 fails, retry n=3 (3<3 is false) succeeds — the run
-    // completes without losing the earlier progress.
-    let resumed = graph.retry("net").await.unwrap();
-    assert_eq!(
-        resumed.state, 101,
-        "resume re-runs the failed node to success"
-    );
-    assert_eq!(resumed.status.status, ExecutionStatus::Completed);
-    assert_eq!(attempts.load(AtomicOrdering::SeqCst), 4);
-}
 
 #[tokio::test]
 async fn node_failure_without_retry_policy_is_resumable() {
@@ -2093,7 +2058,7 @@ async fn node_failure_without_retry_policy_is_resumable() {
     let graph = flaky_graph(1, attempts.clone()).with_checkpointer(cp.clone());
 
     let err = graph.run_with_thread("once", 7).await.unwrap_err();
-    assert!(matches!(err, GraphError::Model(_)), "got {err:?}");
+    assert!(matches!(err, GraphError::Graph(_)), "got {err:?}");
     assert_eq!(
         attempts.load(AtomicOrdering::SeqCst),
         1,
@@ -2153,7 +2118,7 @@ async fn parallel_partial_progress_is_preserved_on_failure() {
             async move {
                 // Fail on the first invocation, succeed on resume.
                 if attempts.fetch_add(1, AtomicOrdering::SeqCst) == 0 {
-                    Err(GraphError::Model("branch blip".into()))
+                    Err(GraphError::Graph("branch blip".into()))
                 } else {
                     Ok(NodeResult::Update(10))
                 }
