@@ -1600,10 +1600,19 @@ fn build_graph(
         match handler_routing(graph, &node.id) {
             HandlerRouting::FanOut(dests) => {
                 // Parallel fan-out: the node's handler drives every successor with
-                // a `Command::goto`, so we only declare the destination hints here.
+                // a `Command::goto`, so we only declare the destinations here.
                 // A command-routing node may not also carry static/conditional
                 // edges, so nothing else is wired for it.
-                builder = builder.with_command_destinations(node.id.clone(), dests);
+                //
+                // Declared as *unconditional*, which is a promise the routing
+                // layer relies on rather than a hint: all of these successors run
+                // whenever this node runs (they share one port — that is what
+                // makes this a fan-out rather than a choice). Barrier relief
+                // walks through this node on the strength of it, and would
+                // otherwise treat the fan-out as an unresolvable decision, decide
+                // a branch behind it went untaken, and clear a downstream barrier
+                // early.
+                builder = builder.with_unconditional_fanout(node.id.clone(), dests);
             }
             HandlerRouting::PortCommand(groups) => {
                 // Mixed-port node (e.g. `main->a, main->b, error->h`): the handler
