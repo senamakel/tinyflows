@@ -22,6 +22,12 @@ pub(super) fn validate_scatter_regions(graph: &WorkflowGraph, errors: &mut Vec<V
         .filter(|n| n.kind == NodeKind::Gather)
         .map(|n| n.id.as_str())
         .collect();
+    let voids: HashSet<&str> = graph
+        .nodes
+        .iter()
+        .filter(|n| n.kind == NodeKind::Void)
+        .map(|n| n.id.as_str())
+        .collect();
 
     // A gather with no scatter waits on lanes nobody will ever open.
     for gather in &gathers {
