@@ -29,6 +29,7 @@ fn node_kind_variants_use_snake_case() {
     assert_wire(&NodeKind::SubWorkflow, "sub_workflow");
     assert_wire(&NodeKind::Memory, "memory");
     assert_wire(&NodeKind::Dedup, "dedup");
+    assert_wire(&NodeKind::Void, "void");
 }
 
 #[test]

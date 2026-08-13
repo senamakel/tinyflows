@@ -332,6 +332,7 @@ pub(crate) fn executor_for(kind: &NodeKind) -> Box<dyn NodeExecutor> {
         NodeKind::SplitOut => Box::new(control_flow::SplitOutNode),
         NodeKind::Transform => Box::new(control_flow::TransformNode),
         NodeKind::Dedup => Box::new(control_flow::DedupNode),
+        NodeKind::Void => Box::new(control_flow::VoidNode),
         NodeKind::Scatter => Box::new(control_flow::ScatterNode),
         NodeKind::Gather => Box::new(control_flow::GatherNode),
         NodeKind::Spawn => Box::new(integration::SpawnNode),
