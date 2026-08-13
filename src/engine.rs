@@ -1283,7 +1283,12 @@ fn build_graph(
                 // emitted on (`port`, defaulting to `main`); everything else emits
                 // a plain update and follows its static/conditional edge.
                 let emit = |mut update: Value, port: Option<&str>, routed_items: &[Item]| {
-                    stamp_activation_step(&mut update, &node.id, ctx.step);
+                    // Only a non-lane activation stamps the node's slot: the
+                    // stamp is how a loop head tells its own re-entry from a
+                    // stale arm, and a lane slot is not that.
+                    if lane.is_none() {
+                        stamp_activation_step(&mut update, &node.id, ctx.step);
+                    }
 
                     // Inside a lane, routing carries the lane onward. Every
                     // successor is re-scheduled as a `Send` holding this
@@ -1763,16 +1768,25 @@ fn build_graph(
                             None => {}
                         }
 
-                        Ok(emit(
-                            items_update_with_meta(
+                        // A lane activation writes its own lane slot; only a
+                        // non-lane activation owns the node's top-level slot.
+                        let update = match lane.as_ref() {
+                            Some(lane) => lane_items_update(
+                                &node.id,
+                                lane,
+                                &output.items,
+                                port,
+                                "ok",
+                                output.meta.as_ref(),
+                            )?,
+                            None => items_update_with_meta(
                                 &node.id,
                                 &output.items,
                                 port,
                                 output.meta.as_ref(),
                             )?,
-                            port,
-                            &output.items,
-                        ))
+                        };
+                        Ok(emit(update, port, &output.items))
                     }
                     None => {
                         tracing::warn!(node = %node.id, "node failed after retries");
