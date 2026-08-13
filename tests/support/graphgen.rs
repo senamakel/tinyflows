@@ -101,6 +101,8 @@ struct Builder {
     nodes: Vec<Node>,
     edges: Vec<Edge>,
     next_id: usize,
+    /// Ids of the approval gates emitted, in creation order.
+    gates: Vec<String>,
 }
 
 /// The entry and exit node ids of a built subgraph.
