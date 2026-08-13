@@ -101,6 +101,7 @@ pub(super) fn register_handlers(
             has_error_edge,
             is_trigger,
             node_timeout,
+            interceptor,
         };
         let node_id = handler.node.id.clone();
         builder = builder.add_node(node_id, move |state: Value, ctx| {
