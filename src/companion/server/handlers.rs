@@ -2,7 +2,7 @@ use super::*;
 
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
-struct NativeRunRequest {
+pub(super) struct NativeRunRequest {
     workflow_id: String,
     tab_id: TabId,
     #[serde(default)]
@@ -242,7 +242,10 @@ async fn handle_text(server: &CompanionServer, session: &str, text: &str) -> Res
             .lock()
             .map_err(|_| ())?
             .complete_action(session, &response);
-        if matches!(completion, Err(super::RelayError::UnknownRequestId)) {
+        if matches!(
+            completion,
+            Err(crate::companion::RelayError::UnknownRequestId)
+        ) {
             return Ok(());
         }
         completion.map_err(|_| ())?;

@@ -167,10 +167,10 @@ where
             // without re-warning to avoid duplicate log lines.
             let diagnostics = {
                 let ctx = NodeContext {
-                    node: &node,
-                    input: &input,
-                    run: &run_meta,
-                    nodes: &nodes_state,
+                    node,
+                    input,
+                    run: run_meta,
+                    nodes: nodes_state,
                     caps,
                     agents,
                     observer: observer.as_ref(),

@@ -141,7 +141,7 @@ impl CompanionServer {
             .map_err(|_| lock_error())?
             .tabs_mut()
             .bind_run(run_id.into(), tab_id)
-            .map_err(super::RelayError::from)?;
+            .map_err(crate::companion::RelayError::from)?;
         Ok(())
     }
 
@@ -206,7 +206,7 @@ impl CompanionServer {
             .map_err(|_| lock_error())?
             .tabs_mut()
             .bind_run(run_id.clone(), tab_id)
-            .map_err(super::RelayError::from)?;
+            .map_err(crate::companion::RelayError::from)?;
 
         let token = CancellationToken::new();
         self.inner

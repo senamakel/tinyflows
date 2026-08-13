@@ -225,11 +225,13 @@ pub struct JournaledRunOutcome {
 }
 
 mod state;
+pub(crate) use state::replace;
+#[cfg(test)]
+pub(crate) use state::{LANE_KEY, REPLACE};
 use state::{
-    LANE_KEY, MergeReducer, collect_input, collect_input_since, lane_context, lane_envelope,
-    lane_input, lane_items_update, merge, stamp_activation_step,
+    MergeReducer, collect_input, collect_input_since, lane_context, lane_envelope, lane_input,
+    lane_items_update, merge, stamp_activation_step,
 };
-pub(crate) use state::{REPLACE, replace};
 
 mod routing;
 pub use routing::back_edges;

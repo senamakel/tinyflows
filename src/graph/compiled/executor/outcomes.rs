@@ -70,9 +70,9 @@ where
         all_child_runs: Vec<ChildRun>,
         visited: Vec<NodeId>,
     ) -> Result<GraphExecution<State>> {
-        if let Err(err) = self.require_interrupt_durability(&thread_id) {
+        if let Err(err) = self.require_interrupt_durability(thread_id) {
             return self
-                .fail_and_return(&run_id, &thread_id, started_at, steps, async_writes, err)
+                .fail_and_return(run_id, thread_id, started_at, steps, async_writes, err)
                 .await;
         }
         // Split the step three ways: branches that ran to a result,
@@ -91,15 +91,15 @@ where
         // to coincide, which is exactly why `completed_indices` is
         // reported by the runner rather than inferred here.
         let (completed, completed_goto) =
-            Self::partition_completed(&active, &goto_map, &completed_indices);
+            Self::partition_completed(active, goto_map, completed_indices);
         let successors =
             match self.route_completed(&completed, &completed_goto, &state, barrier_arrivals) {
                 Ok(successors) => successors,
                 Err(route_err) => {
                     return self
                         .fail_and_return(
-                            &run_id,
-                            &thread_id,
+                            run_id,
+                            thread_id,
                             started_at,
                             steps,
                             async_writes,
@@ -149,24 +149,24 @@ where
         // (a broken lineage cannot be safely resumed from).
         if let Err(err) = async_writes.drain().await {
             return self
-                .fail_and_return(&run_id, &thread_id, started_at, steps, async_writes, err)
+                .fail_and_return(run_id, thread_id, started_at, steps, async_writes, err)
                 .await;
         }
         let checkpoint_id = match self
             .persist_checkpoint(
-                &thread_id,
-                &run_id,
+                thread_id,
+                run_id,
                 &state,
                 &pending,
                 &completed,
                 emitted_interrupts.clone(),
                 &interrupted_nodes,
-                &barrier_arrivals,
+                barrier_arrivals,
                 parent_checkpoint.clone(),
                 steps,
                 "loop",
-                &recursion_meta,
-                &child_runs_meta,
+                recursion_meta,
+                child_runs_meta,
             )
             .await
         {
@@ -174,8 +174,8 @@ where
             Err(persist_err) => {
                 return self
                     .fail_and_return(
-                        &run_id,
-                        &thread_id,
+                        run_id,
+                        thread_id,
                         started_at,
                         steps,
                         async_writes,
@@ -185,7 +185,7 @@ where
             }
         };
 
-        let mut status = self.base_status(&run_id, &thread_id, started_at);
+        let mut status = self.base_status(run_id, thread_id, started_at);
         status.status = ExecutionStatus::Interrupted;
         status.current_step = steps;
         status.active_nodes = pending_nodes;
@@ -193,7 +193,7 @@ where
         status.checkpoint_id = checkpoint_id.clone();
         self.save_status(status.clone()).await;
 
-        return Ok(GraphExecution {
+        Ok(GraphExecution {
             state,
             run_id: run_id.clone(),
             graph_id: self.graph_id.clone(),
@@ -205,7 +205,7 @@ where
             interrupts: emitted_interrupts,
             status,
             checkpoint_id,
-        });
+        })
     }
 
     /// Emits a [`GraphEvent::RunFailed`] and records a terminal `Failed` status

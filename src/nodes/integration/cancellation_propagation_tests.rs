@@ -298,16 +298,9 @@ async fn t4_pre_cancelled_token_never_starts_child() {
 // independently-cancelled child fall through as a false completion.
 #[test]
 fn t5_defensive_independent_cancel_arm_is_present() {
-    // Scope the check to the production region — everything before the test
-    // module. `include_str!` pulls the whole file, so an unscoped `contains`
-    // would match the assertion strings *in this test itself* and pass even if
-    // the production arm were deleted. Slicing at `mod tests` (the sole such
-    // marker) makes deleting the arm from `run_child` actually fail this test.
-    let src = include_str!("sub_workflow.rs");
-    let production = src
-        .split("mod tests")
-        .next()
-        .expect("source file has a body before its test module");
+    // `run_child` lives in the production-only execution module, separate from
+    // this test file, so assertion text cannot accidentally satisfy the check.
+    let production = include_str!("sub_workflow/execution.rs");
     assert!(
         production.contains("if ctx.token.is_cancelled() {")
             && production.contains("run is halted rather than falsely completed"),

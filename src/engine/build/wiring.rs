@@ -190,7 +190,7 @@ pub(super) fn wire_graph(
         if incoming_counts.get(merge.id.as_str()).copied().unwrap_or(0) <= 1 {
             continue;
         }
-        for predecessor in conditional_predecessors(graph, &merge.id, &loop_edges) {
+        for predecessor in conditional_predecessors(graph, &merge.id, loop_edges) {
             if let Some(brancher) = find_conditional_brancher(graph, &predecessor, &merge.id) {
                 builder = builder.add_barrier_relief(brancher, predecessor, merge.id.clone());
             }
