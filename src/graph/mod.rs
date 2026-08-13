@@ -26,7 +26,6 @@ pub mod recursion;
 pub mod reducer;
 pub mod status;
 pub mod stream;
-pub(crate) mod thread_locks;
 pub(crate) mod worker;
 
 pub use builder::{
