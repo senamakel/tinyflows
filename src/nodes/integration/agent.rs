@@ -29,15 +29,37 @@ use crate::nodes::{NodeContext, NodeExecutor, NodeOutput};
 ///   (validate → one LLM auto-fix → re-validate), honoring
 ///   `config.output_parser.auto_fix` (default `true`).
 ///
-/// **Agent-kind selection** (`config.agent_ref`): when set to a host-registered
-/// agent id and the host wired the optional [`AgentRunner`](crate::caps::AgentRunner)
-/// capability, the node runs that named agent — with its own curated tools,
-/// model, and sandbox — to completion, instead of a bare completion. The inline
-/// tool sub-port is then skipped (the registered agent owns its tool loop); the
-/// output-parser sub-port still applies. `agent_ref` is read from trusted node
-/// config, never from model output. With no `agent_ref` (or no `AgentRunner`),
-/// the node falls back to [`LlmProvider`](crate::caps::LlmProvider). Either way
-/// the output is the same `{ json, text, raw }` envelope.
+/// **Agent-kind selection** (`config.agent_ref`): when set and the host wired the
+/// optional [`AgentRunner`](crate::caps::AgentRunner) capability, the node runs
+/// that named agent to completion instead of issuing a bare completion.
+/// `agent_ref` resolves against the graph's own
+/// [`agents`](crate::model::WorkflowGraph::agents) registry first, then the
+/// harness's, then passes through as a bare id. The resulting
+/// [`AgentDefinition`](crate::model::AgentDefinition) is merged with the node's
+/// overrides — **narrowing only** — and assembled into a typed
+/// [`AgentRunRequest`](crate::caps::AgentRunRequest) carrying the resolved
+/// instructions, model, provider, working directory, context blocks, tool
+/// descriptors, limits, and metadata. See
+/// [`agent_request`](super::agent_request) for the merge rules.
+///
+/// The inline tool sub-port is skipped on that path (the agent owns its own tool
+/// loop, and re-invoking a tool it already called would duplicate the side
+/// effect); the output-parser sub-port still applies. `agent_ref` is read from
+/// trusted node config, never from model output.
+///
+/// With no `agent_ref` (or no `AgentRunner`) the node falls back to
+/// [`LlmProvider`](crate::caps::LlmProvider) exactly as it always has — the one
+/// addition being that a declared `context` is still resolved into blocks, so an
+/// author's context is not silently dropped on a host without a harness.
+///
+/// **Output.** The agent-kind path emits `{ json, text, raw, meta }`, where
+/// `meta.stop` is `"finished"` or `"limit_stop"` — so a downstream `condition`
+/// can branch on whether the agent actually reached an answer. A `limit_stop`
+/// payload is partial and skips the output parser. The degraded path emits the
+/// original three-key envelope unchanged. A harness reporting
+/// [`Paused`](crate::caps::StopReason::Paused) fails the node: resuming a paused
+/// agent is not supported yet, and emitting a half-run agent's output as if it
+/// were an answer is the failure this refuses to make.
 ///
 /// Sub-ports **not** yet wired (documented follow-ups): a `chat_model` sub-port
 /// (attached model selection beyond what the request already carries) and a
