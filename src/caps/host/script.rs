@@ -351,16 +351,35 @@ pub struct ScriptCompletion {
 /// outlives `request.timeout`. The message carries the interpreter's own stderr,
 /// which is the only thing that says what actually went wrong.
 pub async fn run_script(request: ScriptRequest<'_>) -> Result<ScriptOutput> {
+    /// Bytes of `stderr` folded into the error message. This message becomes
+    /// `RunRecord::error` once the engine surfaces it, which — unlike step
+    /// `input`/`output` — is not passed through `bounded_within`; a script
+    /// that dumps a large stack trace must not be able to grow that field
+    /// without limit.
+    const MAX_STDERR_BYTES: usize = 4 * 1024;
+
     let program = request.program().to_string();
     let completion = run_script_capture(request).await?;
     if completion.exit_code != 0 {
+        let stderr = if completion.stderr.len() > MAX_STDERR_BYTES {
+            let end = completion
+                .stderr
+                .char_indices()
+                .map(|(index, _)| index)
+                .take_while(|index| *index <= MAX_STDERR_BYTES)
+                .last()
+                .unwrap_or(0);
+            format!("{} …[truncated]", &completion.stderr[..end])
+        } else {
+            completion.stderr.clone()
+        };
         return Err(EngineError::Capability(format!(
             "script: {program} exited with {}{}",
             completion.exit_code,
-            if completion.stderr.is_empty() {
+            if stderr.is_empty() {
                 String::new()
             } else {
-                format!(": {}", completion.stderr)
+                format!(": {stderr}")
             }
         )));
     }

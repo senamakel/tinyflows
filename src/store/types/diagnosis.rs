@@ -27,8 +27,8 @@
 //! something outside itself. A `transform` or `condition` whose expression
 //! resolves to null emits no diagnostic, so a transform that quietly sets a
 //! field to null passes here. That is a real gap and the reason the *gates*
-//! ([`crate::workflows::gates`]) exist alongside this: they read the graph
-//! statically and catch the shapes that are wrong before anything runs.
+//! ([`crate::gates`]) exist alongside this: they read the graph statically and
+//! catch the shapes that are wrong before anything runs.
 //!
 //! Adapted from a sibling host's dry-run diagnostics.
 

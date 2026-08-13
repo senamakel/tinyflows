@@ -8,6 +8,13 @@
 //!
 //! Writes are staged and renamed, never made in place, so a key can never be
 //! left holding a half-written document that no later read can recover from.
+//!
+//! That guarantee is about *process* crashes, not power loss: `store` neither
+//! `sync_all`s the staged file before the rename nor syncs the namespace
+//! directory afterward, so a kill -9 mid-write always leaves either the whole
+//! previous value or the whole new one, but a host that also needs the rename
+//! itself to survive an unclean *shutdown* (a crash, not just a killed
+//! process) needs to add that fsync discipline on top of this.
 
 use std::path::{Path, PathBuf};
 

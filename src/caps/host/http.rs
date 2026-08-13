@@ -38,6 +38,13 @@ const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 /// (a streamed response) must not be cut off schedule.
 const READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
 
+/// How long `permit` waits for the DNS lookup inside [`vet_resolution`].
+///
+/// Separate from [`CONNECT_TIMEOUT`], which bounds only the TCP/TLS handshake
+/// that follows a successful resolution — a resolver that never answers is
+/// not covered by it at all.
+const DNS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
 /// A credential the host injects into an outbound request.
 #[derive(Debug, Clone)]
 pub struct HttpCredential {
@@ -159,6 +166,13 @@ pub struct AllowlistHttpClient {
 impl AllowlistHttpClient {
     /// A client permitting only what `allowlist` allows, resolving
     /// `connection_ref`s against `credentials`.
+    ///
+    /// # Panics
+    /// Panics if the underlying `reqwest` client cannot be built. A silent
+    /// fallback to `reqwest::Client::default()` would drop both the redirect
+    /// refusal and the timeouts configured below, producing a client that
+    /// looks the same but no longer enforces either guard — worse than
+    /// failing loudly at construction, which happens once at startup.
     pub fn new(allowlist: HostAllowlist, credentials: HashMap<String, HttpCredential>) -> Self {
         Self {
             allowlist,
@@ -173,7 +187,7 @@ impl AllowlistHttpClient {
                 .connect_timeout(CONNECT_TIMEOUT)
                 .read_timeout(READ_TIMEOUT)
                 .build()
-                .unwrap_or_default(),
+                .expect("reqwest client with static config must build"),
         }
     }
 
@@ -184,7 +198,7 @@ impl AllowlistHttpClient {
     /// name and then letting the transport resolve it a second time is a
     /// rebinding window: a short-TTL answer can be private by the time the
     /// connection is made. The caller pins the transport to exactly these.
-    fn permit(&self, request: &Value) -> Result<(reqwest::Url, Vec<std::net::SocketAddr>)> {
+    async fn permit(&self, request: &Value) -> Result<(reqwest::Url, Vec<std::net::SocketAddr>)> {
         let raw = request
             .get("url")
             .and_then(Value::as_str)
@@ -218,7 +232,7 @@ impl AllowlistHttpClient {
         let port = url
             .port_or_known_default()
             .unwrap_or(if url.scheme() == "https" { 443 } else { 80 });
-        let vetted = vet_resolution(host, port)?;
+        let vetted = resolve_with_timeout(host.to_string(), port).await?;
         Ok((url, vetted))
     }
 
@@ -277,7 +291,49 @@ pub fn is_private_addr(addr: &std::net::IpAddr) -> bool {
 
 /// The IPv4 ranges a workflow must never reach.
 fn is_private_v4(addr: &std::net::Ipv4Addr) -> bool {
-    addr.is_loopback() || addr.is_private() || addr.is_link_local() || addr.is_unspecified()
+    // `is_shared` (`100.64.0.0/10`, RFC 6598 carrier-grade NAT) is not yet a
+    // stable `std` method, so the range is checked by hand. It fronts internal
+    // infrastructure on many cloud and carrier networks the same way RFC 1918
+    // does, and an allowlisted name resolving into it must be refused for the
+    // same reason.
+    let shared = addr.octets()[0] == 100 && (addr.octets()[1] & 0xC0) == 0x40;
+    addr.is_loopback()
+        || addr.is_private()
+        || addr.is_link_local()
+        || addr.is_unspecified()
+        || shared
+}
+
+/// Runs [`vet_resolution`] on a blocking-pool thread with a bounded wait.
+///
+/// `permit` runs on the request path, and the synchronous
+/// `ToSocketAddrs::to_socket_addrs` inside `vet_resolution` performs a real DNS
+/// lookup — potentially a slow one, against a resolver this process does not
+/// control. Run it off the async worker so a slow resolver cannot stall other
+/// tasks sharing that thread; `CONNECT_TIMEOUT` only bounds the TCP handshake
+/// that follows a successful resolution, not the lookup before it, so this
+/// needs its own timeout.
+///
+/// Timing out the join handle does not cancel an already-running blocking
+/// call: `to_socket_addrs` keeps running to completion on the blocking pool
+/// and its result is simply discarded once this returns. Tokio's blocking
+/// pool has its own bound on concurrent threads, which caps how many stalled
+/// lookups can accumulate; a resolver that hangs on every call still degrades
+/// throughput, just not into an unbounded thread leak.
+///
+/// `vet_resolution` itself stays synchronous — moving only the call site keeps
+/// the existing unit tests, which call it directly, working unchanged.
+async fn resolve_with_timeout(host: String, port: u16) -> Result<Vec<std::net::SocketAddr>> {
+    let lookup = tokio::task::spawn_blocking(move || vet_resolution(&host, port));
+    match tokio::time::timeout(DNS_TIMEOUT, lookup).await {
+        Ok(Ok(resolved)) => resolved,
+        Ok(Err(_join_error)) => Err(EngineError::Capability(
+            "http_request: dns lookup task panicked".to_string(),
+        )),
+        Err(_elapsed) => Err(EngineError::Capability(
+            "http_request: dns lookup timed out".to_string(),
+        )),
+    }
 }
 
 /// Every address `host` resolves to, refused if any is private.
@@ -340,7 +396,7 @@ pub fn is_private_host(host: &str) -> bool {
 #[async_trait]
 impl HttpClient for AllowlistHttpClient {
     async fn request(&self, request: Value, conn: Option<&str>) -> Result<Value> {
-        let (url, vetted) = self.permit(&request)?;
+        let (url, vetted) = self.permit(&request).await?;
         let summary = redacted_summary(&request);
         // Pinned to the addresses just vetted, so the connection cannot go
         // anywhere a second DNS answer might point.
@@ -355,6 +411,17 @@ impl HttpClient for AllowlistHttpClient {
             })?),
             None => None,
         };
+        // `permit` allows both `http` and `https` — plain `http` is a
+        // legitimate destination on its own. It stops being one the moment a
+        // credential is going to ride along: `http` is cleartext, so a
+        // resolved credential would be sent unencrypted. Refuse before
+        // `inject_credential` rather than after, so the secret never touches
+        // the outgoing request.
+        if credential.is_some() && url.scheme() == "http" {
+            return Err(EngineError::Capability(
+                "http_request: refusing to send a credential over plain http".to_string(),
+            ));
+        }
         let request = match &credential {
             Some(cred) => inject_credential(request, cred),
             None => request,

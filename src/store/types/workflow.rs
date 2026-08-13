@@ -127,8 +127,15 @@ pub fn record_fingerprint(record: &WorkflowRecord) -> String {
 
     let mut persisted = record.clone();
     persisted.source_path = None;
-    let canonical = serde_json::to_vec(&persisted).unwrap_or_default();
-    format!("{:x}", Sha256::digest(&canonical))
+    match serde_json::to_vec(&persisted) {
+        Ok(canonical) => format!("{:x}", Sha256::digest(&canonical)),
+        // Same reasoning as `proposal::fingerprint`: hashing empty bytes on a
+        // serialization failure would let a compare-and-swap write accept a
+        // stale record whenever both the expected and current record happen
+        // to fail to serialize the same way. A fresh token can never match a
+        // caller's `expected_fingerprint`, so the write is refused instead.
+        Err(_) => format!("unfingerprintable:{}", crate::ids::token()),
+    }
 }
 
 /// A workflow reduced to what a list needs — the shape advertised to the

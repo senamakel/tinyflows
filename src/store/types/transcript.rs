@@ -15,6 +15,17 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Bytes of one entry's `text` kept on the durable record.
+///
+/// [`RunRecord`](super::RunRecord) bounds step `input`, `output`, and its own
+/// `inputs` through `bounded_within` so no single value can grow a run record
+/// without limit; a transcript entry is the same kind of host-produced text
+/// (a tool result, a model message) and needs the same ceiling. Small on
+/// purpose — a transcript is many short lines, not one large payload, and a
+/// step with hundreds of entries must not turn one long one into the whole
+/// record's size budget.
+pub const MAX_ENTRY_TEXT_BYTES: usize = 4 * 1024;
+
 /// One thing an agent did, in the order it did it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -31,4 +42,33 @@ pub struct TranscriptEntry {
     /// The renderable line: the message text, the tool's one-line summary, the
     /// error message.
     pub text: String,
+}
+
+impl TranscriptEntry {
+    /// Build an entry with `text` capped at [`MAX_ENTRY_TEXT_BYTES`].
+    ///
+    /// Nothing in this crate folds a host's event stream into these — that
+    /// happens entirely on the host side, as the module doc says — so this is
+    /// the bound a host's folding code is expected to apply per entry, the way
+    /// [`bounded_within`](super::bounded_within) bounds the record's other
+    /// host-produced text.
+    #[must_use]
+    pub fn bounded(at_ms: i64, kind: impl Into<String>, text: impl Into<String>) -> Self {
+        let mut text = text.into();
+        if text.len() > MAX_ENTRY_TEXT_BYTES {
+            let end = text
+                .char_indices()
+                .map(|(index, _)| index)
+                .take_while(|index| *index <= MAX_ENTRY_TEXT_BYTES)
+                .last()
+                .unwrap_or(0);
+            text.truncate(end);
+            text.push_str(" …[truncated]");
+        }
+        Self {
+            at_ms,
+            kind: kind.into(),
+            text,
+        }
+    }
 }

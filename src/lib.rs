@@ -19,8 +19,8 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
-/// Reading the expression bindings a graph declares — which node an
-/// `={{ ... }}` reads from, and whether it reads as prose.
+/// Reading the expression bindings a graph declares — which node an `=`
+/// expression reads from, and whether it reads as prose.
 pub mod bindings;
 /// Browser automation protocol, action validation, and tool routing.
 pub mod browser;

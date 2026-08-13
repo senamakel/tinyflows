@@ -239,7 +239,8 @@ pub struct RunStep {
     /// [`output`](Self::output) cannot reach: those say what the step was asked
     /// and what it returned, while a step that returned something surprising is
     /// explained by what happened in between. See
-    /// [`crate::store::types::TranscriptEntry`] for the bounds it is kept under.
+    /// [`TranscriptEntry::bounded`](crate::store::types::TranscriptEntry::bounded)
+    /// for the per-entry bound a host's folding code is expected to apply.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub transcript: Vec<crate::store::types::TranscriptEntry>,
 }

@@ -27,12 +27,21 @@ const TMP_SUFFIX: &str = ".flows-tmp";
 /// already a safe component is rejected, not silently rewritten into a
 /// different one. Rewriting would let two distinct ids collapse onto one file.
 pub fn safe_component(id: &str) -> Result<&str, WorkflowError> {
-    let trimmed = id.trim();
-    if trimmed.is_empty() {
+    if id.trim().is_empty() {
         return Err(WorkflowError::Malformed(
             "identifier must not be empty".to_string(),
         ));
     }
+    // Rejected rather than rewritten: silently trimming would let "sweep " and
+    // "sweep" collapse onto the same `sweep.json`, and the stored record would
+    // still carry the untrimmed id — no longer matching the filename it
+    // resolves to.
+    if id.trim() != id {
+        return Err(WorkflowError::Malformed(format!(
+            "identifier '{id}' must not have leading or trailing whitespace"
+        )));
+    }
+    let trimmed = id;
     if trimmed == "." || trimmed == ".." {
         return Err(WorkflowError::Malformed(format!(
             "identifier '{trimmed}' is not a usable filename"

@@ -45,7 +45,7 @@ pub mod state;
 pub use self::code::{DeniedCodeRunner, ProcessCodeRunner};
 pub use self::http::{
     AllowlistHttpClient, HTTP_CRED_PREFIX, HostAllowlist, HttpCredential, http_cred_name,
-    inject_credential, is_private_addr, is_private_host, redacted_summary,
+    inject_credential, is_private_addr, is_private_host, redacted_summary, vet_resolution,
 };
 pub use self::mocks::{SchemaAwareMockAgentRunner, SchemaAwareMockLlm, sample_for_schema};
 pub use self::script::{

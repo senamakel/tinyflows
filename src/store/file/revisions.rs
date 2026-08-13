@@ -96,8 +96,18 @@ pub fn capture(write_dir: &Path, record: &WorkflowRecord) -> Result<PathBuf, Wor
 }
 
 /// Commit a captured snapshot after its matching source mutation succeeds.
+///
+/// Pruning is housekeeping, not part of the commit: the definition write or
+/// delete this follows has already landed, so a pruning failure (for example
+/// `read_dir` failing on the revisions directory) must not turn an already-
+/// successful save into a reported failure — a caller that saw `Err` here
+/// would retry the whole mutation and record a second, spurious revision.
 pub fn commit_capture(path: &Path) -> Result<(), WorkflowError> {
-    prune(path.parent().unwrap_or_else(|| Path::new(".")))
+    let dir = path.parent().unwrap_or_else(|| Path::new("."));
+    if let Err(error) = prune(dir) {
+        tracing::warn!(path = %dir.display(), %error, "failed to prune workflow revisions");
+    }
+    Ok(())
 }
 
 /// Remove a snapshot whose matching source mutation failed.

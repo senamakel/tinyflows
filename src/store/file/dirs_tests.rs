@@ -56,11 +56,22 @@ fn a_discovered_store_saves_new_definitions_under_the_home() {
 }
 
 #[test]
-fn a_home_outside_the_project_keeps_the_two_layers_distinct() {
+fn a_home_inside_the_project_directory_collapses_both_layers() {
     // The constraint `workflow_dirs` documents but cannot enforce: a host whose
-    // home resolved inside `<cwd>/<project_dir>` would read one directory twice
-    // and make every workflow shadow itself.
-    let dirs = workflow_dirs(Path::new(".myapp/local"), Path::new("."), ".myapp");
+    // home resolves inside `<cwd>/<project_dir>` reads one directory twice and
+    // makes every workflow shadow itself.
+    let dirs = workflow_dirs(Path::new("/repo/.myapp"), Path::new("/repo"), ".myapp");
+
+    assert_eq!(dirs.len(), 2);
+    assert_eq!(
+        dirs[0], dirs[1],
+        "a home inside the project directory collapses both layers onto one path"
+    );
+}
+
+#[test]
+fn a_home_outside_the_project_keeps_the_two_layers_distinct() {
+    let dirs = workflow_dirs(Path::new("/somewhere/home"), Path::new("."), ".myapp");
 
     assert_eq!(dirs.len(), 2);
     assert_ne!(dirs[0], dirs[1]);

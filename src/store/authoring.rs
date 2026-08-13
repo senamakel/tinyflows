@@ -108,11 +108,19 @@ pub fn apply_workflow_ops_if_unchanged(
     if super::types::fingerprint(&record.graph) != expected_fingerprint {
         return Ok(None);
     }
+    // The caller only ever observed the *graph* fingerprint, so that stays the
+    // freshness check above. The save itself guards the whole record: captured
+    // right after this read and before the mutation below, so a concurrent
+    // writer that changed only metadata (defaults, description — not the
+    // graph) between our read and our save is still detected, instead of this
+    // write silently overwriting that change with the metadata as it stood
+    // when we read it.
+    let observed = record_fingerprint(&record);
     record.graph = apply_ops(&record.graph, ops)
         .map_err(|err| WorkflowError::Engine(format!("workflow '{id}': {err}")))?;
     validate_graph(id, &record.graph)?;
     store.policy().check_graph(id, &record.graph)?;
-    if !store.save_if_fingerprint(&record, expected_fingerprint)? {
+    if !store.save_if_record_fingerprint(&record, &observed)? {
         return Ok(None);
     }
     Ok(Some(record))

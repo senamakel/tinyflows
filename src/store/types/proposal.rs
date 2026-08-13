@@ -124,6 +124,15 @@ impl WorkflowProposal {
 /// equality check, not a durable content address.
 pub fn fingerprint(graph: &crate::model::WorkflowGraph) -> String {
     use sha2::{Digest, Sha256};
-    let canonical = serde_json::to_vec(graph).unwrap_or_default();
-    format!("{:x}", Sha256::digest(&canonical))
+    match serde_json::to_vec(graph) {
+        Ok(canonical) => format!("{:x}", Sha256::digest(&canonical)),
+        // A graph that fails to serialize (a non-finite `Position`, for
+        // instance) must not fingerprint the same as every other graph that
+        // also fails to serialize. Hashing empty bytes would do exactly that,
+        // letting two genuinely different broken graphs compare equal and a
+        // stale proposal pass a freshness check it should fail. A fresh random
+        // token can never equal a caller-supplied `expected_fingerprint`, so
+        // the comparison this backs always reports "changed" instead.
+        Err(_) => format!("unfingerprintable:{}", crate::ids::token()),
+    }
 }
