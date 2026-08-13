@@ -9,8 +9,8 @@ use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 
-use crate::harness::ids::{GraphId, NodeId, RunId, TaskId};
-use crate::{Result, TinyAgentsError};
+use crate::graph::ids::{GraphId, NodeId, RunId, TaskId};
+use crate::graph::error::{GraphError, Result};
 
 /// One level of the graph/subgraph/sub-agent recursion tree.
 ///
@@ -47,12 +47,12 @@ pub struct RecursionFrame {
 /// (super-steps) can each be reasoned about and surfaced separately:
 ///
 /// - `max_depth` bounds the run-tree depth ([`RecursionStack::push`] enforces
-///   it, failing with [`TinyAgentsError::SubAgentDepth`]).
+///   it, failing with [`GraphError::SubAgentDepth`]).
 /// - `max_visits_per_node` optionally bounds how many times any single node may
 ///   be activated within one run (failing with
-///   [`TinyAgentsError::NodeVisitLimit`]).
+///   [`GraphError::NodeVisitLimit`]).
 /// - `max_total_steps` bounds the number of super-steps a single run may execute
-///   (failing with [`TinyAgentsError::RecursionLimit`]).
+///   (failing with [`GraphError::RecursionLimit`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RecursionPolicy {
     /// Maximum run-tree depth (root run included). Reaching it on a push fails.
@@ -122,12 +122,12 @@ impl RecursionStack {
 
     /// Pushes a recursion frame, enforcing [`RecursionPolicy::max_depth`].
     ///
-    /// Returns [`TinyAgentsError::SubAgentDepth`] when the push would make the
+    /// Returns [`GraphError::SubAgentDepth`] when the push would make the
     /// stack deeper than `max_depth` allows; the frame is **not** pushed in that
     /// case, so a caller that recovers keeps a consistent stack.
     pub fn push(&mut self, frame: RecursionFrame) -> Result<()> {
         if self.frames.len() + 1 > self.policy.max_depth {
-            return Err(TinyAgentsError::SubAgentDepth(self.policy.max_depth));
+            return Err(GraphError::SubAgentDepth(self.policy.max_depth));
         }
         self.frames.push(frame);
         Ok(())
@@ -139,11 +139,11 @@ impl RecursionStack {
     }
 
     /// Enforces [`RecursionPolicy::max_total_steps`] against an executed-step
-    /// count, returning [`TinyAgentsError::RecursionLimit`] when the run has
+    /// count, returning [`GraphError::RecursionLimit`] when the run has
     /// reached the cap.
     pub fn check_total_steps(&self, steps: usize) -> Result<()> {
         if steps >= self.policy.max_total_steps {
-            return Err(TinyAgentsError::RecursionLimit(self.policy.max_total_steps));
+            return Err(GraphError::RecursionLimit(self.policy.max_total_steps));
         }
         Ok(())
     }
@@ -152,7 +152,7 @@ impl RecursionStack {
     /// [`RecursionPolicy::max_visits_per_node`] when configured.
     ///
     /// Increments the per-node counter, returning
-    /// [`TinyAgentsError::NodeVisitLimit`] when the node has now been activated
+    /// [`GraphError::NodeVisitLimit`] when the node has now been activated
     /// more times than the policy allows.
     pub fn record_node_visit(
         &self,
@@ -165,7 +165,7 @@ impl RecursionStack {
         let count = counts.entry(node.clone()).or_insert(0);
         *count += 1;
         if *count > max {
-            return Err(TinyAgentsError::NodeVisitLimit {
+            return Err(GraphError::NodeVisitLimit {
                 node: node.to_string(),
                 limit: max,
             });

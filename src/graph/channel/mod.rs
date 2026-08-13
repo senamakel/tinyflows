@@ -24,7 +24,7 @@
 //!   deterministic active-set index order.
 //! - **Overwrite channels** ([`LastValue`], [`Ephemeral`], [`Untracked`])
 //!   return `false`; a second same-step write to such a channel raises
-//!   [`TinyAgentsError::InvalidConcurrentUpdate`] because there is no
+//!   [`GraphError::InvalidConcurrentUpdate`] because there is no
 //!   deterministic winner.
 //!
 //! Because the executor applies a step's updates as a contiguous batch, "same
@@ -49,7 +49,7 @@ use std::sync::Arc;
 use serde_json::Value;
 
 use crate::graph::reducer::StateReducer;
-use crate::{Result, TinyAgentsError};
+use crate::graph::error::{GraphError, Result};
 
 // --- Channel merge rules ---
 
@@ -102,7 +102,7 @@ impl Channel for Delta {
 
     fn merge(&self, current: Option<Value>, incoming: Value) -> Result<Value> {
         let add_err =
-            || TinyAgentsError::Graph("Delta channel only accepts numeric writes".to_string());
+            || GraphError::Graph("Delta channel only accepts numeric writes".to_string());
         let incoming_num = incoming.as_f64().ok_or_else(add_err)?;
         let Some(current) = current else {
             return Ok(incoming);
@@ -136,7 +136,7 @@ impl Channel for Messages {
         let mut list = match current {
             Some(Value::Array(items)) => items,
             Some(_) => {
-                return Err(TinyAgentsError::Graph(
+                return Err(GraphError::Graph(
                     "Messages channel value must be a JSON array".to_string(),
                 ));
             }
@@ -284,14 +284,14 @@ impl Channel for NamedBarrier {
         let mut map = match current {
             Some(Value::Object(map)) => map,
             Some(_) => {
-                return Err(TinyAgentsError::Graph(
+                return Err(GraphError::Graph(
                     "NamedBarrier channel value must be a JSON object".to_string(),
                 ));
             }
             None => serde_json::Map::new(),
         };
         let Value::Object(incoming) = incoming else {
-            return Err(TinyAgentsError::Graph(
+            return Err(GraphError::Graph(
                 "NamedBarrier writes must be JSON objects of named arrivals".to_string(),
             ));
         };
@@ -407,7 +407,7 @@ impl ChannelSet {
     }
 
     /// Folds `value` into the channel `name` via its merge rule. Errors with
-    /// [`TinyAgentsError::Graph`] if `name` is not a registered channel.
+    /// [`GraphError::Graph`] if `name` is not a registered channel.
     ///
     /// The unknown-channel check runs *before* any state is touched. If a
     /// registered channel's [`Channel::merge`] rejects the write (e.g. a
@@ -423,7 +423,7 @@ impl ChannelSet {
             .channels
             .get(name)
             .map(AsRef::as_ref)
-            .ok_or_else(|| TinyAgentsError::Graph(format!("unknown channel `{name}`")))?;
+            .ok_or_else(|| GraphError::Graph(format!("unknown channel `{name}`")))?;
         let current = self.values.remove(name);
         let merged = channel.merge(current, value)?;
         self.values.insert(name.to_string(), merged);
@@ -463,7 +463,7 @@ impl ChannelSet {
         self.channels
             .get(name)
             .map(AsRef::as_ref)
-            .ok_or_else(|| TinyAgentsError::Graph(format!("unknown channel `{name}`")))
+            .ok_or_else(|| GraphError::Graph(format!("unknown channel `{name}`")))
     }
 }
 
@@ -542,7 +542,7 @@ impl ChannelState {
     /// number that differs from the last one seen, the per-step write tracking
     /// is reset and [`Ephemeral`] channels are cleared before the writes apply.
     /// A second write to a non-aggregate channel within the same stamped step
-    /// raises [`TinyAgentsError::InvalidConcurrentUpdate`].
+    /// raises [`GraphError::InvalidConcurrentUpdate`].
     pub fn merge(mut self, update: ChannelUpdate) -> Result<Self> {
         match update.step {
             Some(step) if step != self.current_step => {
@@ -572,7 +572,7 @@ impl ChannelState {
             let allows = self.set.allows_concurrent(name)?;
             let count = self.step_writes.get(*name).copied().unwrap_or(0) + 1;
             if count > 1 && !allows {
-                return Err(TinyAgentsError::InvalidConcurrentUpdate(format!(
+                return Err(GraphError::InvalidConcurrentUpdate(format!(
                     "channel `{name}` received {count} concurrent writes in one step but is not an aggregate channel"
                 )));
             }

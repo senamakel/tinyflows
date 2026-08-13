@@ -13,7 +13,7 @@
 //! checkpoint at the boundary (when a checkpointer is configured), then select
 //! the next active set. The loop stops when the active set empties, every
 //! branch reaches [`END`], an interrupt pauses the run, or the recursion limit
-//! is hit (a deterministic [`TinyAgentsError::RecursionLimit`]).
+//! is hit (a deterministic [`GraphError::RecursionLimit`]).
 //!
 //! By default execution is sequential within a step. When the graph is compiled
 //! with [`crate::graph::GraphBuilder::with_parallel`], a step with more than one
@@ -92,22 +92,22 @@ use crate::graph::recursion::{
 use crate::graph::reducer::StateReducer;
 use crate::graph::status::GraphRunStatus;
 use crate::graph::stream::{GraphEvent, GraphEventSink};
-use crate::harness::ids::{
+use crate::graph::ids::{
     CheckpointId, ExecutionStatus, GraphId, InterruptId, NodeId, RunId, ThreadId,
 };
 use crate::harness::retry::is_retryable;
-use crate::{Result, TinyAgentsError};
+use crate::graph::error::{GraphError, Result};
 
 /// Allocates a fresh checkpoint id (string form) that is collision-free across
 /// process restarts.
 ///
-/// Delegates to [`crate::harness::ids::new_checkpoint_id`]: a resumed thread
+/// Delegates to [`crate::graph::ids::new_checkpoint_id`]: a resumed thread
 /// restarted in a new process must never re-mint a checkpoint id it already
 /// used, or the lineage map (`prune`) and time-travel resume corrupt. The bare
 /// process-local counter this used to build ids from restarted at `0` every
 /// process and did exactly that.
 fn next_checkpoint_id() -> String {
-    crate::harness::ids::new_checkpoint_id()
+    crate::graph::ids::new_checkpoint_id()
         .as_str()
         .to_string()
 }
@@ -168,7 +168,7 @@ struct StepFailure {
     /// pending branch's [`Send`] argument.
     failed_index: usize,
     /// The escalated error.
-    error: TinyAgentsError,
+    error: GraphError,
 }
 
 /// One scheduled activation in the active set: the node plus an optional
@@ -405,7 +405,7 @@ impl<State, Update> CompiledGraph<State, Update> {
     /// [`tokio::time::timeout`] — which aborts mid-super-step and cannot leave a
     /// clean checkpoint — this stops the run *between* super-steps: when the
     /// elapsed run time first reaches `deadline`, the run fails with
-    /// [`TinyAgentsError::Timeout`] and (on a checkpointed thread) the last
+    /// [`GraphError::Timeout`] and (on a checkpointed thread) the last
     /// committed boundary checkpoint stays intact, so the run can be resumed or
     /// inspected rather than lost.
     ///

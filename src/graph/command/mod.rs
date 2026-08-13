@@ -16,7 +16,7 @@ pub use types::{Command, Interrupt, NodeResult, RouteTarget, Send};
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::harness::ids::NodeId;
+use crate::graph::ids::NodeId;
 
 static INTERRUPT_SEQ: AtomicU64 = AtomicU64::new(0);
 

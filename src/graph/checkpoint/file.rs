@@ -33,8 +33,8 @@ use super::{
     Checkpoint, CheckpointConfig, CheckpointMetadata, CheckpointTuple, Checkpointer, PendingWrite,
     merge_writes,
 };
-use crate::harness::ids::CheckpointId;
-use crate::{Result, TinyAgentsError};
+use crate::graph::ids::CheckpointId;
+use crate::graph::error::{GraphError, Result};
 
 /// File extension for per-thread checkpoint logs.
 const THREAD_EXT: &str = "jsonl";
@@ -207,8 +207,8 @@ fn legacy_escape_thread_id(thread_id: &str) -> String {
     out
 }
 
-fn io_err(context: &str, err: impl std::fmt::Display) -> TinyAgentsError {
-    TinyAgentsError::Checkpoint(format!("file checkpointer: {context}: {err}"))
+fn io_err(context: &str, err: impl std::fmt::Display) -> GraphError {
+    GraphError::Checkpoint(format!("file checkpointer: {context}: {err}"))
 }
 
 /// Builds a [`CheckpointTuple`] from an owned checkpoint, mirroring the
@@ -336,7 +336,7 @@ where
 /// already uses.
 fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
     let dir = path.parent().ok_or_else(|| {
-        TinyAgentsError::Checkpoint(format!(
+        GraphError::Checkpoint(format!(
             "file checkpointer: path has no parent directory: {}",
             path.display()
         ))

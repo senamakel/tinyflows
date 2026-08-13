@@ -14,7 +14,7 @@ use crate::graph::recursion::{ChildRun, RunTree};
 use crate::graph::reducer::StateReducer;
 use crate::graph::status::GraphRunStatus;
 use crate::graph::stream::GraphEventSink;
-use crate::harness::ids::{CheckpointId, GraphId, NodeId, RunId};
+use crate::graph::ids::{CheckpointId, GraphId, NodeId, RunId};
 
 /// An immutable, validated graph ready to execute.
 ///
@@ -68,7 +68,7 @@ pub struct CompiledGraph<State, Update> {
     pub(crate) node_timeout: Option<std::time::Duration>,
     /// Optional whole-run wall-clock deadline (`None` = no deadline). Checked at
     /// every super-step boundary: when the elapsed run time reaches it the run
-    /// stops *between* super-steps with a [`TinyAgentsError::Timeout`], leaving
+    /// stops *between* super-steps with a [`GraphError::Timeout`], leaving
     /// the last committed boundary checkpoint intact and resumable. Configured
     /// via [`CompiledGraph::with_run_deadline`](crate::graph::CompiledGraph::with_run_deadline).
     pub(crate) run_deadline: Option<std::time::Duration>,
@@ -190,7 +190,7 @@ impl AsyncCheckpointWrites {
     /// Harvests writes that have already finished, without blocking on the
     /// ones still in flight. Returns the first error found (a failed `put` or
     /// a panicked task), or `None` when every finished write succeeded.
-    pub(crate) async fn take_failure(&mut self) -> Option<crate::error::TinyAgentsError> {
+    pub(crate) async fn take_failure(&mut self) -> Option<crate::error::GraphError> {
         let mut failure = None;
         let mut remaining = Vec::with_capacity(self.handles.len());
         for handle in self.handles.drain(..) {
@@ -231,11 +231,11 @@ impl AsyncCheckpointWrites {
     /// Maps one settled join result onto its error, if any.
     fn harvest(
         joined: std::result::Result<crate::error::Result<CheckpointId>, tokio::task::JoinError>,
-    ) -> Option<crate::error::TinyAgentsError> {
+    ) -> Option<crate::error::GraphError> {
         match joined {
             Ok(Ok(_)) => None,
             Ok(Err(err)) => Some(err),
-            Err(join_err) => Some(crate::error::TinyAgentsError::Checkpoint(format!(
+            Err(join_err) => Some(crate::error::GraphError::Checkpoint(format!(
                 "background checkpoint write task failed: {join_err}"
             ))),
         }

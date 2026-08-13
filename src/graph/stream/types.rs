@@ -11,7 +11,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::graph::command::Interrupt;
-use crate::harness::ids::{CheckpointId, NodeId, RunId};
+use crate::graph::ids::{CheckpointId, NodeId, RunId};
 
 /// A low-level graph lifecycle event emitted through a [`super::GraphEventSink`].
 ///

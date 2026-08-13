@@ -54,10 +54,10 @@ use std::time::SystemTime;
 
 use async_trait::async_trait;
 
-use crate::error::Result;
+use crate::graph::error::Result;
 use crate::graph::status::GraphRunStatus;
 use crate::graph::stream::{GraphEvent, GraphEventSink};
-use crate::harness::ids::{CheckpointId, EventId, GraphId, NodeId, RunId, ThreadId, now_ms};
+use crate::graph::ids::{CheckpointId, EventId, GraphId, NodeId, RunId, ThreadId, now_ms};
 use crate::harness::observability::{AppendWorker, DEFAULT_DRAIN_CAPACITY};
 use crate::harness::store::AppendStore;
 
@@ -598,8 +598,8 @@ fn duration_ms(start: SystemTime, end: SystemTime) -> Option<u64> {
 }
 
 /// Builds a uniform poisoned-lock validation error for the in-memory backends.
-fn poisoned<E: std::fmt::Display>(what: &str, err: E) -> crate::error::TinyAgentsError {
-    crate::error::TinyAgentsError::Validation(format!("{what} lock poisoned: {err}"))
+fn poisoned<E: std::fmt::Display>(what: &str, err: E) -> crate::error::GraphError {
+    crate::error::GraphError::Validation(format!("{what} lock poisoned: {err}"))
 }
 
 #[cfg(test)]

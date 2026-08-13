@@ -14,7 +14,7 @@ where
     fn require_checkpointer(&self) -> Result<&Arc<dyn Checkpointer<State>>> {
         self.checkpointer
             .as_ref()
-            .ok_or_else(|| TinyAgentsError::Checkpoint("no checkpointer configured".to_string()))
+            .ok_or_else(|| GraphError::Checkpoint("no checkpointer configured".to_string()))
     }
 
     /// Builds a [`CheckpointConfig`] addressing `checkpoint_id` (or the latest
@@ -65,7 +65,7 @@ where
     /// The write is a genuine graph write: `update` is folded through the same
     /// [`StateReducer`](crate::graph::StateReducer) the executor uses, on top of
     /// the thread's latest committed state. When `as_node` is supplied it must
-    /// name a real node (else [`TinyAgentsError::MissingNode`]); the write is
+    /// name a real node (else [`GraphError::MissingNode`]); the write is
     /// attributed to that node, which is treated as having just completed: it
     /// leaves the pending set and its routing successors are *merged into* the
     /// base checkpoint's remaining pending work (so a subsequent resume
@@ -76,7 +76,7 @@ where
     /// completes all of them at once — a manual write cannot name which packet
     /// it stands for — and the successor is scheduled once. A command node
     /// cannot be used as `as_node` (it routes dynamically and has no static
-    /// successors); doing so returns [`TinyAgentsError::Graph`] rather than
+    /// successors); doing so returns [`GraphError::Graph`] rather than
     /// silently producing a non-resumable checkpoint. A successor reached by a
     /// waiting edge is barrier-gated exactly as it would be during a run: it is
     /// scheduled only once every required predecessor has arrived (the write
@@ -94,7 +94,7 @@ where
         let checkpointer = self.require_checkpointer()?;
         if let Some(node) = &as_node {
             if !self.nodes.contains_key(node) {
-                return Err(TinyAgentsError::MissingNode(node.to_string()));
+                return Err(GraphError::MissingNode(node.to_string()));
             }
             // A command node routes dynamically (via the [`Command`] it returns
             // at runtime), so it has no static successors to schedule here.
@@ -102,7 +102,7 @@ where
             // `next_nodes` and silently render the thread non-resumable, so
             // reject it at write time instead.
             if self.command_nodes.contains(node) {
-                return Err(TinyAgentsError::Graph(format!(
+                return Err(GraphError::Graph(format!(
                     "cannot update state as node `{node}`: it routes dynamically \
                      via Command and has no static successors, so the resulting \
                      checkpoint would be non-resumable"
@@ -114,7 +114,7 @@ where
             .get_scoped(thread_id, None, &self.namespace)
             .await?
             .ok_or_else(|| {
-                TinyAgentsError::Checkpoint(format!(
+                GraphError::Checkpoint(format!(
                     "cannot update state: no checkpoint exists for thread `{thread_id}`"
                 ))
             })?;
@@ -240,7 +240,7 @@ where
     ///
     /// Each `(update, as_node)` pair is applied with [`CompiledGraph::update_state`]
     /// in order, so every step layers on the previous one's committed state and
-    /// produces its own checkpoint. Returns [`TinyAgentsError::Checkpoint`] when
+    /// produces its own checkpoint. Returns [`GraphError::Checkpoint`] when
     /// the iterator is empty (there is no resulting config to return).
     pub async fn bulk_update_state(
         &self,
@@ -252,7 +252,7 @@ where
             last = Some(self.update_state(thread_id, update, as_node).await?);
         }
         last.ok_or_else(|| {
-            TinyAgentsError::Checkpoint("bulk_update_state received no updates".to_string())
+            GraphError::Checkpoint("bulk_update_state received no updates".to_string())
         })
     }
 
@@ -276,7 +276,7 @@ where
             .get_scoped(source_thread, source_checkpoint_id, &self.namespace)
             .await?
             .ok_or_else(|| {
-                TinyAgentsError::Checkpoint(format!(
+                GraphError::Checkpoint(format!(
                     "cannot fork: no checkpoint found for thread `{source_thread}`"
                 ))
             })?;

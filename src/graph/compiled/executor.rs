@@ -88,7 +88,7 @@ where
     /// interrupted node(s) with the resume value supplied by `command`.
     ///
     /// Requires a checkpointer and an existing checkpoint for the thread;
-    /// otherwise returns [`TinyAgentsError::Resume`].
+    /// otherwise returns [`GraphError::Resume`].
     pub async fn resume(
         &self,
         thread_id: impl Into<ThreadId>,
@@ -129,7 +129,7 @@ where
     /// checkpoints to the thread rather than rewriting history.
     ///
     /// Requires a checkpointer and a matching checkpoint with pending nodes;
-    /// otherwise returns [`TinyAgentsError::Resume`].
+    /// otherwise returns [`GraphError::Resume`].
     pub async fn resume_from(
         &self,
         thread_id: impl Into<ThreadId>,
@@ -139,7 +139,7 @@ where
         let checkpointer = self
             .checkpointer
             .as_ref()
-            .ok_or_else(|| TinyAgentsError::Resume("no checkpointer configured".to_string()))?;
+            .ok_or_else(|| GraphError::Resume("no checkpointer configured".to_string()))?;
         let thread_id = thread_id.into();
 
         let checkpoint_id = match &target {
@@ -151,9 +151,9 @@ where
             .await?
             .ok_or_else(|| match &target {
                 ResumeTarget::Latest => {
-                    TinyAgentsError::Resume(format!("no checkpoint found for thread `{thread_id}`"))
+                    GraphError::Resume(format!("no checkpoint found for thread `{thread_id}`"))
                 }
-                ResumeTarget::Checkpoint(id) => TinyAgentsError::Resume(format!(
+                ResumeTarget::Checkpoint(id) => GraphError::Resume(format!(
                     "no checkpoint `{id}` found for thread `{thread_id}`"
                 )),
             })?;
@@ -177,7 +177,7 @@ where
                 .collect(),
         };
         if active.is_empty() {
-            return Err(TinyAgentsError::Resume(
+            return Err(GraphError::Resume(
                 "checkpoint has no pending nodes to resume".to_string(),
             ));
         }
@@ -286,12 +286,12 @@ where
             let node = if input.node.as_str() == START {
                 self.entry.clone()
             } else if input.node.as_str() == END {
-                return Err(TinyAgentsError::Graph(
+                return Err(GraphError::Graph(
                     "graph input cannot target END".to_string(),
                 ));
             } else {
                 if !self.nodes.contains_key(&input.node) {
-                    return Err(TinyAgentsError::MissingNode(input.node.to_string()));
+                    return Err(GraphError::MissingNode(input.node.to_string()));
                 }
                 input.node
             };
@@ -302,7 +302,7 @@ where
             });
         }
         if active.is_empty() {
-            return Err(TinyAgentsError::Validation(
+            return Err(GraphError::Validation(
                 "run_with_inputs requires at least one input".to_string(),
             ));
         }
@@ -311,7 +311,7 @@ where
 
     // ---- State inspection & time travel ------------------------------------
 
-    /// Returns the configured checkpointer or a [`TinyAgentsError::Checkpoint`]
+    /// Returns the configured checkpointer or a [`GraphError::Checkpoint`]
     /// when inspection is attempted on a graph without durability.
     async fn execute(
         &self,
@@ -322,7 +322,7 @@ where
         initial_barriers: HashMap<NodeId, HashSet<NodeId>>,
         initial_parent: Option<String>,
     ) -> Result<GraphExecution<State>> {
-        let run_id = crate::harness::ids::new_run_id();
+        let run_id = crate::graph::ids::new_run_id();
         // When a durable journal is configured, run against a clone whose event
         // sink wraps every emitted event into a `GraphObservation` and appends
         // it (while still forwarding to any pre-existing live sink). The journal
@@ -484,7 +484,7 @@ where
                 .recursion_limit
                 .min(self.recursion_policy.max_total_steps);
             if steps >= step_limit {
-                let err = TinyAgentsError::RecursionLimit(step_limit);
+                let err = GraphError::RecursionLimit(step_limit);
                 return self
                     .fail_and_return(
                         &run_id,
@@ -504,7 +504,7 @@ where
             if let Some(deadline) = self.run_deadline {
                 let elapsed = started_at.elapsed().unwrap_or_default();
                 if elapsed >= deadline {
-                    let err = TinyAgentsError::Timeout(format!(
+                    let err = GraphError::Timeout(format!(
                         "graph run exceeded its {deadline:?} deadline after {steps} super-step(s) \
                          ({elapsed:?} elapsed)"
                     ));
@@ -983,7 +983,7 @@ where
         thread_id: &Option<ThreadId>,
         started_at: SystemTime,
         steps: usize,
-        err: &TinyAgentsError,
+        err: &GraphError,
         checkpoint_id: Option<CheckpointId>,
     ) {
         self.emit(GraphEvent::RunFailed {
@@ -1020,7 +1020,7 @@ where
         started_at: SystemTime,
         steps: usize,
         writes: &mut AsyncCheckpointWrites,
-        err: TinyAgentsError,
+        err: GraphError,
     ) -> Result<T> {
         let _ = writes.drain().await;
         self.fail_run(run_id, thread_id, started_at, steps, &err, None)
@@ -1051,7 +1051,7 @@ where
         parent: Option<String>,
         step: usize,
         failed_node: &NodeId,
-        error: &TinyAgentsError,
+        error: &GraphError,
         recursion: &serde_json::Value,
         child_runs: &serde_json::Value,
     ) -> Result<Option<CheckpointId>> {
@@ -1131,7 +1131,7 @@ where
     }
 
     /// Wraps a node future in the configured per-node timeout (if any), mapping
-    /// an elapsed deadline onto [`TinyAgentsError::Timeout`].
+    /// an elapsed deadline onto [`GraphError::Timeout`].
     async fn run_node_future(
         &self,
         node_id: &NodeId,
@@ -1140,7 +1140,7 @@ where
         match self.node_timeout {
             Some(timeout) => match tokio::time::timeout(timeout, fut).await {
                 Ok(result) => result,
-                Err(_) => Err(TinyAgentsError::Timeout(format!(
+                Err(_) => Err(GraphError::Timeout(format!(
                     "node `{node_id}` exceeded its {timeout:?} timeout"
                 ))),
             },
@@ -1273,7 +1273,7 @@ where
             let node = self
                 .nodes
                 .get(node_id)
-                .ok_or_else(|| TinyAgentsError::MissingNode(node_id.to_string()))?;
+                .ok_or_else(|| GraphError::MissingNode(node_id.to_string()))?;
 
             self.emit(GraphEvent::TaskScheduled {
                 node: node_id.clone(),
@@ -1378,7 +1378,7 @@ where
             let node = self
                 .nodes
                 .get(node_id)
-                .ok_or_else(|| TinyAgentsError::MissingNode(node_id.to_string()))?;
+                .ok_or_else(|| GraphError::MissingNode(node_id.to_string()))?;
 
             self.emit(GraphEvent::TaskScheduled {
                 node: node_id.clone(),

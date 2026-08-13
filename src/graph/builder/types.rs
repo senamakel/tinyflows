@@ -6,10 +6,10 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::Result;
+use crate::graph::error::Result;
 use crate::graph::command::NodeResult;
 use crate::graph::reducer::StateReducer;
-use crate::harness::ids::{GraphId, NodeId, RunId, ThreadId};
+use crate::graph::ids::{GraphId, NodeId, RunId, ThreadId};
 
 /// The reserved virtual entry node.
 pub const START: &str = "__start__";
@@ -176,7 +176,7 @@ impl std::fmt::Display for Route {
 /// [`GraphDefaults`] (the [`Default`]) changes nothing.
 #[derive(Clone, Debug, Default)]
 pub struct GraphDefaults {
-    /// Maximum number of supersteps before [`crate::TinyAgentsError::RecursionLimit`].
+    /// Maximum number of supersteps before [`crate::GraphError::RecursionLimit`].
     pub recursion_limit: Option<usize>,
     /// Whether the active node set of a superstep runs concurrently.
     pub parallel: Option<bool>,
@@ -184,7 +184,7 @@ pub struct GraphDefaults {
     /// (only meaningful when `parallel` is enabled). `None` means unbounded.
     pub max_concurrency: Option<usize>,
     /// Default wall-clock timeout applied to every node handler; on elapse the
-    /// run fails with [`crate::TinyAgentsError::Timeout`]. `None` means no
+    /// run fails with [`crate::GraphError::Timeout`]. `None` means no
     /// per-node timeout.
     pub node_timeout: Option<Duration>,
 }

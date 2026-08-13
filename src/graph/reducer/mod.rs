@@ -19,7 +19,7 @@ pub use types::{
 use std::collections::HashSet;
 use std::marker::PhantomData;
 
-use crate::Result;
+use crate::graph::error::Result;
 
 impl<T> Reducer<T> for OverwriteReducer
 where

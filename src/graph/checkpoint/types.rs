@@ -15,7 +15,7 @@
 use std::fmt;
 
 use crate::graph::command::Interrupt;
-use crate::harness::ids::NodeId;
+use crate::graph::ids::NodeId;
 
 /// Why a checkpoint was written.
 ///

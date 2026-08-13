@@ -12,7 +12,7 @@
 
 use std::marker::PhantomData;
 
-use crate::Result;
+use crate::graph::error::Result;
 
 /// Merges two values of the same channel type.
 pub trait Reducer<T>: Send + Sync {

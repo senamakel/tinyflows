@@ -16,7 +16,7 @@ pub use types::GraphRunStatus;
 
 use std::time::SystemTime;
 
-use crate::harness::ids::{ExecutionStatus, GraphId, RunId};
+use crate::graph::ids::{ExecutionStatus, GraphId, RunId};
 
 impl GraphRunStatus {
     /// Creates a fresh status for a top-level run with no recorded progress yet.

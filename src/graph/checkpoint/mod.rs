@@ -32,8 +32,8 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 
-use crate::harness::ids::CheckpointId;
-use crate::{Result, TinyAgentsError};
+use crate::graph::ids::CheckpointId;
+use crate::graph::error::{GraphError, Result};
 
 /// Persists and retrieves graph checkpoints keyed by thread.
 #[async_trait]
@@ -372,7 +372,7 @@ where
     async fn copy_thread(&self, source_thread: &str, target_thread: &str) -> Result<()> {
         let existing = self.list(target_thread).await?;
         if !existing.is_empty() {
-            return Err(TinyAgentsError::Checkpoint(format!(
+            return Err(GraphError::Checkpoint(format!(
                 "copy_thread: target thread `{target_thread}` already has {} checkpoint(s); \
                  copying would interleave two lineages with reused checkpoint ids. \
                  Delete the target first if replacing it is intended.",
@@ -518,8 +518,8 @@ impl<State> Clone for InMemoryCheckpointer<State> {
     }
 }
 
-fn lock_err() -> TinyAgentsError {
-    TinyAgentsError::Checkpoint("in-memory checkpointer lock poisoned".to_string())
+fn lock_err() -> GraphError {
+    GraphError::Checkpoint("in-memory checkpointer lock poisoned".to_string())
 }
 
 fn metadata_of<State>(c: &Checkpoint<State>) -> CheckpointMetadata {
@@ -669,7 +669,7 @@ fn drop_writes_for(
 /// corruption the protocol exists to prevent.
 pub(crate) fn require_checkpoint_id(config: &CheckpointConfig) -> Result<String> {
     config.checkpoint_id.clone().ok_or_else(|| {
-        TinyAgentsError::Checkpoint(format!(
+        GraphError::Checkpoint(format!(
             "put_writes requires an explicit checkpoint_id (thread `{}`)",
             config.thread_id
         ))

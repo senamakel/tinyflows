@@ -199,7 +199,7 @@ where
         if let Some(branch) = self.branches.get(node_id) {
             let route = (branch.router)(state);
             let target = branch.routes.get(&route).cloned().ok_or_else(|| {
-                TinyAgentsError::MissingRoute {
+                GraphError::MissingRoute {
                     node: node_id.to_string(),
                     route,
                 }
@@ -217,12 +217,12 @@ where
                 continue;
             }
             if target_node.as_str() == START {
-                return Err(TinyAgentsError::Graph(format!(
+                return Err(GraphError::Graph(format!(
                     "command goto from node `{node_id}` cannot target START"
                 )));
             }
             if !self.nodes.contains_key(target_node) {
-                return Err(TinyAgentsError::MissingNode(target_node.to_string()));
+                return Err(GraphError::MissingNode(target_node.to_string()));
             }
         }
         Ok(())
@@ -230,12 +230,12 @@ where
 
     pub(super) fn require_interrupt_durability(&self, thread_id: &Option<ThreadId>) -> Result<()> {
         if self.checkpointer.is_none() {
-            return Err(TinyAgentsError::Resume(
+            return Err(GraphError::Resume(
                 "interrupt emitted without a configured checkpointer".to_string(),
             ));
         }
         if thread_id.is_none() {
-            return Err(TinyAgentsError::Resume(
+            return Err(GraphError::Resume(
                 "interrupt emitted without a thread id".to_string(),
             ));
         }

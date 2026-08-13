@@ -18,10 +18,10 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-use crate::error::Result;
+use crate::graph::error::Result;
 use crate::graph::status::GraphRunStatus;
 use crate::graph::stream::{GraphEvent, GraphEventSink};
-use crate::harness::ids::{CheckpointId, EventId, GraphId, NodeId, RunId, ThreadId};
+use crate::graph::ids::{CheckpointId, EventId, GraphId, NodeId, RunId, ThreadId};
 use crate::harness::observability::AppendWorker;
 use crate::harness::store::AppendStore;
 

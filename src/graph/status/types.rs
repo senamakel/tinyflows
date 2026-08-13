@@ -7,7 +7,7 @@
 
 use std::time::SystemTime;
 
-use crate::harness::ids::{
+use crate::graph::ids::{
     CheckpointId, EventId, ExecutionStatus, GraphId, InterruptId, NodeId, RunId, ThreadId,
 };
 
