@@ -320,33 +320,49 @@ async fn run_child(
     //
     // The child run is a *separate* engine invocation whose non-completion is
     // reported on its [`RunOutcome`], not on the [`NodeOutput`] this node
-    // returns. A node executor has no channel to inject a graph interrupt
-    // into the *parent* run (the parent's `pending_approvals` are collected
-    // solely from its own boundary interrupts), so we cannot yet transparently
-    // pause the parent and resume the child at its gate. What we MUST NOT do is
-    // keep only `outcome.output` and report success — that silently treats a
-    // child that paused at a `requires_approval` gate (or was cancelled) as if
-    // it had run to completion, making approval gating unenforceable across the
-    // boundary.
+    // returns. What must never happen is keeping only `outcome.output` and
+    // reporting success — that would silently treat a child paused at a
+    // `requires_approval` gate as if it had run to completion, making approval
+    // gating unenforceable across the boundary.
     //
-    // Until full cross-boundary resume exists, fail loudly: a child that did
-    // not fully complete halts the parent with an error rather than letting it
-    // falsely complete. With the default `on_error: stop` policy this stops the
-    // parent run; with `continue`/`route` it becomes a routable error item —
-    // either way the gated child is never silently treated as completed.
+    // A paused child now **pauses the parent** rather than failing it, via
+    // [`NodeControl::Interrupt`]. The child's gate ids are namespaced by this
+    // node's id (`<node>::<child gate>`) so they cannot collide with the
+    // parent's own gates, and so this node can recognise its own approvals when
+    // it re-runs.
     //
-    // Follow-up for full cross-boundary resume: surface the child's
-    // `pending_approvals` (namespaced by this node's id) into the parent's
-    // pending set via a real interrupt at this node's boundary, and teach
-    // `engine::resume` to re-enter the child at its paused gate. That needs
-    // engine-level interrupt plumbing this node cannot express today.
+    // Resume works the way `engine::resume` already works everywhere else: by
+    // re-executing with the merged approval set rather than replaying a
+    // checkpoint. The approvals accumulate in the parent's
+    // `run.trigger.approvals`; on the re-run this node reads back the ones
+    // addressed to it, strips the namespace, and seeds them into the child's
+    // trigger — so the child gets past the gate that stopped it. Nothing needs
+    // to share a checkpointer, and the child is deterministic, so re-running it
+    // reaches the same place.
     if !outcome.pending_approvals.is_empty() {
-        return Err(EngineError::Capability(format!(
-            "sub_workflow node {:?}: child run paused awaiting approval at {:?}; \
-             cross-boundary approval resume is not yet supported, so the parent run is \
-             halted rather than falsely completed",
-            ctx.node.id, outcome.pending_approvals
-        )));
+        let namespaced: Vec<String> = outcome
+            .pending_approvals
+            .iter()
+            .map(|gate| namespaced_gate(&ctx.node.id, gate))
+            .collect();
+        tracing::info!(
+            node = %ctx.node.id,
+            gates = ?namespaced,
+            "sub_workflow: child paused awaiting approval; pausing the parent"
+        );
+        // The interrupt id is the first pending gate, because a run's pending
+        // set is keyed by interrupt id and a node produces one interrupt. The
+        // payload carries the full list, and a host may approve several at once
+        // — the next re-run seeds all of them, so a child with N gates need not
+        // cost N round trips.
+        return Ok(NodeOutput::interrupt(
+            namespaced[0].clone(),
+            json!({
+                "kind": "sub_workflow_approval",
+                "node": ctx.node.id,
+                "pending": namespaced,
+            }),
+        ));
     }
     if outcome.cancelled {
         // Two cancellations look the same on the child's `RunOutcome` but mean
