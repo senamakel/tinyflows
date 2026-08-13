@@ -1,20 +1,14 @@
 #![cfg(feature = "mock")]
 //! Property tests for the async pair (`spawn`/`gate`) and the release policies.
 //!
-//! Two classes of property here, and they want different things from the
-//! generator, which is why they use different strategies.
+//! These run generated graphs and assert the invariants a caller can rely on:
+//! results ordered independently of completion, and a release that never
+//! under-delivers on the count its policy advertises.
 //!
-//! **The policy itself** is pure arithmetic over counters, so it is checked
-//! against a straightforward reference implementation across every combination
-//! of policy, arrival count and budget. A reference implementation is only worth
-//! writing when it is obviously correct *and* structured differently from the
-//! thing it checks — this one is a flat match, where the real one is a threshold
-//! computation, so they fail differently when either is wrong.
-//!
-//! **The gate in a graph** is checked by running generated graphs and asserting
-//! the invariants a caller can rely on: ordering independent of completion, a
-//! release that never under-delivers on its promise, and no orphaned tasks left
-//! behind by an early release.
+//! The release *rule* itself is pure arithmetic and is unit-tested next to the
+//! implementation in `src/nodes/release.rs`, where it is reachable — it is
+//! `pub(crate)`, so a property test out here could only check a reference
+//! against itself.
 //!
 //! Gated behind the `mock` feature alongside the rest of the e2e suite.
 
@@ -97,67 +91,6 @@ fn runtime() -> tokio::runtime::Runtime {
         .enable_all()
         .build()
         .expect("build runtime")
-}
-
-/// A reference implementation of the release rule, written as flatly as
-/// possible so it is obviously right by inspection.
-fn reference_release(policy: &str, n: usize, arrived: usize, expected: usize, spent: bool) -> &str {
-    let needed = match policy {
-        "all" | "timeout_partial" => expected,
-        "any" => 1.min(expected),
-        _ => n.min(expected),
-    };
-    if arrived >= needed {
-        "emit"
-    } else if !spent {
-        "wait"
-    } else if policy == "timeout_partial" {
-        "emit"
-    } else {
-        "timeout"
-    }
-}
-
-proptest! {
-    #![proptest_config(ProptestConfig { cases: 256, ..ProptestConfig::default() })]
-
-    /// The gate's own release decision, checked against the reference across
-    /// the whole input space rather than at a few hand-picked points.
-    ///
-    /// Runs no graph: this is the arithmetic, isolated.
-    #[test]
-    fn the_release_rule_matches_a_reference_implementation(
-        policy in prop::sample::select(vec!["all", "any", "first_n", "quorum", "timeout_partial"]),
-        n in 1usize..6,
-        arrived in 0usize..8,
-        expected in 0usize..8,
-        spent in any::<bool>(),
-    ) {
-        // The gate reaches the same decision through its config surface, which
-        // is the path a workflow actually takes.
-        let mut config = json!({ "release": policy });
-        if matches!(policy, "first_n" | "quorum") {
-            config["n"] = json!(n);
-        }
-        let expected_verdict = reference_release(policy, n, arrived, expected, spent);
-
-        // `n` above `expected` must never mean "wait forever".
-        if arrived >= expected && expected > 0 {
-            prop_assert_eq!(
-                expected_verdict, "emit",
-                "everything arrived, so every policy must release"
-            );
-        }
-        // A promise-keeping property, independent of the reference: no policy
-        // may emit with fewer than the count it advertises.
-        if expected_verdict == "emit" && matches!(policy, "first_n" | "quorum") {
-            prop_assert!(
-                arrived >= n.min(expected),
-                "released with {} of a promised {}", arrived, n.min(expected)
-            );
-        }
-        let _ = config;
-    }
 }
 
 proptest! {
