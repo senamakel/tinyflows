@@ -78,6 +78,164 @@ fn current_iteration(ctx: &NodeContext) -> u64 {
         .unwrap_or(0)
 }
 
+/// What the exit ports carry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EmitMode {
+    /// The last pass's items (the default, and what a loop without an
+    /// accumulator has always emitted).
+    Items,
+    /// One item holding the accumulator.
+    State,
+    /// The last pass's items, with the accumulator appended.
+    Both,
+}
+
+impl EmitMode {
+    fn from_config(config: &Value) -> Self {
+        match config.get("emit").and_then(Value::as_str) {
+            Some("state") => Self::State,
+            Some("both") => Self::Both,
+            _ => Self::Items,
+        }
+    }
+
+    /// Builds the items an exit port carries.
+    fn items(self, items: &[crate::data::Item], state: &Value) -> Vec<crate::data::Item> {
+        match self {
+            Self::Items => items.to_vec(),
+            Self::State => vec![crate::data::Item::new(state.clone())],
+            Self::Both => {
+                let mut out = items.to_vec();
+                out.push(crate::data::Item::new(state.clone()));
+                out
+            }
+        }
+    }
+}
+
+/// Whether an `until` exit should leave on its own `success` port.
+fn success_port(config: &Value) -> bool {
+    config
+        .get("success_port")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+}
+
+/// The accumulator this node recorded on its previous activation.
+fn current_state(ctx: &NodeContext) -> Option<Value> {
+    ctx.nodes
+        .get(&ctx.node.id)
+        .and_then(|slot| slot.get("state"))
+        .cloned()
+}
+
+/// The accumulator's starting value, from `config.state.init`.
+///
+/// Resolved on the seeding activation only, so an expression in `init` sees the
+/// run as it was when the loop began rather than being re-evaluated per pass.
+fn initial_state(ctx: &NodeContext) -> Result<Value> {
+    let Some(init) = ctx
+        .node
+        .config
+        .get("state")
+        .and_then(|state| state.get("init"))
+    else {
+        return Ok(Value::Null);
+    };
+    Ok(if init.as_str().is_some_and(expr::is_expression) {
+        expr::evaluate(init, &expr_scope(ctx))
+    } else {
+        init.clone()
+    })
+}
+
+/// Applies `config.state.update` to the accumulator, given the body's output.
+///
+/// The scope is the node's usual one plus a `state` key holding the *previous*
+/// accumulator, so an update reads `state` and the body's items together:
+/// `acc_next = f(acc_prev, body_output)`.
+///
+/// Two spellings, both supported because they suit different authors: a single
+/// jq program folding the whole accumulator, or an object of per-key
+/// expressions (mirroring `transform.set`), which is what someone who does not
+/// write jq will reach for.
+fn fold_state(ctx: &NodeContext) -> Result<Value> {
+    let previous = match current_state(ctx) {
+        Some(state) => state,
+        // No recorded accumulator: this loop either declares none, or is being
+        // re-entered after its slot was never written. Fall back to `init`
+        // rather than folding into null.
+        None => initial_state(ctx)?,
+    };
+    let Some(update) = ctx
+        .node
+        .config
+        .get("state")
+        .and_then(|state| state.get("update"))
+    else {
+        return Ok(previous);
+    };
+
+    let mut scope = expr_scope(ctx);
+    if let Some(map) = scope.as_object_mut() {
+        map.insert("state".to_string(), previous.clone());
+    }
+
+    match update {
+        // Object form: each key is resolved independently and merged over the
+        // previous accumulator, so an update naming one key leaves the rest.
+        Value::Object(fields) => {
+            let mut next = previous;
+            let entries: Vec<(String, Value)> = fields
+                .iter()
+                .map(|(key, raw)| {
+                    let value = if raw.as_str().is_some_and(expr::is_expression) {
+                        expr::evaluate(raw, &scope)
+                    } else {
+                        raw.clone()
+                    };
+                    (key.clone(), value)
+                })
+                .collect();
+            if !next.is_object() {
+                next = json!({});
+            }
+            if let Some(map) = next.as_object_mut() {
+                for (key, value) in entries {
+                    map.insert(key, value);
+                }
+            }
+            Ok(next)
+        }
+        // Program form: one jq expression producing the whole next accumulator.
+        raw if raw.as_str().is_some_and(expr::is_expression) => Ok(expr::evaluate(raw, &scope)),
+        // A literal: the accumulator simply becomes it.
+        raw => Ok(raw.clone()),
+    }
+}
+
+/// Whether the node's optional `config.until` expression is truthy against the
+/// **post-fold** accumulator.
+///
+/// Opposite polarity to `condition`, deliberately: `condition` says *keep going
+/// while*, `until` says *stop when*. Both are supported because a real loop
+/// often has both a work-remaining test and a success test.
+fn until_holds(ctx: &NodeContext, state: &Value) -> bool {
+    let Some(until) = ctx.node.config.get("until") else {
+        return false;
+    };
+    let mut scope = expr_scope(ctx);
+    if let Some(map) = scope.as_object_mut() {
+        map.insert("state".to_string(), state.clone());
+    }
+    let resolved = if until.as_str().is_some_and(expr::is_expression) {
+        expr::evaluate(until, &scope)
+    } else {
+        until.clone()
+    };
+    is_truthy(&resolved)
+}
+
 /// Whether the node's optional `config.condition` expression is truthy.
 ///
 /// Returns `true` when no condition is configured, so a loop bounded only by
