@@ -1,7 +1,7 @@
 //! The `sub_workflow` node: runs another workflow as a nested sub-graph.
 
 use async_trait::async_trait;
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use crate::engine::MAX_SUB_WORKFLOW_DEPTH;
 use crate::error::{EngineError, Result};
