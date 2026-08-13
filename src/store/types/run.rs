@@ -15,9 +15,9 @@ use crate::diagnostics::Diagnosis;
 // record does — neither should have to enable the `store` feature to get it.
 // Re-exported here because every caller reached it through `store::types`.
 pub use crate::evidence::{
-    LEGACY_TRUNCATED_KEY, MAX_EVIDENCE_BYTES, TRUNCATED_KEY, bounded_evidence, bounded_within,
-    is_truncated,
+    LEGACY_TRUNCATED_KEY, TRUNCATED_KEY, bounded_evidence, bounded_within, is_truncated,
 };
+pub(crate) use crate::evidence::MAX_EVIDENCE_BYTES;
 
 /// One run's identifier. Doubles as the engine checkpointer's `thread_id`, which
 /// is what makes a paused run resumable across process restarts.
