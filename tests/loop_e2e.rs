@@ -14,6 +14,7 @@
 //! Gated behind the `mock` cargo feature so plain `cargo test` skips it while
 //! `cargo test --all-features` runs it.
 
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde_json::{Value, json};
@@ -24,9 +25,25 @@ use tinyflows::engine::run;
 use tinyflows::error::EngineError;
 use tinyflows::error::ValidationError;
 use tinyflows::model::{Edge, Node, NodeKind, WorkflowGraph};
+use tinyflows::observability::RunObserver;
 
 /// How long any single run in this file may take before it is called a hang.
 const GUARD: Duration = Duration::from_secs(10);
+
+/// Records the order nodes finished in, so a test can assert on sequencing that
+/// the final state cannot show.
+#[derive(Default)]
+struct Trace(Mutex<Vec<String>>);
+
+impl RunObserver for Trace {
+    fn on_step_finish(&self, step: &tinyflows::observability::ExecutionStep) {
+        self.0
+            .lock()
+            .expect("trace mutex poisoned")
+            .push(step.node_id.clone());
+    }
+}
+
 
 /// Builds a node with the given id, kind, and config (no ports, no position).
 fn node(id: &str, kind: NodeKind, config: Value) -> Node {
@@ -427,20 +444,22 @@ async fn max_node_visits_bounds_a_cycle_and_names_the_node() {
     );
 }
 
-/// A diamond **inside** the loop body is refused, and this test records why —
-/// because the obvious reading ("barrier arrivals refill, so it should just
-/// work") is correct about the barrier and still wrong about the outcome.
+/// A diamond **inside** the loop body iterates, and the merge fires once per
+/// pass rather than on stale data.
 ///
-/// The barrier does re-arm. What breaks is barrier *relief*: the arms are
-/// reachable only through the head's `body` port, so they are classified as
-/// conditional predecessors and each gets a relief registration. Relief then
-/// injects phantom arrivals and the merge fires before its arms have run —
-/// the observed activation order is `l, apex, join, arm_a, arm_b, …`, with the
-/// join completing on the previous pass's data. Silently wrong output is worse
-/// than a refused graph, so the refusal stays until relief can be scoped to a
-/// single pass.
+/// Two things had to be true for this. The barrier re-arms on its own, because
+/// arrivals are cleared when it fires. And barrier *relief* had to stop firing
+/// phantom arrivals here: the arms are reachable only through the head's `body`
+/// port, so relief is registered for them, and relief's forward walk used to
+/// stop at the fan-out (`apex`) because a command node has no static edge. It
+/// concluded the arms were untaken and cleared the barrier early — the observed
+/// order was `l, apex, join, arm_a, arm_b, …`, the join reading the previous
+/// pass's data. Silently wrong output, not a hang.
+///
+/// So this test asserts both the iteration count *and* the ordering: `join`
+/// must never run before both arms have, on any pass.
 #[tokio::test]
-async fn a_diamond_inside_the_loop_body_is_refused() {
+async fn a_diamond_inside_the_loop_body_iterates() {
     let graph = WorkflowGraph {
         name: "diamond_in_loop".to_string(),
         nodes: vec![
@@ -451,27 +470,20 @@ async fn a_diamond_inside_the_loop_body_is_refused() {
                 json!({ "max_iterations": 3, "on_exceeded": "continue" }),
             ),
             node("apex", NodeKind::OutputParser, Value::Null),
-            node(
-                "arm_a",
-                NodeKind::Transform,
-                json!({ "set": { "arm": "a" } }),
-            ),
-            node(
-                "arm_b",
-                NodeKind::Transform,
-                json!({ "set": { "arm": "b" } }),
-            ),
+            node("arm_a", NodeKind::Transform, json!({ "set": { "arm": "a" } })),
+            node("arm_b", NodeKind::Transform, json!({ "set": { "arm": "b" } })),
             node("join", NodeKind::Merge, Value::Null),
             node("out", NodeKind::OutputParser, Value::Null),
         ],
         edges: vec![
             edge("t", "l"),
             port_edge("l", "body", "apex"),
+            // Both arms leave `apex` on the same port: a parallel fan-out.
             edge("apex", "arm_a"),
             edge("apex", "arm_b"),
             edge("arm_a", "join"),
             edge("arm_b", "join"),
-            edge("join", "l"),
+            edge("join", "l"), // the back-edge closing the cycle
             port_edge("l", "done", "out"),
         ],
         ..Default::default()
@@ -479,11 +491,50 @@ async fn a_diamond_inside_the_loop_body_is_refused() {
 
     let errors = tinyflows::validate::validate_all(&graph);
     assert!(
-        errors
-            .iter()
-            .any(|e| matches!(e, ValidationError::IllegalCycle(id) if id == "join")),
-        "a fan-in merge inside the loop body should be refused, got: {errors:?}"
+        errors.is_empty(),
+        "a diamond whose arms are both on the cycle is legal, got: {errors:?}"
     );
+
+    let trace = Arc::new(Trace::default());
+    let observer: Arc<dyn RunObserver> = trace.clone();
+    let caps = mock_capabilities();
+    let compiled = compile(&graph).expect("compile");
+    let outcome = tokio::time::timeout(
+        GUARD,
+        tinyflows::engine::run_with_observer(&compiled, json!({}), &caps, &observer),
+    )
+    .await
+    .expect("run hung — the diamond deadlocked the loop")
+    .expect("the loop should iterate rather than fail");
+
+    assert_eq!(
+        outcome.output["nodes"]["l"]["iteration"], 3,
+        "every pass should complete the merge barrier"
+    );
+
+    // Ordering: walking the activation trace, `join` may only run when both
+    // arms have run since the last time it did. A `join` that fires early is
+    // the phantom-arrival bug, and it does not show up in the final state.
+    let order = trace.0.lock().expect("trace mutex poisoned").clone();
+    let (mut seen_a, mut seen_b, mut joins) = (false, false, 0);
+    for id in &order {
+        match id.as_str() {
+            "arm_a" => seen_a = true,
+            "arm_b" => seen_b = true,
+            "join" => {
+                assert!(
+                    seen_a && seen_b,
+                    "`join` fired before both arms had run on this pass — barrier \
+                     relief cleared the barrier early. Trace: {order:?}"
+                );
+                joins += 1;
+                seen_a = false;
+                seen_b = false;
+            }
+            _ => {}
+        }
+    }
+    assert_eq!(joins, 3, "the merge should fire once per pass. Trace: {order:?}");
 }
 
 /// The case that stays refused: a merge on the cycle that also waits on a
