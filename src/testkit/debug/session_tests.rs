@@ -265,19 +265,18 @@ async fn a_failed_node_can_be_rescued_from_the_pause() {
 #[tokio::test]
 async fn a_hit_limited_breakpoint_disables_itself() {
     let mut session = session();
-    let id = session
-        .controller()
+    let controller = session.controller().clone();
+    let id = controller
         .set_breakpoint(BreakpointSpec::before("call").once())
         .expect("registers");
 
     let pause = session.next_pause(WAIT).await.expect("parks");
-    session
-        .controller()
+    controller
         .release(pause.pause_id, DebugCommand::Continue)
         .expect("releases");
     session.finish().await.expect("completes");
 
-    let listed = session.controller().breakpoints();
+    let listed = controller.breakpoints();
     // Detach on finish clears the table, so the assertion is on what was
     // recorded before that: the breakpoint fired exactly once.
     assert!(
