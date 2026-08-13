@@ -142,7 +142,9 @@ fn durable_step_evidence_is_bounded_without_changing_small_values() {
     let bounded = bounded_evidence(&large);
     assert_eq!(bounded[TRUNCATED_KEY], true);
     assert!(is_truncated(&bounded));
-    assert!(bounded["originalBytes"].as_u64().unwrap() > crate::evidence::MAX_EVIDENCE_BYTES as u64);
+    assert!(
+        bounded["originalBytes"].as_u64().unwrap() > crate::evidence::MAX_EVIDENCE_BYTES as u64
+    );
     assert!(
         serde_json::to_vec(&bounded).unwrap().len() <= crate::evidence::MAX_EVIDENCE_BYTES,
         "the persisted summary itself must remain bounded"

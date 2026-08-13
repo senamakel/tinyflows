@@ -50,12 +50,7 @@ pub mod graph_ops;
 // Only the file-backed store, the process-backed capabilities, and the
 // testkit's debug sessions need unique scratch names, and all three are
 // optional.
-#[cfg(any(
-    test,
-    feature = "store",
-    feature = "host-caps",
-    feature = "testkit"
-))]
+#[cfg(any(test, feature = "store", feature = "host-caps", feature = "testkit"))]
 mod ids;
 pub mod migrate;
 pub mod model;
