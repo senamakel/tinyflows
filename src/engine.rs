@@ -1041,6 +1041,11 @@ fn build_graph(
             // any. A bare `true` means "approve the interrupted gate"; a structured
             // `{ "rejected": [<gate id>, …] }` denies the named gate(s).
             let resume_value = ctx.resume.clone();
+            // The lane envelope this activation was scheduled with, if it is one
+            // of several concurrent activations of this same node. Decoded once
+            // here because `ctx` is not moved into the async body below.
+            let lane = lane_context(ctx.send_arg.as_ref());
+            let activation_step = ctx.step;
             // A checkpointed resume (see `ResumableRun::resume`) delivers a resume
             // value to the interrupted node via `NodeContext::resume`. A resume
             // approves *this* gate only when it is a bare `true` (backward-compat,
