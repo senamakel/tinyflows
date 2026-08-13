@@ -1880,7 +1880,11 @@ async fn build_and_run(
     // caller that gets an `Input` error can therefore be certain nothing ran and
     // nothing was observed, which is what lets a host reject a bad call without
     // recording a phantom run.
-    let RunInput { trigger, inputs } = input.into();
+    let RunInput {
+        trigger,
+        inputs,
+        approvals,
+    } = input.into();
     let resolved_inputs = crate::model::resolve_inputs(&workflow.graph.inputs, &inputs)?;
 
     // Process-local, monotonic run id — no time/random source.
