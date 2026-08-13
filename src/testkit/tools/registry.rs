@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use serde::Serialize;
 use serde_json::{Map, Value, json};
 
 use crate::compiler::compile;
@@ -10,9 +9,8 @@ use crate::data::Item;
 use crate::engine::RunInput;
 use crate::model::WorkflowGraph;
 use crate::testkit::debug::{
-    BreakpointSpec, Condition, DebugCommand, DebugSession, NodeTarget, PauseMode, SessionStatus,
+    BreakpointSpec, Condition, DebugCommand, DebugSession, NodeTarget, PauseMode,
 };
-use crate::testkit::harness::TestRun;
 use crate::testkit::mocks::{MockCaps, Respond};
 use crate::testkit::trace::RunTrace;
 
@@ -655,20 +653,6 @@ fn json_to_item(value: &Value) -> Item {
     match value.get("json") {
         Some(payload) => Item::new(payload.clone()),
         None => Item::new(value.clone()),
-    }
-}
-
-/// The result of a run, kept so a later `flow_test.trace` can find it.
-#[derive(Debug, Serialize)]
-struct StoredRun {
-    trace: RunTrace,
-}
-
-impl From<TestRun> for StoredRun {
-    fn from(run: TestRun) -> Self {
-        Self {
-            trace: run.trace().clone(),
-        }
     }
 }
 
