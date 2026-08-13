@@ -145,6 +145,26 @@ where
             let arrived = barrier_arrivals
                 .entry(relief.barrier_node.clone())
                 .or_default();
+            // Relief unblocks a barrier that is holding *real* data for a
+            // predecessor that can no longer arrive. It must never be the reason
+            // a barrier fires with nothing behind it, so it will not open a
+            // barrier that nothing has arrived at yet.
+            //
+            // Without this, a barrier all of whose predecessors went untaken is
+            // completed entirely by phantoms and activates on empty input. Inside
+            // a loop body that is not merely a wasted activation: on the pass
+            // where the head leaves through `done`, both arms are untaken, the
+            // join is phantom-completed anyway, and its back-edge re-enters the
+            // head — which exits again, relieves again, and the run ping-pongs
+            // between the two forever instead of finishing.
+            //
+            // Checking for a non-empty arrival set is enough to mean "something
+            // real arrived", because a phantom is never the first entry: this is
+            // the only place phantoms are added, and it declines to add one to an
+            // empty set.
+            if arrived.is_empty() {
+                continue;
+            }
             arrived.insert(relief.relief_node.clone());
             if !required.is_subset(arrived) {
                 continue;
