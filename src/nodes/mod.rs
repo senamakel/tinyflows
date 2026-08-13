@@ -9,6 +9,7 @@
 pub mod control_flow;
 pub mod integration;
 pub(crate) mod map;
+pub(crate) mod release;
 
 use async_trait::async_trait;
 use serde_json::Value;
