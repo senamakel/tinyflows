@@ -51,6 +51,9 @@ pub mod observability;
 #[cfg(any(test, feature = "store"))]
 pub mod store;
 pub mod validate;
+/// Render workflow structure to PNG or JPEG files for visual debugging.
+#[cfg(feature = "graph-debug")]
+pub mod visualization;
 
 /// The crate name published to crates.io.
 pub const CRATE_NAME: &str = env!("CARGO_PKG_NAME");
