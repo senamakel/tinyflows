@@ -23,10 +23,12 @@
 /// expression reads from, and whether it reads as prose.
 pub mod bindings;
 /// Browser automation protocol, action validation, and tool routing.
+#[cfg(feature = "chrome-extension")]
 pub mod browser;
 pub mod caps;
 pub mod catalog;
 /// Native companion pairing, tab authorization, relay, and control lifecycle.
+#[cfg(feature = "chrome-extension")]
 pub mod companion;
 pub mod compiler;
 pub mod data;
@@ -51,6 +53,9 @@ pub mod observability;
 #[cfg(any(test, feature = "store"))]
 pub mod store;
 pub mod validate;
+/// Render workflow structure to PNG or JPEG files for visual debugging.
+#[cfg(feature = "graph-debug")]
+pub mod visualization;
 
 /// The crate name published to crates.io.
 pub const CRATE_NAME: &str = env!("CARGO_PKG_NAME");

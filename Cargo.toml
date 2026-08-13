@@ -1,6 +1,6 @@
 [package]
 name = "tinyflows"
-version = "0.6.1"
+version = "0.7.0"
 edition = "2024"
 rust-version = "1.85"
 license = "GPL-3.0-or-later"
@@ -22,18 +22,23 @@ include = [
     "/extension/dist/**",
 ]
 
+[[bin]]
+name = "tinyflows"
+path = "src/main.rs"
+required-features = ["chrome-extension"]
+
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 async-trait = "0.1"
 thiserror = "2"
 futures-timer = "3"
-futures-util = "0.3"
+futures-util = { version = "0.3", default-features = false, features = ["async-await", "sink", "std"] }
 getrandom = "0.4"
-tracing = "0.1"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "sync", "time"] }
-axum = { version = "0.8", features = ["ws"] }
-reqwest = { version = "0.13", default-features = false, features = ["json"] }
+tracing = { version = "0.1", default-features = false, features = ["std"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "ws"], optional = true }
+reqwest = { version = "0.13", default-features = false, features = ["json"], optional = true }
 # `caps::host` only: hashing an author-supplied state key (and namespace) into
 # one safe path component, and staging a script in a temporary directory.
 sha2 = { version = "0.10", optional = true }
@@ -41,8 +46,13 @@ tempfile = { version = "3", optional = true }
 # `store` only: the advisory file lock that keeps two processes from deciding
 # the same proposal at once.
 fs2 = { version = "0.4", optional = true }
+# `graph-debug` only: self-contained raster output and a tiny bitmap font. The
+# renderer deliberately does not shell out to Graphviz, so it works anywhere
+# the library does.
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"], optional = true }
+font8x8 = { version = "0.3", default-features = false, features = ["unicode"], optional = true }
 jaq-core = "3.1.0"
-jaq-std = "3.0.1"
+jaq-std = { version = "3.0.1", default-features = false }
 jaq-json = { version = "2.0.1", features = ["serde"] }
 
 [features]
@@ -50,21 +60,26 @@ jaq-json = { version = "2.0.1", features = ["serde"] }
 # and examples. Mocks are always available inside this crate's own tests.
 default = []
 mock = []
+# Off by default; enables the Chrome browser protocol, native HTTP/WebSocket
+# companion, and the `tinyflows` companion CLI. The core engine has no listener
+# or HTTP client unless a host selects this feature (or `host-caps` below).
+chrome-extension = ["dep:axum", "dep:reqwest", "tokio/net"]
 # Off by default; enables `caps::host` — ready-made capability implementations
 # for a host that runs scripts as child processes of itself and keeps state on
 # its own disk. Off by default because a host with a sandbox wants none of it,
 # and because it is the only thing in the crate that spawns a process or writes
 # a file. Always available inside this crate's own tests.
-host-caps = ["dep:sha2", "dep:tempfile", "tokio/fs", "tokio/process", "tokio/io-util"]
+host-caps = ["dep:reqwest", "dep:sha2", "dep:tempfile", "reqwest/rustls", "tokio/fs", "tokio/process", "tokio/io-util"]
 # Off by default; enables `store` — the durable model around a graph (versioned
 # documents, run records, notes, proposals) and a JSON file-backed store for it.
 # A host with its own catalog or database wants none of it, so it is not part of
 # the engine. Always available inside this crate's own tests.
 store = ["dep:sha2", "dep:fs2"]
+# A file-writing graph visualizer intended for development and diagnostics.
+graph-debug = ["dep:image", "dep:font8x8"]
 
 [dev-dependencies]
 proptest = "1"
-async-trait = "0.1"
 # `caps::host` compiles inside this crate's own tests whether or not the
 # `host-caps` feature is on (the same rule `caps::mock` follows), so what that
 # feature would switch on has to be present for a test build too. An optional
@@ -72,4 +87,5 @@ async-trait = "0.1"
 sha2 = "0.10"
 tempfile = "3"
 fs2 = "0.4"
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 tokio = { version = "1", features = ["fs", "process", "io-util"] }

@@ -85,7 +85,8 @@ Rust 2024 · MSRV 1.85 · `#![forbid(unsafe_code)]` · GPL-3.0-or-later.
   secrets; the crate never sees them.
 - Versioned wire format: graph `schema_version` and per-node `type_version`, with
   a `migrate` framework for load-time upgrades.
-- Optional Chrome workflow companion: a native loopback relay and MV3 extension
+- Optional Chrome workflow companion (behind the `chrome-extension` Cargo
+  feature): a native loopback relay and MV3 extension
   execute explicit `tool_call` nodes with `slug: "browser"` in user-shared tabs,
   while every other tool remains with the embedding host's invoker.
 
@@ -197,6 +198,25 @@ Omitting `--features mock` is harmless: the demo body is
 `#[cfg(feature = "mock")]`-gated, so a default build stays green and the example
 just prints a hint to re-run with the feature enabled.
 
+### Visual graph debugging
+
+Enable `graph-debug` to render a workflow's nodes, port-labelled edges, branch
+flows, loops, and even dangling references to a standalone PNG or JPEG. The
+renderer is part of the library and does not require Graphviz:
+
+```toml
+tinyflows = { version = "0.6", features = ["graph-debug"] }
+```
+
+```rust,no_run
+use tinyflows::model::WorkflowGraph;
+use tinyflows::visualization::render_graph;
+
+let graph = WorkflowGraph::default();
+render_graph(&graph, "workflow.png")?; // .jpg and .jpeg are supported too
+# Ok::<(), tinyflows::visualization::GraphRenderError>(())
+```
+
 Run all of them in one go:
 
 ```sh
@@ -274,7 +294,7 @@ Install Rust 1.85 or newer with [rustup](https://rustup.rs/), then:
 ```sh
 cargo build
 cargo test                 # unit + compiler + engine tests (mocks auto-available)
-cargo test --all-features  # also exercises the `mock` capability impls explicitly
+cargo test --all-features  # also exercises optional host and Chrome support
 ```
 
 The Chrome extension is a separate local package:
