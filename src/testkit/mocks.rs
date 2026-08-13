@@ -11,10 +11,13 @@
 //! So: rules in, a call log out.
 //!
 //! ```no_run
+//! use std::sync::Arc;
 //! use tinyflows::testkit::{MockCaps, Respond};
 //! use serde_json::json;
 //!
-//! let mocks = MockCaps::new()
+//! // Shared behind an `Arc`, because each node activation is handed its own
+//! // bundle over the same rules and the same log.
+//! let mocks = Arc::new(MockCaps::new()
 //!     .on_tool("slack.send", Respond::value(json!({ "ok": true })))
 //!     // First call rate-limits, the retry succeeds — the shape of a flaky
 //!     // dependency, without a flaky test.
