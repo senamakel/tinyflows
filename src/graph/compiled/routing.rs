@@ -142,29 +142,50 @@ where
             let Some(required) = self.waiting.get(&relief.barrier_node) else {
                 continue;
             };
+            // Is this barrier participating in the current pass at all?
+            //
+            // Relief exists to unblock a barrier that is holding real data while
+            // one of its predecessors can no longer arrive. It must never be the
+            // reason a barrier fires with *nothing* behind it. So before
+            // phantoming anything, check that the route actually taken still
+            // leads to at least one of the barrier's predecessors — or that one
+            // has already arrived.
+            //
+            // The two cases this separates look identical from a single relief
+            // registration, which is why the check is per barrier rather than
+            // per predecessor:
+            //
+            // - A conditional join where one arm was chosen: the taken route
+            //   reaches that arm, so the barrier is engaged and the *other* arm
+            //   is correctly phantomed. The phantom is needed here before any
+            //   real arrival, since the chosen arm has not run yet.
+            // - A loop body's join on the pass where the head leaves through
+            //   `done`: the taken route reaches neither arm. Nothing will ever
+            //   arrive, so the barrier is simply not part of this pass. Firing it
+            //   anyway would activate it on empty input and — because its
+            //   back-edge re-enters the head, which exits and relieves again —
+            //   ping-pong the run forever instead of letting it finish.
+            let already_arrived = barrier_arrivals
+                .get(&relief.barrier_node)
+                .is_some_and(|arrived| !arrived.is_empty());
+            let barrier_engaged = already_arrived
+                || required.iter().any(|predecessor| {
+                    source_indices.iter().any(|index| {
+                        resolved[*index].iter().any(|target| {
+                            self.reaches_deterministically(
+                                target.node(),
+                                predecessor,
+                                &relief.barrier_node,
+                            )
+                        })
+                    })
+                });
+            if !barrier_engaged {
+                continue;
+            }
             let arrived = barrier_arrivals
                 .entry(relief.barrier_node.clone())
                 .or_default();
-            // Relief unblocks a barrier that is holding *real* data for a
-            // predecessor that can no longer arrive. It must never be the reason
-            // a barrier fires with nothing behind it, so it will not open a
-            // barrier that nothing has arrived at yet.
-            //
-            // Without this, a barrier all of whose predecessors went untaken is
-            // completed entirely by phantoms and activates on empty input. Inside
-            // a loop body that is not merely a wasted activation: on the pass
-            // where the head leaves through `done`, both arms are untaken, the
-            // join is phantom-completed anyway, and its back-edge re-enters the
-            // head — which exits again, relieves again, and the run ping-pongs
-            // between the two forever instead of finishing.
-            //
-            // Checking for a non-empty arrival set is enough to mean "something
-            // real arrived", because a phantom is never the first entry: this is
-            // the only place phantoms are added, and it declines to add one to an
-            // empty set.
-            if arrived.is_empty() {
-                continue;
-            }
             arrived.insert(relief.relief_node.clone());
             if !required.is_subset(arrived) {
                 continue;
