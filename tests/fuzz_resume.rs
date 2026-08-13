@@ -162,6 +162,49 @@ fn run_both_ways(shape: &Shape) -> Option<(Value, Value)> {
     })
 }
 
+/// Guards the properties below against passing vacuously.
+///
+/// Each of them returns early when a generated graph is refused by the
+/// validator, so a generator that drifted into producing only invalid gated
+/// graphs would leave them green while never once suspending a run. This pins
+/// the yield so that drift fails here instead.
+#[test]
+fn gated_graphs_are_mostly_runnable_and_actually_suspend() {
+    use proptest::strategy::{Strategy, ValueTree};
+    use proptest::test_runner::TestRunner;
+
+    const SAMPLES: usize = 60;
+    const FLOOR: usize = 36; // 60%
+
+    let mut runner = TestRunner::deterministic();
+    let mut suspended = 0;
+    for _ in 0..SAMPLES {
+        let shape = arb_gated_shape(2)
+            .new_tree(&mut runner)
+            .expect("generate a shape")
+            .current();
+        let graph = graph_of(&shape);
+        let Ok(compiled) = compile(&graph) else {
+            continue;
+        };
+        let outcome = runtime().block_on(async {
+            let caps = mock_capabilities();
+            tokio::time::timeout(GUARD, run(&compiled, json!({}), &caps))
+                .await
+                .expect("run hung")
+                .expect("an unapproved run should pause, not fail")
+        });
+        if !outcome.pending_approvals.is_empty() {
+            suspended += 1;
+        }
+    }
+    assert!(
+        suspended >= FLOOR,
+        "only {suspended}/{SAMPLES} generated gated graphs actually suspended, below the {FLOOR} \
+         floor — the resume properties are running on very little"
+    );
+}
+
 proptest! {
     // Deliberately fewer cases than the other fuzz files: each case runs the
     // same graph at least twice, once through the checkpointer.
