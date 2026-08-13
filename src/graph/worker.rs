@@ -23,7 +23,7 @@
 //! flood the host's log. Every failed append is counted in
 //! [`AppendWorker::append_failures`] (a lifetime total, distinct from the
 //! queue-full [`AppendWorker::dropped`] count), and the drain loop reports
-//! through `tracing` on the `tinyagents::observability` target with a `sink`
+//! through `tracing` on the `tinyflows::graph` target with a `sink`
 //! field:
 //!
 //! - the **first** failure of a failure run is reported at `ERROR` — durable
@@ -179,7 +179,7 @@ impl<T: Send + 'static> AppendWorker<T> {
                                 Ok(()) => {
                                     if failure_run > 0 {
                                         tracing::warn!(
-                                            target: "tinyagents::observability",
+                                            target: "tinyflows::graph",
                                             sink = name,
                                             lost = failure_run,
                                             "[observability] durable append recovered; {failure_run} observation(s) lost while the sink was failing"
@@ -195,7 +195,7 @@ impl<T: Send + 'static> AppendWorker<T> {
                                     if failure_run == 1 {
                                         last_report = Some(now);
                                         tracing::error!(
-                                            target: "tinyagents::observability",
+                                            target: "tinyflows::graph",
                                             sink = name,
                                             error = %error,
                                             "[observability] durable append failed; the observation is lost and repeats are suppressed until the sink recovers"
@@ -203,7 +203,7 @@ impl<T: Send + 'static> AppendWorker<T> {
                                     } else if should_report(last_report, now, cooldown) {
                                         last_report = Some(now);
                                         tracing::warn!(
-                                            target: "tinyagents::observability",
+                                            target: "tinyflows::graph",
                                             sink = name,
                                             error = %error,
                                             failures = failure_run,
@@ -221,7 +221,7 @@ impl<T: Send + 'static> AppendWorker<T> {
                     // so a run that never recovered is not silently quiet.
                     if failure_run > 0 {
                         tracing::warn!(
-                            target: "tinyagents::observability",
+                            target: "tinyflows::graph",
                             sink = name,
                             lost = failure_run,
                             "[observability] durable append failed; sink never recovered before shutdown, {failure_run} observation(s) lost"
