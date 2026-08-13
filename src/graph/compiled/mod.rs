@@ -146,8 +146,16 @@ struct StepRun<Update> {
     /// [`Command::goto`] — a node-keyed map would let a later activation's
     /// command clobber an earlier one's routing.
     goto_map: HashMap<usize, Vec<RouteTarget>>,
-    /// The lowest-index branch interrupt, if any (its active-set index + value).
-    interrupt: Option<(usize, Interrupt)>,
+    /// Every branch that interrupted this step, as `(active-set index, value)`,
+    /// in ascending index order.
+    ///
+    /// More than one is possible only under parallel execution, where the whole
+    /// active set runs before any result is folded — so two concurrent gates
+    /// can both pause in the same step, and reporting only the first would
+    /// leave the second invisible until an extra resume round-trip. Sequential
+    /// execution short-circuits at the first interrupt and never starts the
+    /// rest, so it contributes at most one.
+    interrupts: Vec<(usize, Interrupt)>,
     /// A node-handler failure that survived the node-retry policy, if any. When
     /// set, `updates` still carries the updates of the branches that completed
     /// *before* the failing branch, so the executor can fold that partial
