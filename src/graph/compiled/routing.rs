@@ -173,24 +173,57 @@ where
     /// eventually leads to a barrier's conditional predecessor is a static
     /// property of the compiled topology for any chain of plain pass-through
     /// nodes — it does not depend on when each hop happens to run. A further
-    /// conditional/command node along the way (no `self.edges` entry) is a
-    /// second runtime decision this walk cannot resolve ahead of time, so it
-    /// conservatively reports unreachable there (falling back to the
+    /// conditional node along the way is a second runtime decision this walk
+    /// cannot resolve ahead of time, so it stops there (falling back to the
     /// same-superstep check).
+    ///
+    /// An **unconditional fan-out** is the one command node the walk does cross.
+    /// It has no `self.edges` entry, because its successors come from the
+    /// `Command` it emits rather than from a static edge — but every one of its
+    /// declared destinations runs whenever it runs, so "does this lead to `to`"
+    /// is still a static question. Stopping there instead is not the safe
+    /// default it looks like: reporting unreachable is what *fires* relief, so a
+    /// fan-out on the path would clear a barrier before its real predecessors
+    /// had run and the join would read the previous pass's data. Erring toward
+    /// "reachable" costs at worst a barrier that waits, which is loud; erring
+    /// the other way is silently wrong output.
+    ///
+    /// Because a fan-out has several successors this is a search over a DAG
+    /// rather than a walk down a chain.
     fn reaches_deterministically(&self, from: &NodeId, to: &NodeId, stop: &NodeId) -> bool {
         if from == to {
             return true;
         }
-        let mut current = from;
         let mut seen: HashSet<&NodeId> = HashSet::new();
-        while let Some(next) = self.edges.get(current) {
-            if next == to {
-                return true;
+        let mut frontier: Vec<&NodeId> = vec![from];
+        while let Some(current) = frontier.pop() {
+            if !seen.insert(current) {
+                continue;
             }
-            if next == stop || !seen.insert(next) {
-                return false;
+            // A plain/waiting edge: exactly one successor, no decision.
+            if let Some(next) = self.edges.get(current) {
+                if next == to {
+                    return true;
+                }
+                if next != stop {
+                    frontier.push(next);
+                }
             }
-            current = next;
+            // An unconditional fan-out: every declared destination runs.
+            if self
+                .node_meta
+                .get(current)
+                .is_some_and(|meta| meta.command_fanout)
+            {
+                for next in &self.node_meta[current].command_destinations {
+                    if next == to {
+                        return true;
+                    }
+                    if next != stop {
+                        frontier.push(next);
+                    }
+                }
+            }
         }
         false
     }
