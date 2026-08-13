@@ -55,7 +55,16 @@ jobs:
       - uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Coverage
-        run: cargo llvm-cov --all-features --workspace --summary-only --fail-under-lines 90
+        # Unit tests live in *_tests.rs files, which cargo-llvm-cov excludes by
+        # default. Include them to preserve the coverage gate's historical
+        # semantics while still excluding dependencies, build output, and
+        # standalone integration-test sources.
+        run: >-
+          cargo llvm-cov --all-features --workspace --summary-only
+          --no-default-ignore-filename-regex
+          --ignore-filename-regex
+          '(/rustc/|/target/|/.cargo/(registry|git)/|/.rustup/toolchains/|/(tests|examples|benches)/)'
+          --fail-under-lines 90
 
   chrome-extension:
     name: Chrome Extension

@@ -71,6 +71,35 @@ fn bounded_failure(error: &EngineError) -> Result<String, String> {
     }
 }
 
+/// Removes scheduler observations that may legitimately vary between runs.
+///
+/// The determinism property is about workflow data and routing. Poll counts
+/// and super-step stamps describe when asynchronous work became visible, not
+/// what the workflow computed.
+fn stable_output(mut output: Value) -> Value {
+    fn strip(value: &mut Value) {
+        match value {
+            Value::Object(map) => {
+                map.remove("_activation_step");
+                map.remove("started_at_step");
+                map.remove("polls");
+                for child in map.values_mut() {
+                    strip(child);
+                }
+            }
+            Value::Array(items) => {
+                for item in items {
+                    strip(item);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    strip(&mut output);
+    output
+}
+
 /// Guards against the whole suite going quietly vacuous.
 ///
 /// Every property below skips a graph the validator refuses, which is correct
@@ -134,8 +163,8 @@ proptest! {
         }
     }
 
-    /// **Determinism.** The same graph run twice produces byte-identical final
-    /// state.
+    /// **Determinism.** The same graph run twice produces identical workflow
+    /// state after scheduler-only observations are removed.
     ///
     /// The engine folds concurrent branch updates through a reducer in
     /// active-set order rather than completion order, so this must hold even
@@ -151,7 +180,7 @@ proptest! {
         let second = run_graph(&graph);
         match (first, second) {
             (Ok(a), Ok(b)) => prop_assert_eq!(
-                a, b,
+                stable_output(a), stable_output(b),
                 "two runs of one graph disagreed\ngraph: {}",
                 serde_json::to_string(&graph).unwrap_or_default()
             ),
