@@ -40,6 +40,54 @@ pub struct ResumableRun {
     outcome: RunOutcome,
 }
 
+/// Like [`run_cancellable_with_observer`], but routes every node activation
+/// through `interceptor` before and after it executes.
+///
+/// This is the engine's only execution-**gating** entry point. A
+/// [`RunObserver`] watches a run; a
+/// [`StepInterceptor`](crate::interception::StepInterceptor) can change one —
+/// substituting a node's output, injecting a failure, patching the state it
+/// reads, or parking the activation while something else decides. That is what
+/// [`crate::testkit`]'s breakpoints are built on, and a host can implement the
+/// trait directly for a fault-injection harness of its own.
+///
+/// The returned [`ResumableRun`] keeps the compiled graph and its checkpointer
+/// alive, so a finished debug session can still be inspected and replayed.
+///
+/// An interceptor that returns
+/// [`StepAction::Continue`](crate::interception::StepAction::Continue) with no
+/// patch leaves the run byte-identical to [`run`].
+///
+/// # Errors
+/// Same as [`run`].
+pub async fn run_intercepted(
+    workflow: &CompiledWorkflow,
+    input: impl Into<RunInput>,
+    capabilities: &Capabilities,
+    observer: &Arc<dyn RunObserver>,
+    token: CancellationToken,
+    interceptor: Arc<dyn StepInterceptor>,
+) -> Result<(RunOutcome, ResumableRun)> {
+    let (graph, thread_id, outcome, _run_ids) = build_and_run(
+        workflow,
+        input,
+        capabilities,
+        observer,
+        RunConfig::new(workflow)?
+            .with_token(token)
+            .with_interceptor(interceptor),
+    )
+    .await?;
+    Ok((
+        outcome.clone(),
+        ResumableRun {
+            graph,
+            thread_id,
+            outcome,
+        },
+    ))
+}
+
 impl ResumableRun {
     /// The outcome of the initial run, before any [`resume`](ResumableRun::resume).
     /// Its [`RunOutcome::pending_approvals`] lists the gate nodes awaiting
