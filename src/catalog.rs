@@ -837,6 +837,108 @@ pub fn contract_for(kind: &str) -> Option<NodeKindContract> {
                     .to_string(),
             ],
         },
+        "spawn" => NodeKindContract {
+            kind: "spawn".to_string(),
+            summary: "Starts work WITHOUT waiting for it and emits a ticket; a downstream `gate` \
+                      collects the result."
+                .to_string(),
+            config: vec![
+                ConfigField::required(
+                    "target",
+                    "enum",
+                    "What to start: workflow | tool | http.",
+                )
+                .with_enum(&["workflow", "tool", "http"]),
+                ConfigField::optional("workflow", "WorkflowGraph", "Child graph, when target=workflow."),
+                ConfigField::optional("input", "any", "Trigger payload for the child, when target=workflow."),
+                ConfigField::optional("slug", "string", "Tool identifier, when target=tool."),
+                ConfigField::optional("args", "object", "Tool arguments, when target=tool."),
+                ConfigField::optional("request", "object", "Request description, when target=http."),
+            ],
+            ports: PortSpec::new(&["main"], &["main", "error"]),
+            example: json!({
+                "id": "kick_off", "kind": "spawn", "name": "Start the scan",
+                "config": { "target": "tool", "slug": "scanner.run", "args": { "repo": "=item.repo" } }
+            }),
+            notes: vec![
+                "Emits one item per started task shaped {ticket, spawn, started_at_step}. The \
+                 ticket is opaque — pass it to a `gate`, do not interpret it."
+                    .to_string(),
+                "Needs the host's TaskRunner capability to actually overlap. With NONE injected \
+                 the work runs INLINE and the ticket comes back already settled: the answer is \
+                 the same, the concurrency is not. That is a silent performance cliff, so check \
+                 the host wires a TaskRunner before relying on overlap."
+                    .to_string(),
+                "Fire-and-forget is legal — a spawn no gate ever collects simply runs. If that \
+                 is not what you meant, wire a `gate`."
+                    .to_string(),
+            ],
+        },
+        "gate" => NodeKindContract {
+            kind: "gate".to_string(),
+            summary: "Waits for spawned work and emits results once its release policy is \
+                      satisfied (all / any / first_n / quorum / timeout_partial)."
+                .to_string(),
+            config: vec![
+                ConfigField::optional(
+                    "from",
+                    "array",
+                    "Ids of upstream `spawn` nodes whose tickets to wait on. The usual spelling; \
+                     mutually exclusive with `tickets`.",
+                ),
+                ConfigField::optional(
+                    "tickets",
+                    "\"=expr\"",
+                    "Expression yielding a ticket id or array of them, for a graph that carries \
+                     tickets some other way.",
+                ),
+                ConfigField::optional(
+                    "release",
+                    "enum",
+                    "When to proceed: all (default) | any | first_n | quorum | timeout_partial.",
+                )
+                .with_enum(&["all", "any", "first_n", "quorum", "timeout_partial"]),
+                ConfigField::optional("n", "number", "Required (and must be > 0) for first_n and quorum."),
+                ConfigField::optional("poll_interval_ms", "number", "Gap between polls (default 250)."),
+                ConfigField::optional(
+                    "max_polls",
+                    "number",
+                    "Poll budget before the wait is called spent (default 200). EVERY poll costs \
+                     a super-step and a node visit, so this interacts with recursion_limit and \
+                     max_node_visits.",
+                ),
+                ConfigField::optional(
+                    "wait_mode",
+                    "enum",
+                    "poll (default) re-activates the node each interval; suspend interrupts the \
+                     run so the host resumes it when the work lands — right for long waits.",
+                )
+                .with_enum(&["poll", "suspend"]),
+                ConfigField::optional(
+                    "on_timeout",
+                    "enum",
+                    "error (default) | partial (emit what arrived) | route (use the `timeout` port).",
+                )
+                .with_enum(&["error", "partial", "route"]),
+            ],
+            ports: PortSpec::new(&["main"], &["main", "timeout", "error"]),
+            example: json!({
+                "id": "collect", "kind": "gate", "name": "Best two of three",
+                "config": { "from": ["kick_off"], "release": "quorum", "n": 2, "on_timeout": "partial" }
+            }),
+            notes: vec![
+                "Output is ordered by TICKET INDEX, not by which finished first, and each item \
+                 keeps its `paired_item`. Two runs therefore emit the same order regardless of \
+                 timing."
+                    .to_string(),
+                "A partial release (any / first_n / quorum) leaves the stragglers running. Their \
+                 results are simply not collected."
+                    .to_string(),
+                "A failed task is emitted as an item shaped {failed: true, error} rather than \
+                 failing the node, so it can be branched on with \"=item.failed\"."
+                    .to_string(),
+            ],
+        },
         _ => return None,
     };
     Some(with_fan_out_fields(c))
