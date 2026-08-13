@@ -632,6 +632,40 @@ impl HandlerData {
             &plain_targets,
             emit,
         )
-        .await
+        .await?;
+
+        // A `Before` state patch is merged into whatever this activation
+        // commits, so an edit made at a breakpoint survives the node writing
+        // its own slot rather than being silently overwritten by it.
+        Ok(match state_patch {
+            Some(patch) => apply_state_patch(result, patch),
+            None => result,
+        })
+    }
+}
+
+/// Merge a `Before` interceptor's state patch into an activation's committed
+/// update.
+///
+/// An interrupt is left alone: the runtime discards an interrupting
+/// activation's update by design, so there is nothing here to merge into and
+/// pretending otherwise would claim a write that never lands.
+fn apply_state_patch(result: NodeResult<Value>, patch: Value) -> NodeResult<Value> {
+    match result {
+        NodeResult::Update(mut update) => {
+            merge(&mut update, patch);
+            NodeResult::Update(update)
+        }
+        NodeResult::Command(mut command) => {
+            match command.update.take() {
+                Some(mut update) => {
+                    merge(&mut update, patch);
+                    command.update = Some(update);
+                }
+                None => command.update = Some(patch),
+            }
+            NodeResult::Command(command)
+        }
+        interrupt => interrupt,
     }
 }
