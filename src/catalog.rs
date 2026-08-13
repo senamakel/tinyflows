@@ -22,7 +22,7 @@ use serde_json::{Value, json};
 
 /// The node kinds, in the canonical order used wherever the DSL is enumerated
 /// (matches [`NodeKind`](crate::model::NodeKind)'s serde discriminators).
-pub const NODE_KINDS: [&str; 16] = [
+pub const NODE_KINDS: [&str; 18] = [
     "trigger",
     "agent",
     "tool_call",
@@ -39,6 +39,8 @@ pub const NODE_KINDS: [&str; 16] = [
     "memory",
     "dedup",
     "loop",
+    "spawn",
+    "gate",
 ];
 
 /// One config field a node of a given kind reads at run time.
