@@ -19,7 +19,7 @@ use std::time::Duration;
 use proptest::prelude::*;
 use serde_json::{Value, json};
 
-use support::gen::{arb_shape, arb_workflow_graph, graph_of};
+use support::graphgen::{arb_shape, arb_workflow_graph, graph_of};
 use tinyflows::caps::mock::mock_capabilities;
 use tinyflows::compiler::compile;
 use tinyflows::engine::run;
