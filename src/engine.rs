@@ -1229,6 +1229,10 @@ fn build_graph(
             // of several concurrent activations of this same node. Decoded once
             // here because `ctx` is not moved into the async body below.
             let lane = lane_context(ctx.send_arg.as_ref());
+            let lane_send_arg = lane
+                .is_some()
+                .then(|| ctx.send_arg.clone())
+                .flatten();
             let activation_step = ctx.step;
             // A checkpointed resume (see `ResumableRun::resume`) delivers a resume
             // value to the interrupted node via `NodeContext::resume`. A resume
@@ -1404,7 +1408,13 @@ fn build_graph(
                         .get("nodes")
                         .and_then(|nodes| nodes.get(&node.id))
                         .is_some_and(|slot| !slot.is_null());
-                let input = if re_entry {
+                // A lane activation carries its own work. It must not read
+                // predecessor slots: every branch of a super-step sees the same
+                // committed snapshot, so `collect_input` would hand all N lanes
+                // the identical items.
+                let input = if let Some(lane_arg) = lane_send_arg.as_ref() {
+                    lane_input(Some(lane_arg))
+                } else if re_entry {
                     let latest_step = back_incoming
                         .iter()
                         .filter_map(|(pred, _)| {
