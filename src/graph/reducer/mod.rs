@@ -131,4 +131,5 @@ where
 }
 
 #[cfg(test)]
+#[path = "reducer_tests.rs"]
 mod test;

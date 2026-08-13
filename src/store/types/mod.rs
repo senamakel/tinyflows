@@ -31,6 +31,7 @@ mod transcript;
 mod workflow;
 
 #[cfg(test)]
+#[path = "types_tests.rs"]
 mod tests;
 
 pub use diagnosis::Diagnosis;
