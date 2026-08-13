@@ -451,8 +451,16 @@ async fn a_diamond_inside_the_loop_body_is_refused() {
                 json!({ "max_iterations": 3, "on_exceeded": "continue" }),
             ),
             node("apex", NodeKind::OutputParser, Value::Null),
-            node("arm_a", NodeKind::Transform, json!({ "set": { "arm": "a" } })),
-            node("arm_b", NodeKind::Transform, json!({ "set": { "arm": "b" } })),
+            node(
+                "arm_a",
+                NodeKind::Transform,
+                json!({ "set": { "arm": "a" } }),
+            ),
+            node(
+                "arm_b",
+                NodeKind::Transform,
+                json!({ "set": { "arm": "b" } }),
+            ),
             node("join", NodeKind::Merge, Value::Null),
             node("out", NodeKind::OutputParser, Value::Null),
         ],
