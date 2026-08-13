@@ -47,6 +47,10 @@ pub mod expr;
 pub mod gates;
 pub mod graph;
 pub mod graph_ops;
+/// The engine's execution-gating hook: unlike a `RunObserver`, what a
+/// `StepInterceptor` returns is obeyed. What breakpoints and output overrides
+/// are built on.
+pub mod interception;
 // Only the file-backed store, the process-backed capabilities, and the
 // testkit's debug sessions need unique scratch names, and all three are
 // optional.
