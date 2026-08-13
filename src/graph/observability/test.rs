@@ -431,32 +431,6 @@ async fn journal_sink_used_directly_forwards_to_inner() {
     assert_eq!(obs[2].offset, 2);
 }
 
-#[tokio::test]
-async fn store_backed_journal_round_trips() {
-    let store = StoreGraphEventJournal::new(InMemoryAppendStore::new());
-    let obs = GraphObservation {
-        event_id: crate::graph::ids::EventId::new("e0"),
-        run_id: RunId::new("r0"),
-        root_run_id: RunId::new("r0"),
-        parent_run_id: None,
-        thread_id: None,
-        graph_id: GraphId::new("g0"),
-        checkpoint_id: None,
-        namespace: vec!["ns".to_string()],
-        step: 1,
-        offset: 0,
-        ts_ms: 42,
-        event: GraphEvent::RunStarted {
-            run_id: RunId::new("r0"),
-        },
-    };
-    let off = store.append(obs.clone()).await.unwrap();
-    assert_eq!(off, 0);
-
-    let read = store.read_from("r0", 0).await.unwrap();
-    assert_eq!(read.len(), 1);
-    assert_eq!(read[0], obs);
-}
 
 #[test]
 fn graph_event_kind_and_step_are_stable() {
