@@ -87,7 +87,6 @@ use crate::nodes::{NodeContext, NodeExecutor, NodeOutput};
 #[derive(Debug, Default, Clone)]
 pub struct SubWorkflowNode;
 
-/// Reads the current nesting depth from the run metadata (`0` at the top level).
 /// Separates a `sub_workflow` node's id from a gate id inside its child.
 ///
 /// Parent and child are separate graphs with separate id spaces, so a child's
@@ -142,6 +141,7 @@ fn seed_child_approvals(trigger: Value, approvals: Vec<String>) -> Value {
     trigger
 }
 
+/// Reads the current nesting depth from the run metadata (`0` at the top level).
 fn current_depth(run: &Value) -> u64 {
     run.get("sub_workflow_depth")
         .and_then(Value::as_u64)
@@ -276,6 +276,22 @@ impl NodeExecutor for SubWorkflowNode {
     }
 }
 
+/// What one child run produced, from the parent node's point of view.
+///
+/// Three outcomes rather than two: a child can finish, wind down because the
+/// parent cancelled, or **pause** at an approval gate. The last one is not a
+/// failure and not a result — it has to travel up as its own case so the parent
+/// node can pause too, rather than being flattened into an item or an error.
+enum ChildOutcome {
+    /// The child ran to completion; its final state is this item.
+    Finished(crate::data::Item),
+    /// The parent cancelled mid-child. A clean cooperative wind-down.
+    Cancelled,
+    /// The child stopped at one or more approval gates, named here with the
+    /// parent-facing namespace already applied.
+    Paused(Vec<String>),
+}
+
 /// Resolves this node's child graph and runs it once, returning the child's
 /// final run state as a single [`Item`](crate::data::Item).
 ///
@@ -292,7 +308,7 @@ async fn run_child(
     ctx: &NodeContext<'_>,
     scope: &Value,
     child_input: &[crate::data::Item],
-) -> Result<Option<crate::data::Item>> {
+) -> Result<ChildOutcome> {
     // The inline `workflow` graph carries its *own* `=`-expressions, scoped
     // to the CHILD run — it must pass through untouched. Only the fields the
     // sub_workflow node itself reads (here `workflow_id`) are resolved
