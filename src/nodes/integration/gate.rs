@@ -301,7 +301,7 @@ fn emit_items(mut results: Vec<(usize, Value)>, awaiting: &[Awaited]) -> Vec<Ite
     results.sort_by_key(|(index, _)| *index);
     results
         .into_iter()
-        .map(|(index, value)| Item::new(value).with_paired_item(index))
+        .map(|(index, value)| Item::new(value).paired_with(index))
         .collect()
 }
 
