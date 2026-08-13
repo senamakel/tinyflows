@@ -8,7 +8,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::workflow::WorkflowId;
-use crate::store::types::diagnosis::Diagnosis;
+use crate::diagnostics::Diagnosis;
 
 /// Maximum serialized bytes retained for one step input or output.
 pub(crate) const MAX_EVIDENCE_BYTES: usize = 64 * 1024;
