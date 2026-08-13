@@ -111,19 +111,12 @@ pub async fn run_resumable(
     let observer = Arc::new(crate::observability::NoopObserver) as Arc<dyn RunObserver>;
     // Default (non-injectable) path: a process-local in-memory checkpointer,
     // kept alive on the returned `ResumableRun`, keyed by the trigger id.
-    let checkpointer: Arc<dyn Checkpointer<Value>> =
-        Arc::new(InMemoryCheckpointer::<Value>::default());
-    let thread_id = default_thread_id(workflow)?;
     let (graph, thread_id, outcome, _run_ids) = build_and_run(
         workflow,
         input,
         capabilities,
         &observer,
-        checkpointer,
-        thread_id,
-        None,
-        None,
-        CancellationToken::new(),
+        RunConfig::new(workflow)?,
     )
     .await?;
     Ok(ResumableRun {
@@ -169,11 +162,7 @@ pub async fn run_with_checkpointer(
         input,
         capabilities,
         &observer,
-        checkpointer,
-        thread_id.to_string(),
-        None,
-        None,
-        CancellationToken::new(),
+        RunConfig::new(workflow)?.with_checkpointer(checkpointer, thread_id),
     )
     .await?;
     Ok(outcome)
@@ -291,11 +280,9 @@ pub async fn run_with_checkpointer_journaled_observed(
         input,
         capabilities,
         observer,
-        checkpointer,
-        thread_id.to_string(),
-        Some(journal),
-        None,
-        CancellationToken::new(),
+        RunConfig::new(workflow)?
+            .with_checkpointer(checkpointer, thread_id)
+            .with_journal(journal),
     )
     .await?;
     tracing::debug!(
@@ -409,15 +396,17 @@ async fn resume_with_checkpointer_inner(
     // `observer.on_step_finish` for every node that runs after the interrupt
     // boundary, so a host observer sees the resumed steps live.
     let terminal_error: Arc<Mutex<Option<EngineError>>> = Arc::new(Mutex::new(None));
+    let mut config = RunConfig::new(workflow)?.with_checkpointer(checkpointer, thread_id);
+    if let Some(journal) = journal {
+        config = config.with_journal(journal);
+    }
     let (compiled, _trigger_id) = build_graph(
         workflow,
         capabilities,
         observer,
         &steps,
-        checkpointer,
-        journal,
-        CancellationToken::new(),
         &terminal_error,
+        &config,
     )?;
 
     // Approvals recorded for downstream visibility. On resume the interrupted
