@@ -135,6 +135,15 @@ pub struct RunInput {
     /// Caller-supplied values for the workflow's declared inputs, by name.
     /// Validated by [`crate::model::resolve_inputs`] before the run starts.
     pub inputs: Map<String, Value>,
+    /// Gate ids pre-approved for this run.
+    ///
+    /// An explicit channel, separate from the trigger payload. Approvals can
+    /// also be written as `trigger.approvals` when the trigger happens to be an
+    /// object, and that remains supported — but a run whose trigger is an array
+    /// or a scalar (a `sub_workflow` child is seeded with its input *items*, an
+    /// array) has nowhere to put them, so smuggling approvals through the
+    /// payload cannot work in general.
+    pub approvals: Vec<String>,
 }
 
 impl RunInput {
@@ -144,6 +153,7 @@ impl RunInput {
         Self {
             trigger,
             inputs: Map::new(),
+            approvals: Vec::new(),
         }
     }
 
@@ -151,6 +161,13 @@ impl RunInput {
     #[must_use]
     pub fn with_inputs(mut self, inputs: Map<String, Value>) -> Self {
         self.inputs = inputs;
+        self
+    }
+
+    /// Pre-approves the named gates for this run (see [`Self::approvals`]).
+    #[must_use]
+    pub fn with_approvals(mut self, approvals: Vec<String>) -> Self {
+        self.approvals = approvals;
         self
     }
 }
@@ -1198,14 +1215,21 @@ fn build_graph(
                     }
                     let approved = state
                         .get("run")
-                        .and_then(|run| run.get("trigger"))
-                        .and_then(|trigger| trigger.get("approvals"))
-                        .and_then(Value::as_array)
-                        .is_some_and(|approvals| {
-                            approvals
-                                .iter()
-                                .filter_map(Value::as_str)
-                                .any(|id| id == node.id)
+                        .is_some_and(|run| {
+                            // Two places, because approvals reach a run two
+                            // ways: inside an object trigger payload (the
+                            // original spelling, kept working) and through
+                            // `RunInput::with_approvals`, which is the only one
+                            // available when the trigger is not an object.
+                            let listed = |approvals: Option<&Value>| {
+                                approvals.and_then(Value::as_array).is_some_and(|ids| {
+                                    ids.iter().filter_map(Value::as_str).any(|id| id == node.id)
+                                })
+                            };
+                            listed(run.get("approvals"))
+                                || listed(
+                                    run.get("trigger").and_then(|trigger| trigger.get("approvals")),
+                                )
                         });
                     // `approved_by_resume` is set when a checkpointed resume
                     // delivered an approval (bare `true`, or this gate listed in
@@ -1892,7 +1916,8 @@ async fn build_and_run(
     // declaration, defaults already applied. `expr_scope_for` lifts it to the
     // top-level `inputs` scope key, so node config addresses it as
     // `=inputs.<name>` (and jq programs walking `run` still see it too).
-    let mut initial = json!({ "run": { "trigger": trigger, "inputs": resolved_inputs } });
+    let mut initial =
+        json!({ "run": { "trigger": trigger, "inputs": resolved_inputs, "approvals": approvals } });
     merge(&mut initial, seed_items);
     // The nesting cap for `sub_workflow` chains, read off the trigger config
     // like every other run-level knob and seeded into the run state so the
