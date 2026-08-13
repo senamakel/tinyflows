@@ -1461,27 +1461,75 @@ where
         // which pending future completed; a parallel index Vec maps it back to
         // the branch's active-set position, so results are re-ordered into
         // deterministic order for the fold below.
-        let results = match self.max_concurrency {
-            Some(limit) if limit < futures.len() => {
+        // A per-node cap binds only when this step activates one node more times
+        // than its cap allows — which needs `Send` fanout, since plain activations
+        // are deduplicated by node.
+        let node_caps_bind = !self.node_concurrency.is_empty() && {
+            let mut counts: HashMap<&NodeId, usize> = HashMap::new();
+            active.iter().any(|activation| {
+                let seen = counts.entry(&activation.node).or_default();
+                *seen += 1;
+                self.node_concurrency
+                    .get(&activation.node)
+                    .is_some_and(|cap| *seen > *cap)
+            })
+        };
+        let global_binds = self.max_concurrency.is_some_and(|limit| limit < futures.len());
+
+        let results = match (global_binds || node_caps_bind).then_some(()) {
+            Some(()) => {
+                // Admission is governed by two independent ceilings: the
+                // graph-wide in-flight count, and how many activations of one
+                // *node* may be in flight. A branch starts only when both allow
+                // it, so throttling a wide fanout of one node does not also
+                // throttle the unrelated branches sharing its step.
+                let limit = self.max_concurrency.unwrap_or(futures.len()).max(1);
                 let total = futures.len();
                 let mut slots: Vec<Option<Result<NodeResult<Update>>>> =
                     (0..total).map(|_| None).collect();
-                let mut source = futures.into_iter().enumerate();
+                // Queued branches, in active-set order, each tagged with its node
+                // so admission can consult that node's cap.
+                let mut queue: std::collections::VecDeque<(usize, _)> =
+                    futures.into_iter().enumerate().collect();
+                let mut in_flight_per_node: HashMap<NodeId, usize> = HashMap::new();
                 let mut running = Vec::with_capacity(limit);
                 let mut running_index = Vec::with_capacity(limit);
-                for (index, fut) in source.by_ref().take(limit) {
-                    running.push(fut);
-                    running_index.push(index);
+
+                // Admits as many queued branches as both ceilings currently
+                // allow, preserving active-set order among those admitted.
+                macro_rules! admit {
+                    () => {
+                        while running.len() < limit {
+                            let Some(position) = queue.iter().position(|(index, _)| {
+                                let node = &active[*index].node;
+                                self.node_concurrency.get(node).is_none_or(|cap| {
+                                    in_flight_per_node.get(node).copied().unwrap_or(0) < *cap
+                                })
+                            }) else {
+                                // Every queued branch is blocked by its node's
+                                // cap; the next completion frees one.
+                                break;
+                            };
+                            let (index, fut) = queue.remove(position).expect("position is in range");
+                            *in_flight_per_node
+                                .entry(active[index].node.clone())
+                                .or_default() += 1;
+                            running.push(fut);
+                            running_index.push(index);
+                        }
+                    };
                 }
+
+                admit!();
                 while !running.is_empty() {
                     let (result, completed, rest) = futures_util::future::select_all(running).await;
                     let index = running_index.remove(completed);
+                    if let Some(count) = in_flight_per_node.get_mut(&active[index].node) {
+                        *count = count.saturating_sub(1);
+                    }
                     slots[index] = Some(result);
                     running = rest;
-                    if let Some((index, fut)) = source.next() {
-                        running.push(fut);
-                        running_index.push(index);
-                    }
+                    admit!();
                 }
                 slots
                     .into_iter()
