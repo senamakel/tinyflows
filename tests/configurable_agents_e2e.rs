@@ -14,7 +14,7 @@ use tinyflows::caps::mock::{
     MockAgentHarness, MockAgentRunner, mock_capabilities, mock_capabilities_with_agent,
 };
 use tinyflows::compiler::compile;
-use tinyflows::engine::run;
+use tinyflows::engine::{RunInput, run};
 use tinyflows::model::WorkflowGraph;
 
 /// The reference workflow: a graph-declared agent type, narrowed by the node
@@ -68,9 +68,13 @@ fn parse(graph: Value) -> WorkflowGraph {
 /// Runs `graph` with `repo` supplied, returning the `triage` node's output item.
 async fn run_triage(graph: &WorkflowGraph, caps: &tinyflows::caps::Capabilities) -> Value {
     let compiled = compile(graph).expect("compile");
-    let outcome = run(&compiled, json!({ "inputs": { "repo": "acme/api" } }), caps)
-        .await
-        .expect("run");
+    let input = RunInput::new(Value::Null).with_inputs(
+        json!({ "repo": "acme/api" })
+            .as_object()
+            .expect("inputs object")
+            .clone(),
+    );
+    let outcome = run(&compiled, input, caps).await.expect("run");
     outcome.output["nodes"]["triage"]["items"][0]["json"].clone()
 }
 
