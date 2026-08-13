@@ -141,6 +141,8 @@ fn approvals_for_child(ctx: &NodeContext<'_>) -> Vec<String> {
     }
     approved.sort();
     approved.dedup();
+    eprintln!("DBG approvals_for_child node={} resume={:?} trigger={:?} -> {:?}",
+        ctx.node.id, ctx.resume, ctx.run.get("trigger"), approved);
     approved
 }
 
