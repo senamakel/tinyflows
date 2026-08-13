@@ -1736,7 +1736,8 @@ fn build_graph(
                                     for target in &plain_targets {
                                         let envelope = lane_envelope(
                                             &node.id, index, count, lane_items,
-                                        )?;
+                                        )
+                                        .unwrap_or(Value::Null);
                                         routed.push(RouteTarget::Send(
                                             crate::graph::Send::new(target.clone(), envelope),
                                         ));
