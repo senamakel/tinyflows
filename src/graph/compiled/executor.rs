@@ -1550,15 +1550,15 @@ where
     fn partition_completed(
         active: &[Activation],
         goto_map: &HashMap<usize, Vec<RouteTarget>>,
-        interrupted: &HashSet<usize>,
+        completed_indices: &[usize],
     ) -> (Vec<Activation>, HashMap<usize, Vec<RouteTarget>>) {
-        let mut completed = Vec::with_capacity(active.len());
+        let mut completed = Vec::with_capacity(completed_indices.len());
         let mut routing = HashMap::new();
-        for (index, activation) in active.iter().enumerate() {
-            if interrupted.contains(&index) {
+        for index in completed_indices {
+            let Some(activation) = active.get(*index) else {
                 continue;
-            }
-            if let Some(targets) = goto_map.get(&index) {
+            };
+            if let Some(targets) = goto_map.get(index) {
                 routing.insert(completed.len(), targets.clone());
             }
             completed.push(activation.clone());
