@@ -833,7 +833,7 @@ where
                 status.status = ExecutionStatus::Interrupted;
                 status.current_step = steps;
                 status.active_nodes = pending_nodes;
-                status.pending_interrupts = vec![interrupt_id];
+                status.pending_interrupts = interrupt_ids;
                 status.checkpoint_id = checkpoint_id.clone();
                 self.save_status(status.clone()).await;
 
@@ -846,7 +846,7 @@ where
                     child_runs: all_child_runs,
                     visited,
                     steps,
-                    interrupts: vec![emitted],
+                    interrupts: emitted_interrupts,
                     status,
                     checkpoint_id,
                 });
