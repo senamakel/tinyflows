@@ -863,24 +863,19 @@ fn validate_loops(graph: &WorkflowGraph, errors: &mut Vec<ValidationError>) {
         }
     }
 
-    for head in &heads {
-        // A loop head that is also a fan-in cannot iterate: its forward
-        // predecessors are lowered as waiting edges, and that barrier is
-        // per-node, so it swallows the re-entry the back-edge delivers. The fix
-        // is to join *before* the head — a `merge` outside the cycle — which
-        // leaves the head with a single forward predecessor.
-        let forward_predecessors = graph
-            .edges
-            .iter()
-            .filter(|e| {
-                e.to_node == **head
-                    && !loop_edges.contains(&(e.from_node.clone(), e.to_node.clone()))
-            })
-            .count();
-        if forward_predecessors > 1 {
-            errors.push(ValidationError::IllegalCycle((*head).to_string()));
-        }
-    }
+    // A loop head that is *also* a fan-in used to be refused here.
+    //
+    // It was refused because the barrier gate is keyed on the target node
+    // rather than on the edge, so the re-entry a back-edge delivered was tested
+    // against the head's forward predecessors, failed, and was dropped — the
+    // loop ran once and stopped. The gate now ignores arrivals from
+    // predecessors outside the barrier's required set (see
+    // `graph::compiled::routing::route_completed`), and a back-edge's source is
+    // never in that set, so the re-entry lands and the loop iterates.
+    //
+    // Joining before the head — a `merge` outside the cycle — is still the
+    // clearer way to write it, and is what the catalog recommends. It is no
+    // longer the only way that works.
 
     // An unbounded cycle. Without a `loop` node to count passes, the only thing
     // standing between this graph and a run that spins until the host's wall
