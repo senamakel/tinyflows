@@ -93,7 +93,18 @@ impl NodeExecutor for AgentNode {
 /// registered agent kind), the optional tool sub-port, the optional
 /// output-parser sub-port, and finally the stable `{ json, text, raw }`
 /// envelope. Returns the emitted [`Item`] (without pairing — the caller sets it).
-async fn run_turn(ctx: &NodeContext<'_>, cfg: &Value) -> Result<Item> {
+async fn run_turn(ctx: &NodeContext<'_>, cfg: &Value, scope: &Value) -> Result<Item> {
+    run_turn_indexed(ctx, cfg, scope, None).await
+}
+
+/// [`run_turn`], told which input item it is running for under `per_item`
+/// execution, so the harness can attribute the run.
+async fn run_turn_indexed(
+    ctx: &NodeContext<'_>,
+    cfg: &Value,
+    scope: &Value,
+    item_index: Option<usize>,
+) -> Result<Item> {
     let conn = cfg.get("connection_ref").and_then(Value::as_str);
 
     // Agent-kind selection: a trusted `agent_ref` in config routes this node
@@ -102,23 +113,22 @@ async fn run_turn(ctx: &NodeContext<'_>, cfg: &Value) -> Result<Item> {
     // comes from resolved node config — never from model output — so it can't
     // be steered by prompt injection. Falls back to `LlmProvider` when no
     // `agent_ref` is set or the host wired no agent registry.
-    let agent_ref = cfg
-        .get("agent_ref")
-        .and_then(Value::as_str)
-        .filter(|s| !s.is_empty());
+    let agent_ref = super::agent_request::agent_ref_of(cfg);
     let via_agent_kind = agent_ref.is_some() && ctx.caps.agent.is_some();
-    let response = match (agent_ref, ctx.caps.agent.as_ref()) {
-        (Some(agent_ref), Some(runner)) => {
-            tracing::debug!(agent_ref, "agent node: running registered agent kind");
-            runner.run_agent(agent_ref, cfg.clone(), conn).await?
-        }
-        _ => {
-            // The node config *is* the completion request; when a `tools`
-            // sub-port is configured its descriptors ride along so the model
-            // can elect to call one.
-            ctx.caps.llm.complete(cfg.clone(), conn).await?
-        }
-    };
+
+    if let (Some(agent_ref), Some(runner)) = (agent_ref, ctx.caps.agent.as_ref()) {
+        tracing::debug!(agent_ref, "agent node: running registered agent kind");
+        let request =
+            super::agent_request::assemble(ctx, cfg, agent_ref, scope, item_index).await?;
+        let outcome = runner.run(request).await?;
+        return finish_agent_run(ctx, cfg, conn, agent_ref, outcome).await;
+    }
+
+    // Degraded path: no agent kind selected, or no harness wired. The node
+    // config *is* the completion request, exactly as it has always been — when
+    // a `tools` sub-port is configured its descriptors ride along so the model
+    // can elect to call one.
+    let response = ctx.caps.llm.complete(cfg.clone(), conn).await?;
 
     // `text`/`raw` are derived from the untouched completion; `value` is the
     // structured payload we thread the sub-ports (tool hop, output parser)
