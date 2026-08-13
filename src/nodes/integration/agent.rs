@@ -131,7 +131,30 @@ async fn run_turn_indexed(
     // config *is* the completion request, exactly as it has always been — when
     // a `tools` sub-port is configured its descriptors ride along so the model
     // can elect to call one.
-    let response = ctx.caps.llm.complete(cfg.clone(), conn).await?;
+    //
+    // The one addition: when the author declared `context`, its sources are
+    // resolved and the key is replaced with the resulting blocks, so declared
+    // context still reaches the model on a host with no `AgentRunner`. Nodes
+    // that declare no context are untouched, so an existing graph's request is
+    // byte-identical to what it has always been.
+    let request = match cfg.get("context") {
+        Some(raw) if !raw.is_null() => {
+            let sources: Vec<crate::model::ContextSource> = serde_json::from_value(raw.clone())
+                .map_err(|e| {
+                    crate::error::EngineError::Capability(format!(
+                        "agent node {}: invalid `context`: {e}",
+                        ctx.node.id
+                    ))
+                })?;
+            let identity = super::agent_request::identity_of(ctx, item_index);
+            let blocks = super::agent_request::resolve_context(ctx, &sources, &identity).await?;
+            let mut request = cfg.clone();
+            request["context"] = serde_json::to_value(blocks).unwrap_or(Value::Null);
+            request
+        }
+        _ => cfg.clone(),
+    };
+    let response = ctx.caps.llm.complete(request, conn).await?;
 
     // `text`/`raw` are derived from the untouched completion; `value` is the
     // structured payload we thread the sub-ports (tool hop, output parser)
