@@ -372,6 +372,34 @@ impl NodeOutput {
         self.meta = Some(meta);
         self
     }
+
+    /// Attaches a control request to this output (see [`NodeOutput::control`]).
+    #[must_use]
+    pub fn with_control(mut self, control: NodeControl) -> Self {
+        self.control = Some(control);
+        self
+    }
+
+    /// Builds an output that pauses the run, surfacing `id` on its pending set.
+    ///
+    /// Carries no items: an interrupt discards this activation's update, so
+    /// anything set here would be thrown away.
+    #[must_use]
+    pub fn interrupt(id: impl Into<String>, payload: Value) -> Self {
+        Self::empty().with_control(NodeControl::Interrupt {
+            id: id.into(),
+            payload,
+        })
+    }
+
+    /// Builds an output that commits `meta` and asks to be re-run after
+    /// `after_ms` milliseconds.
+    #[must_use]
+    pub fn reenter_after(after_ms: u64, meta: Value) -> Self {
+        Self::empty()
+            .with_meta(meta)
+            .with_control(NodeControl::Reenter { after_ms })
+    }
 }
 
 /// Executes one node kind.
