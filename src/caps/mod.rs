@@ -11,6 +11,7 @@ pub mod host;
 #[cfg(any(test, feature = "mock"))]
 pub mod mock;
 pub mod shell;
+pub mod tasks;
 
 use std::sync::Arc;
 
@@ -24,6 +25,7 @@ pub use self::agent::{
     AgentRunner, AgentUsage, ContextBlock, StopReason, ToolDescriptor,
 };
 pub use self::shell::{ShellInterpreter, ShellOutcome, ShellRequest, ShellRunner, ShellScript};
+pub use self::tasks::{TaskRunner, TaskSpec, TaskState, TokioTaskRunner};
 
 /// A chat / LLM provider used by `agent` and `output_parser` nodes.
 #[async_trait]
@@ -235,6 +237,16 @@ pub struct Capabilities {
     /// read/write memory call). See [`MemoryProvider`] for the `scope`
     /// contract and the `remember`/`forget` write restriction.
     pub memory: Option<Arc<dyn MemoryProvider>>,
+    /// Runner for background work a `spawn` node starts and a `gate` node
+    /// collects.
+    ///
+    /// Defaults to [`TokioTaskRunner`], so spawn/gate genuinely overlap without
+    /// a host wiring anything. `None` makes `spawn` run its work **inline** and
+    /// hand back a ticket that is already settled: such a graph still produces
+    /// the right answer, it just loses the overlap. That is a performance cliff
+    /// rather than a correctness one, which is exactly why it is worth saying
+    /// out loud here and in the node catalog.
+    pub tasks: Option<Arc<dyn TaskRunner>>,
 }
 
 #[cfg(test)]
