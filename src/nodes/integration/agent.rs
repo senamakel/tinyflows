@@ -70,11 +70,13 @@ impl NodeExecutor for AgentNode {
                 ctx.observer,
                 opts,
                 move |index| async move {
-                    let (cfg, diags) = crate::nodes::resolve_config_traced_for_item(
-                        ctx,
-                        ctx.input[index].json.clone(),
-                    );
-                    let item = run_turn(ctx, &cfg).await?;
+                    let item_json = ctx.input[index].json.clone();
+                    let (cfg, diags) =
+                        crate::nodes::resolve_config_traced_for_item(ctx, item_json.clone());
+                    // The same scope the config was resolved against, so an
+                    // agent definition's own `=`-expressions see this item.
+                    let scope = crate::nodes::expr_scope_for(ctx, item_json);
+                    let item = run_turn_indexed(ctx, &cfg, &scope, Some(index)).await?;
                     Ok((item, diags))
                 },
             )
@@ -84,7 +86,8 @@ impl NodeExecutor for AgentNode {
 
         // Single turn against the first-item scope (or empty input).
         let (cfg, diagnostics) = crate::nodes::resolve_config_traced(&ctx);
-        let item = run_turn(&ctx, &cfg).await?;
+        let scope = crate::nodes::expr_scope(&ctx);
+        let item = run_turn(&ctx, &cfg, &scope).await?;
         Ok(NodeOutput::main(vec![item]).with_diagnostics(diagnostics))
     }
 }
