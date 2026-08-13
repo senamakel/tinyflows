@@ -2640,8 +2640,11 @@ mod loop_tests {
                 vec![("a".to_string(), "host_side".to_string())]
             );
 
-            let known = graph(vec![AgentDefinition::new("host_side")], json!({ "agent_ref": "host_side" }));
-            assert!(unresolved_agent_refs(&known).is_empty());
+            let declared = graph(
+                vec![AgentDefinition::new("host_side")],
+                json!({ "agent_ref": "host_side" }),
+            );
+            assert!(unresolved_agent_refs(&declared).is_empty());
         }
 
         #[test]
