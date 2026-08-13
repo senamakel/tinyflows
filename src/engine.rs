@@ -4593,17 +4593,23 @@ mod tests {
         let compiled = compile(&graph).expect("compile");
         let caps = mock_capabilities();
 
-        // The engine serializes interrupts across the fan-out: g1 is the first
-        // gate to pend; g2 pends only once g1 is resolved. The invariant this test
-        // guards is that approving g1 must NOT also approve g2 — a bare `true`
-        // resume value would blanket-approve every interrupted gate.
+        // Both gates pend at once. They run concurrently in the same superstep,
+        // and the whole active set is folded before the run pauses, so there is
+        // no reason to surface one and hide the other behind a resume round-trip
+        // — a host can present both for approval immediately.
+        //
+        // The invariant this test guards is unchanged by that: approving g1 must
+        // NOT also approve g2. A bare `true` resume value would blanket-approve
+        // every interrupted gate, which is precisely what naming them prevents.
         let rr = run_resumable(&compiled, json!({}), &caps)
             .await
             .expect("run_resumable");
+        let mut pending = rr.outcome().pending_approvals.clone();
+        pending.sort();
         assert_eq!(
-            rr.outcome().pending_approvals,
-            vec!["g1".to_string()],
-            "g1 is the first parallel gate to pend"
+            pending,
+            vec!["g1".to_string(), "g2".to_string()],
+            "both parallel gates pend together"
         );
 
         let after_g1 = rr.resume(vec!["g1".to_string()]).await.expect("resume g1");
