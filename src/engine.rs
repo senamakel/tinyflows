@@ -1415,7 +1415,7 @@ fn build_graph(
                             // edge falls back to a plain update the conditional-edge
                             // router consumes.
                             return Ok(emit(
-                                items_update(&node.id, &[item], Some("error"))?,
+                                items_update(&node.id, std::slice::from_ref(&item), Some("error"))?,
                                 Some("error"),
                                 std::slice::from_ref(&item),
                             ));
