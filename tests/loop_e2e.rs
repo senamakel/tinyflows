@@ -427,19 +427,20 @@ async fn max_node_visits_bounds_a_cycle_and_names_the_node() {
     );
 }
 
-/// A diamond **inside** the loop body iterates: the body fans out into two arms
-/// and rejoins at a `merge`, and that merge fires once per pass.
+/// A diamond **inside** the loop body is refused, and this test records why —
+/// because the obvious reading ("barrier arrivals refill, so it should just
+/// work") is correct about the barrier and still wrong about the outcome.
 ///
-/// This used to be refused outright as an illegal cycle. It is legal because
-/// barrier arrivals refill — the arrival set is cleared when the barrier fires,
-/// so it re-arms — and both arms are themselves on the cycle, so both re-run on
-/// every pass and complete the set every pass.
-///
-/// The iteration count is the assertion that matters. A merge that fired only
-/// on the first pass would still let the run finish, so only the count
-/// separates a working diamond from one that quietly stalls the loop.
+/// The barrier does re-arm. What breaks is barrier *relief*: the arms are
+/// reachable only through the head's `body` port, so they are classified as
+/// conditional predecessors and each gets a relief registration. Relief then
+/// injects phantom arrivals and the merge fires before its arms have run —
+/// the observed activation order is `l, apex, join, arm_a, arm_b, …`, with the
+/// join completing on the previous pass's data. Silently wrong output is worse
+/// than a refused graph, so the refusal stays until relief can be scoped to a
+/// single pass.
 #[tokio::test]
-async fn a_diamond_inside_the_loop_body_iterates() {
+async fn a_diamond_inside_the_loop_body_is_refused() {
     let graph = WorkflowGraph {
         name: "diamond_in_loop".to_string(),
         nodes: vec![
@@ -458,12 +459,11 @@ async fn a_diamond_inside_the_loop_body_iterates() {
         edges: vec![
             edge("t", "l"),
             port_edge("l", "body", "apex"),
-            // Both arms leave `apex` on the same port: a parallel fan-out.
             edge("apex", "arm_a"),
             edge("apex", "arm_b"),
             edge("arm_a", "join"),
             edge("arm_b", "join"),
-            edge("join", "l"), // the back-edge closing the cycle
+            edge("join", "l"),
             port_edge("l", "done", "out"),
         ],
         ..Default::default()
@@ -471,18 +471,10 @@ async fn a_diamond_inside_the_loop_body_iterates() {
 
     let errors = tinyflows::validate::validate_all(&graph);
     assert!(
-        errors.is_empty(),
-        "a diamond whose arms are both on the cycle is legal, got: {errors:?}"
-    );
-
-    let outcome = run_guarded(&graph)
-        .await
-        .expect("the loop should iterate rather than deadlock at the merge");
-
-    assert_eq!(
-        outcome.output["nodes"]["l"]["iteration"], 3,
-        "every pass should complete the merge barrier; a lower count means the \
-         barrier stopped re-arming after the first pass"
+        errors
+            .iter()
+            .any(|e| matches!(e, ValidationError::IllegalCycle(id) if id == "join")),
+        "a fan-in merge inside the loop body should be refused, got: {errors:?}"
     );
 }
 
