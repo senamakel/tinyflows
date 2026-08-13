@@ -39,7 +39,11 @@ fn node(id: &str, kind: NodeKind, config: Value) -> Node {
 }
 
 fn trigger(id: &str) -> Node {
-    node(id, NodeKind::Trigger, json!({ "kind": TriggerKind::Manual }))
+    node(
+        id,
+        NodeKind::Trigger,
+        json!({ "kind": TriggerKind::Manual }),
+    )
 }
 
 fn edge(from_node: &str, to_node: &str) -> Edge {
@@ -77,10 +81,11 @@ struct Steps(Mutex<Vec<(String, String, Value)>>);
 impl RunObserver for Steps {
     fn on_step_finish(&self, step: &ExecutionStep) {
         let status = format!("{:?}", step.status);
-        self.0
-            .lock()
-            .expect("steps lock")
-            .push((step.node_id.clone(), status, step.output.clone()));
+        self.0.lock().expect("steps lock").push((
+            step.node_id.clone(),
+            status,
+            step.output.clone(),
+        ));
     }
 }
 

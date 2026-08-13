@@ -58,9 +58,9 @@ use crate::caps::Capabilities;
 use crate::compiler::CompiledWorkflow;
 use crate::data::Item;
 use crate::error::{EngineError, Result, ValidationError};
+use crate::interception::{StepAction, StepFrame, StepInterceptor, StepPhase};
 use crate::model::NodeKind;
 use crate::nodes::{NodeContext, executor_for};
-use crate::interception::{StepAction, StepFrame, StepInterceptor, StepPhase};
 use crate::observability::{ExecutionStep, Run, RunObserver, RunStatus, StepStatus};
 
 /// Source of process-local run ids. Monotonic and cheap; deliberately not

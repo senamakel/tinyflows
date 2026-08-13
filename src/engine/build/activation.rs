@@ -579,7 +579,9 @@ impl HandlerData {
                 // what the node actually saw.
                 StepAction::Continue { .. } => {}
                 StepAction::Replace { items, port } => {
-                    let mut replaced = output.take().unwrap_or_else(crate::nodes::NodeOutput::empty);
+                    let mut replaced = output
+                        .take()
+                        .unwrap_or_else(crate::nodes::NodeOutput::empty);
                     replaced.items = items;
                     replaced.port = port;
                     // A control request belonged to the output the node really
@@ -590,7 +592,9 @@ impl HandlerData {
                     last_err = None;
                 }
                 StepAction::Skip => {
-                    let mut skipped = output.take().unwrap_or_else(crate::nodes::NodeOutput::empty);
+                    let mut skipped = output
+                        .take()
+                        .unwrap_or_else(crate::nodes::NodeOutput::empty);
                     skipped.items.clear();
                     skipped.control = None;
                     output = Some(skipped);
