@@ -1539,6 +1539,7 @@ where
                 visited,
             ) {
                 interrupts.push(found);
+                break;
             } else {
                 completed.push(index);
             }
