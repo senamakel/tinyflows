@@ -424,6 +424,7 @@ pub fn validate_all(graph: &WorkflowGraph) -> Vec<ValidationError> {
     }
 
     validate_loops(graph, &mut errors);
+    validate_scatter_regions(graph, &mut errors);
     // Declared-input checks. These are author-time mistakes that would otherwise
     // surface as a confusing runtime `null`: a name that `=inputs.<name>` cannot
     // address, two declarations racing for the same key, a default the input's
@@ -973,6 +974,163 @@ fn validate_loops(graph: &WorkflowGraph, errors: &mut Vec<ValidationError>) {
             }
         }
     }
+}
+
+/// Checks the structural rules a `scatter`/`gather` region has to satisfy.
+///
+/// A lane is created by routing, not by an edge, so most of what makes a region
+/// work cannot be seen in the graph at run time — the engine just propagates a
+/// lane envelope to every successor that is not a gather. These rules are what
+/// keep that propagation *total*: if a lane can leak out of the region, or end
+/// somewhere that is not a gather, the envelope is silently dropped and the
+/// activation writes the node's top-level slot as though it were not in a lane
+/// at all. That is a wrong answer rather than a failure, so it is refused here.
+fn validate_scatter_regions(graph: &WorkflowGraph, errors: &mut Vec<ValidationError>) {
+    let scatters: Vec<&str> = graph
+        .nodes
+        .iter()
+        .filter(|n| n.kind == NodeKind::Scatter)
+        .map(|n| n.id.as_str())
+        .collect();
+    let gathers: HashSet<&str> = graph
+        .nodes
+        .iter()
+        .filter(|n| n.kind == NodeKind::Gather)
+        .map(|n| n.id.as_str())
+        .collect();
+
+    // A gather with no scatter waits on lanes nobody will ever open.
+    for gather in &gathers {
+        let reached_by_a_scatter = scatters
+            .iter()
+            .any(|scatter| path_exists(graph, scatter, gather));
+        if !reached_by_a_scatter {
+            errors.push(ValidationError::InvalidNodeConfig {
+                node: (*gather).to_string(),
+                reason: "gather is not downstream of any `scatter`, so no lane can ever reach \
+                         it and the run would wait until its poll budget ran out"
+                    .to_string(),
+            });
+        }
+    }
+
+    for scatter in &scatters {
+        // Every path out of a scatter has to end at a gather. A lane that runs
+        // off the end of the graph is work whose results nothing collects.
+        let members = region_members(graph, scatter, &gathers);
+        if members.is_empty() {
+            errors.push(ValidationError::InvalidNodeConfig {
+                node: (*scatter).to_string(),
+                reason: "scatter has no `gather` downstream; every lane it opens would run with \
+                         nothing to collect it. Wire the end of the lane body to a `gather`"
+                    .to_string(),
+            });
+            continue;
+        }
+
+        for member in &members {
+            // A nested scatter needs composed lane ids and a gather that knows
+            // which level it closes. Refused rather than mis-collected.
+            if scatters.contains(member) {
+                errors.push(ValidationError::InvalidNodeConfig {
+                    node: (*member).to_string(),
+                    reason: format!(
+                        "nested `scatter` inside the region opened by {scatter:?} is not \
+                         supported"
+                    ),
+                });
+            }
+            // A loop head inside a lane: re-entry detection keys on the node's
+            // top-level slot, which a lane activation deliberately never writes.
+            if graph
+                .nodes
+                .iter()
+                .any(|n| n.id == **member && n.kind == NodeKind::Loop)
+            {
+                errors.push(ValidationError::InvalidNodeConfig {
+                    node: (*member).to_string(),
+                    reason: format!(
+                        "`loop` inside the lane body of {scatter:?} is not supported: loop \
+                         re-entry is tracked in the node's own slot, which a lane does not write"
+                    ),
+                });
+            }
+            // An approval gate inside a lane: the resume map is keyed by node
+            // id, so N lanes of one node would share a single approval.
+            if graph.nodes.iter().any(|n| {
+                n.id == **member
+                    && n.config
+                        .get("requires_approval")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false)
+            }) {
+                errors.push(ValidationError::InvalidNodeConfig {
+                    node: (*member).to_string(),
+                    reason: format!(
+                        "`requires_approval` inside the lane body of {scatter:?} is not \
+                         supported: a resume is addressed by node id, so every lane would share \
+                         one approval"
+                    ),
+                });
+            }
+            // A lane leaking out of the region: an edge from a member to a node
+            // that is neither a member nor the gather carries the lane envelope
+            // somewhere that will never be collected.
+            for edge in graph.edges.iter().filter(|e| e.from_node == **member) {
+                let target = edge.to_node.as_str();
+                if !members.contains(&target) && !gathers.contains(&target) {
+                    errors.push(ValidationError::InvalidNodeConfig {
+                        node: (*member).to_string(),
+                        reason: format!(
+                            "edge to {target:?} leaves the lane region opened by {scatter:?} \
+                             without passing through a `gather`; the lane's results would be \
+                             stranded. Route it through the gather instead"
+                        ),
+                    });
+                }
+            }
+        }
+    }
+}
+
+/// The nodes strictly between `scatter` and the gathers it reaches.
+///
+/// Forward reachability from the scatter, stopping at any gather — the gather
+/// itself is the boundary, not a member, because it is the one node a lane
+/// reaches as a plain activation rather than as a lane.
+fn region_members<'a>(
+    graph: &'a WorkflowGraph,
+    scatter: &str,
+    gathers: &HashSet<&str>,
+) -> HashSet<&'a str> {
+    let mut members = HashSet::new();
+    let mut reached_a_gather = false;
+    let mut stack: Vec<&str> = graph
+        .edges
+        .iter()
+        .filter(|e| e.from_node == scatter)
+        .map(|e| e.to_node.as_str())
+        .collect();
+    while let Some(node) = stack.pop() {
+        if gathers.contains(node) {
+            reached_a_gather = true;
+            continue;
+        }
+        let Some(id) = graph.nodes.iter().find(|n| n.id == node).map(|n| n.id.as_str()) else {
+            continue;
+        };
+        if !members.insert(id) {
+            continue;
+        }
+        stack.extend(
+            graph
+                .edges
+                .iter()
+                .filter(|e| e.from_node == node)
+                .map(|e| e.to_node.as_str()),
+        );
+    }
+    if reached_a_gather { members } else { HashSet::new() }
 }
 
 fn path_exists(graph: &WorkflowGraph, start: &str, target: &str) -> bool {
