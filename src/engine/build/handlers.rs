@@ -11,6 +11,7 @@ pub(super) fn register_handlers(
     token: &CancellationToken,
     node_timeout: Option<std::time::Duration>,
     loop_edges: &std::collections::HashSet<(String, String)>,
+    interceptor: Option<&Arc<dyn StepInterceptor>>,
 ) -> GraphBuilder<Value, Value> {
     let is_back_edge = |edge: &crate::model::Edge| {
         loop_edges.contains(&(edge.from_node.clone(), edge.to_node.clone()))
