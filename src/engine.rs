@@ -231,6 +231,29 @@ fn merge(base: &mut Value, update: Value) {
     }
 }
 
+/// The key a lane envelope records its lane identity under, inside the
+/// `send_arg` a fan-out schedules each concurrent activation with.
+///
+/// Underscore-prefixed because it shares the envelope with the lane's `items`
+/// and must never be mistaken for user data.
+pub(crate) const LANE_KEY: &str = "_lane";
+
+/// Decodes the lane identity from an activation's `send_arg`.
+///
+/// `None` for an ordinary activation — one scheduled by a plain route rather
+/// than by a fan-out packet — which is every activation until a fan-out node
+/// exists. A malformed envelope also yields `None` rather than failing the run:
+/// the activation then behaves as an ordinary one, which is the safe reading.
+fn lane_context(send_arg: Option<&Value>) -> Option<crate::nodes::LaneContext> {
+    let lane = send_arg?.get(LANE_KEY)?;
+    Some(crate::nodes::LaneContext {
+        id: lane.get("id")?.as_str()?.to_string(),
+        origin: lane.get("origin")?.as_str()?.to_string(),
+        index: usize::try_from(lane.get("index")?.as_u64()?).ok()?,
+        count: usize::try_from(lane.get("count")?.as_u64()?).ok()?,
+    })
+}
+
 /// Collects a node's input items from the `items` its predecessors emitted into
 /// the run state, **honoring the port each edge is wired to**.
 ///
