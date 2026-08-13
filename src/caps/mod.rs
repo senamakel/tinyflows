@@ -5,6 +5,7 @@
 //! adapter seam (`src/openhuman/tinyflows/`) wires these to its inference stack,
 //! curated Composio tools, `HttpRequestTool`, and sandboxed code runtimes.
 
+pub mod agent;
 #[cfg(any(test, feature = "mock"))]
 pub mod mock;
 pub mod shell;
