@@ -582,7 +582,7 @@ where
             let StepRun {
                 updates,
                 goto_map,
-                interrupt,
+                interrupts,
                 failure,
             } = match run_result {
                 Ok(step_run) => step_run,
@@ -1240,7 +1240,7 @@ where
     ) -> Result<StepRun<Update>> {
         let mut updates: Vec<Update> = Vec::new();
         let mut goto_map: HashMap<usize, Vec<RouteTarget>> = HashMap::new();
-        let mut interrupt: Option<(usize, Interrupt)> = None;
+        let mut interrupts: Vec<(usize, Interrupt)> = Vec::new();
         let mut failure: Option<StepFailure> = None;
 
         for (index, activation) in active.iter().enumerate() {
@@ -1303,7 +1303,7 @@ where
                 &mut goto_map,
                 visited,
             ) {
-                interrupt = Some(found);
+                interrupts.push(found);
                 break;
             }
         }
@@ -1311,7 +1311,7 @@ where
         Ok(StepRun {
             updates,
             goto_map,
-            interrupt,
+            interrupts,
             failure,
         })
     }
@@ -1440,7 +1440,7 @@ where
         // Fold in deterministic active-set index order.
         let mut updates: Vec<Update> = Vec::new();
         let mut goto_map: HashMap<usize, Vec<RouteTarget>> = HashMap::new();
-        let mut interrupt: Option<(usize, Interrupt)> = None;
+        let mut interrupts: Vec<(usize, Interrupt)> = Vec::new();
         let mut failure: Option<StepFailure> = None;
 
         for (index, (activation, result)) in active.iter().zip(results).enumerate() {
@@ -1465,6 +1465,15 @@ where
                 }
             };
 
+            // Deliberately no `break` here, unlike the sequential path.
+            //
+            // Every branch in this step has already *run* — they were driven
+            // concurrently above — so stopping the fold at the first interrupt
+            // would discard work that genuinely completed and re-schedule it, and
+            // resuming would run those branches a second time. For a node with
+            // side effects that means firing them twice. Fold every non-
+            // interrupting branch and let the caller schedule only the
+            // interrupted ones for resume.
             if let Some(found) = self.fold_result(
                 index,
                 node_id,
@@ -1474,15 +1483,14 @@ where
                 &mut goto_map,
                 visited,
             ) {
-                interrupt = Some(found);
-                break;
+                interrupts.push(found);
             }
         }
 
         Ok(StepRun {
             updates,
             goto_map,
-            interrupt,
+            interrupts,
             failure,
         })
     }
