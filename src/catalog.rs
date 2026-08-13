@@ -842,7 +842,13 @@ pub fn contract_for(kind: &str) -> Option<NodeKindContract> {
             summary: "Starts work WITHOUT waiting for it and emits a ticket; a downstream `gate` \
                       collects the result."
                 .to_string(),
-            config: vec![
+            description: "Every other node blocks its branch until it has an answer. This one \
+                          starts the work and immediately emits a ticket, so the branch carries \
+                          on while the work runs, and a downstream `gate` turns tickets back \
+                          into results. Use it when a slow call has no downstream dependency \
+                          until later in the graph."
+                .to_string(),
+            config_fields: vec![
                 ConfigField::required(
                     "target",
                     "enum",
@@ -879,7 +885,13 @@ pub fn contract_for(kind: &str) -> Option<NodeKindContract> {
             summary: "Waits for spawned work and emits results once its release policy is \
                       satisfied (all / any / first_n / quorum / timeout_partial)."
                 .to_string(),
-            config: vec![
+            description: "The collecting half of `spawn`. More than a barrier because of the \
+                          release policy: a gate can proceed on the first result, on a quorum, \
+                          or on whatever arrived before its deadline, rather than only on all of \
+                          them. Waiting is counted in POLLS — each costs a super-step — unless \
+                          `wait_mode: \"suspend\"` interrupts the run instead."
+                .to_string(),
+            config_fields: vec![
                 ConfigField::optional(
                     "from",
                     "array",
