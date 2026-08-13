@@ -353,17 +353,43 @@ pub fn graph_of(shape: &Shape) -> WorkflowGraph {
 /// size, and small counterexamples are the ones a human can read once proptest
 /// has shrunk them.
 pub fn arb_shape(depth: u32) -> impl Strategy<Value = Shape> {
-    let leaf = (0usize..3).prop_map(Shape::Linear);
-    leaf.prop_recursive(depth, 24, 3, |inner| {
+    let leaf = prop_oneof![
+        (0usize..3).prop_map(Shape::Linear),
+        // A leaf that spawns: it needs no nesting to be interesting, and putting
+        // it here means the async pair turns up at every depth rather than only
+        // near the root.
+        (1usize..4, 1usize..4).prop_map(|(tasks, n)| Shape::Spawned {
+            tasks,
+            release: "all",
+            n,
+        }),
+    ];
+    leaf.prop_recursive(depth, 32, 4, |inner| {
         prop_oneof![
             (inner.clone(), inner.clone())
                 .prop_map(|(a, b)| Shape::Branch(Box::new(a), Box::new(b))),
             prop::collection::vec(inner.clone(), 2..4).prop_map(Shape::Fanout),
-            (1u64..4, inner).prop_map(|(max_iter, body)| Shape::Loop {
+            (1u64..4, inner.clone()).prop_map(|(max_iter, body)| Shape::Loop {
                 max_iter,
                 body: Box::new(body)
             }),
+            inner.prop_map(|child| Shape::Nested(Box::new(child))),
         ]
+    })
+}
+
+/// A strategy over every release policy, for shapes whose point is the gate.
+///
+/// Kept separate from [`arb_shape`], which pins `release: "all"`: a property
+/// about *what a run computes* wants the policy that always collects
+/// everything, while a property about *the policies themselves* wants the
+/// variety. Mixing them would make the first kind of property
+/// nondeterministic for uninteresting reasons.
+pub fn arb_spawned_shape() -> impl Strategy<Value = Shape> {
+    (1usize..5, 0usize..5, 1usize..4).prop_map(|(tasks, policy, n)| Shape::Spawned {
+        tasks,
+        release: ["all", "any", "first_n", "quorum", "timeout_partial"][policy],
+        n,
     })
 }
 
