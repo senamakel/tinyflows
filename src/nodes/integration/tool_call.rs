@@ -45,7 +45,7 @@ impl NodeExecutor for ToolCallNode {
             // `=item.x` binds to the current item) and invoke once per item.
             // `config.concurrency` decides how many of those invocations are in
             // flight at once (default 1 — sequential, as before).
-            let opts = crate::nodes::map::map_options(&ctx.node.config, &ctx.node.id);
+            let opts = crate::nodes::map::map_options(&ctx.node.config, &ctx.node.id, ctx.run);
             let ctx = &ctx;
             let (items, diagnostics) = crate::nodes::map::map_items(
                 ctx.input.len(),

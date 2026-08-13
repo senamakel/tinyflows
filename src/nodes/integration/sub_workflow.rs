@@ -232,7 +232,7 @@ impl NodeExecutor for SubWorkflowNode {
                 && !ctx.input.is_empty();
 
         if per_item {
-            let opts = crate::nodes::map::map_options(&ctx.node.config, &ctx.node.id);
+            let opts = crate::nodes::map::map_options(&ctx.node.config, &ctx.node.id, ctx.run);
             let ctx = &ctx;
             let (items, _) = crate::nodes::map::map_items(
                 ctx.input.len(),
