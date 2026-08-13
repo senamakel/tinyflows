@@ -77,6 +77,14 @@ host-caps = ["dep:reqwest", "dep:sha2", "dep:tempfile", "reqwest/rustls", "tokio
 store = ["dep:sha2", "dep:fs2"]
 # A file-writing graph visualizer intended for development and diagnostics.
 graph-debug = ["dep:image", "dep:font8x8"]
+# Off by default; enables `testkit` — programmable capability mocks, a
+# structured run trace, and live step-debugging (breakpoints, inspection,
+# output override) driven from another task. Adds no dependencies: tokio,
+# futures-timer, async-trait and jaq are already required by the engine. The
+# engine's interception seam itself is always compiled and inert; this feature
+# only switches on the implementation that uses it. Always available inside
+# this crate's own tests, like `store` and `mock`.
+testkit = []
 
 [dev-dependencies]
 proptest = "1"
