@@ -587,7 +587,7 @@ impl HandlerData {
                     // attempt succeeds, so reporting `last_err` unconditionally
                     // would show a node that recovered as one that failed — and
                     // fire every on-error breakpoint on it.
-                    error: output.is_none().then(|| last_err.as_ref()).flatten(),
+                    error: output.is_none().then_some(last_err.as_ref()).flatten(),
                 })
                 .await;
             match action {
