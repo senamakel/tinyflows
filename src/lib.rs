@@ -30,6 +30,7 @@ pub mod data;
 pub mod engine;
 pub mod error;
 pub mod expr;
+pub mod graph;
 pub mod graph_ops;
 pub mod migrate;
 pub mod model;
