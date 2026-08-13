@@ -41,10 +41,8 @@
 //! executor calls [`GraphEventSink::flush`] after the terminal run event so a
 //! caller reading the journal right after the run returns sees a complete log.
 
-mod langfuse;
 mod types;
 
-pub use langfuse::{GraphLangfuseExporter, SpanMetadataFn};
 pub use types::*;
 
 use std::collections::{HashMap, VecDeque};
@@ -58,8 +56,7 @@ use crate::error::Result;
 use crate::graph::status::GraphRunStatus;
 use crate::graph::stream::{GraphEvent, GraphEventSink};
 use crate::graph::ids::{CheckpointId, EventId, GraphId, NodeId, RunId, ThreadId, now_ms};
-use crate::harness::observability::{AppendWorker, DEFAULT_DRAIN_CAPACITY};
-use crate::harness::store::AppendStore;
+use crate::graph::worker::{AppendWorker, DEFAULT_DRAIN_CAPACITY};
 
 // ---------------------------------------------------------------------------
 // GraphLatencyMetrics
@@ -276,40 +273,6 @@ impl GraphEventJournal for InMemoryGraphEventJournal {
             return Ok(Vec::new());
         };
         Ok(entries.iter().skip(offset as usize).cloned().collect())
-    }
-}
-
-// ---------------------------------------------------------------------------
-// StoreGraphEventJournal
-// ---------------------------------------------------------------------------
-
-impl<A: AppendStore> StoreGraphEventJournal<A> {
-    /// Wraps `store` as a graph event journal whose stream key is the run id.
-    pub fn new(store: A) -> Self {
-        Self { store }
-    }
-
-    /// Returns a reference to the backing store.
-    pub fn store(&self) -> &A {
-        &self.store
-    }
-}
-
-#[async_trait]
-impl<A: AppendStore + 'static> GraphEventJournal for StoreGraphEventJournal<A> {
-    async fn append(&self, obs: GraphObservation) -> Result<u64> {
-        let stream = obs.run_id.as_str().to_string();
-        let value = serde_json::to_value(&obs)?;
-        self.store.append(&stream, value).await
-    }
-
-    async fn read_from(&self, run_id: &str, offset: u64) -> Result<Vec<GraphObservation>> {
-        let raw = self.store.read_from(run_id, offset).await?;
-        let mut out = Vec::with_capacity(raw.len());
-        for (_offset, value) in raw {
-            out.push(serde_json::from_value(value)?);
-        }
-        Ok(out)
     }
 }
 
