@@ -190,6 +190,7 @@ impl Default for WorkflowGraph {
             id: None,
             name: String::new(),
             inputs: Vec::new(),
+            agents: Vec::new(),
             nodes: Vec::new(),
             edges: Vec::new(),
         }
