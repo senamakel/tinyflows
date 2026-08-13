@@ -169,7 +169,6 @@ mod tests {
         node: &Node,
         input: Vec<Item>,
         caps: &crate::caps::Capabilities,
-        agents: &[],
     ) -> Result<Vec<Item>> {
         let run_meta = Value::Null;
         let ctx = NodeContext {

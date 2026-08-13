@@ -435,7 +435,6 @@ mod tests {
         config: Value,
         input_items: Vec<crate::data::Item>,
         caps: &Capabilities,
-        agents: &[],
     ) -> NodeOutput {
         let mut sw = node("sw", NodeKind::SubWorkflow);
         sw.config = config;
@@ -701,7 +700,6 @@ mod tests {
         config: Value,
         run_meta: Value,
         caps: &Capabilities,
-        agents: &[],
     ) -> Result<NodeOutput, EngineError> {
         let mut sw = node("sw", NodeKind::SubWorkflow);
         sw.config = config;
