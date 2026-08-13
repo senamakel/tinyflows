@@ -60,6 +60,40 @@ pub struct NodeContext<'a> {
     /// outside world within a single node need not consult it; the engine
     /// already checks it at the node boundary before this node runs.
     pub token: CancellationToken,
+    /// The parallel lane this activation belongs to, when it is one of several
+    /// concurrent activations of the *same* node produced by a fan-out.
+    ///
+    /// `None` for an ordinary activation, which is every activation today. A
+    /// lane activation takes its input from the lane envelope rather than from
+    /// its predecessors' run-state slots, because every lane sees the same
+    /// committed state snapshot and would otherwise all read identical items.
+    pub lane: Option<LaneContext>,
+    /// The super-step that is running this activation, counting from 0.
+    ///
+    /// A monotonic tick that does not depend on the wall clock, so it stays
+    /// meaningful across a checkpointed resume. A node that must recognise its
+    /// own earlier activations (a poll budget, a fold that must not re-apply)
+    /// compares against a step it recorded in its slot.
+    pub step: usize,
+}
+
+/// Which lane of a fan-out an activation belongs to.
+///
+/// Travels with the activation itself rather than through the run state, so N
+/// concurrent activations of one node id are told apart without any of them
+/// having to write a shared slot.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LaneContext {
+    /// Unique across the run; conventionally `"<fan-out node id>#<index>"`.
+    pub id: String,
+    /// The node whose fan-out created this lane.
+    pub origin: String,
+    /// This lane's position in the fan-out, from 0. Output is ordered by this
+    /// rather than by completion, so a run is deterministic under any timing.
+    pub index: usize,
+    /// How many lanes the fan-out created, which is what a collector counts
+    /// arrivals against.
+    pub count: usize,
 }
 
 /// Builds the expression scope for a node from its runtime [`NodeContext`].
