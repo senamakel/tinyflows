@@ -107,20 +107,41 @@ fn namespaced_gate(node_id: &str, gate: &str) -> String {
 /// the ones addressed to it and hands them to the child as *its* approvals.
 /// Ids belonging to the parent or to a different `sub_workflow` node are left
 /// alone.
-fn approvals_for_child(run: &Value, node_id: &str) -> Vec<String> {
-    let prefix = format!("{node_id}{GATE_NAMESPACE}");
-    run.get("trigger")
+fn approvals_for_child(ctx: &NodeContext<'_>) -> Vec<String> {
+    let prefix = format!("{}{GATE_NAMESPACE}", ctx.node.id);
+    let strip = |ids: &Value| -> Vec<String> {
+        ids.as_array()
+            .map(|ids| {
+                ids.iter()
+                    .filter_map(Value::as_str)
+                    .filter_map(|id| id.strip_prefix(prefix.as_str()))
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+
+    // Two channels, because the engine has two resume paths and they deliver
+    // approvals differently.
+    //
+    // `engine::resume` re-executes the workflow with the approvals merged into
+    // the run input, so they arrive in `run.trigger.approvals`. The checkpointed
+    // path replays from the checkpoint instead and hands the resume value
+    // straight to the node that interrupted — this node — so they arrive in
+    // `ctx.resume`. Reading only one of the two makes cross-boundary approval
+    // work on one path and silently hang on the other.
+    let mut approved: Vec<String> = ctx
+        .run
+        .get("trigger")
         .and_then(|trigger| trigger.get("approvals"))
-        .and_then(Value::as_array)
-        .map(|approvals| {
-            approvals
-                .iter()
-                .filter_map(Value::as_str)
-                .filter_map(|id| id.strip_prefix(prefix.as_str()))
-                .map(str::to_string)
-                .collect()
-        })
-        .unwrap_or_default()
+        .map(&strip)
+        .unwrap_or_default();
+    if let Some(resume) = ctx.resume.as_ref().and_then(|value| value.get("approved")) {
+        approved.extend(strip(resume));
+    }
+    approved.sort();
+    approved.dedup();
+    approved
 }
 
 /// Seeds `approvals` into a child's trigger payload, preserving whatever else
@@ -425,7 +446,7 @@ async fn run_child(
     // Approvals the parent has accumulated for *this* node's child gates. Empty
     // on a first run; populated after a resume, which is what lets the re-run
     // get past the gate that paused it.
-    let trigger = seed_child_approvals(trigger, approvals_for_child(ctx.run, &ctx.node.id));
+    let trigger = seed_child_approvals(trigger, approvals_for_child(ctx));
     // Resolved against the same `scope` as `workflow_id`, so a `per_item` run
     // forwards values derived from *its* element (`"=item.repo"`) rather than
     // from the batch — the whole point of resolving inputs in here rather than
