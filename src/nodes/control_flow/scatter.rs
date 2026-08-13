@@ -112,12 +112,11 @@ impl NodeExecutor for ScatterNode {
             items = items.len(),
             "scatter: splitting work into lanes"
         );
-        Ok(
-            NodeOutput::scatter(lanes.clone(), json!({ "lane_count": lanes.len() }))
-                // The scatter's own slot keeps the items it fanned out, so the run
-                // state still shows what went in even though the lanes carry the work.
-                .with_meta(json!({ "lane_count": lanes.len() })),
-        )
+        // `lane_count` goes in the node's own slot, which is what a gather
+        // counts arrivals against — inferring the count from however many lanes
+        // happened to have reported would release on the first one.
+        let count = lanes.len();
+        Ok(NodeOutput::scatter(lanes, json!({ "lane_count": count })))
     }
 }
 
