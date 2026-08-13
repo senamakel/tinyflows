@@ -125,9 +125,15 @@ async fn a_sequenced_mock_drives_a_retry() {
         ]),
     )
     .run()
-    .await
-    .expect("the retry recovers");
-
+    .await;
+    let run = match run {
+        Ok(run) => run,
+        Err(err) => panic!("run failed: {err}"),
+    };
+    eprintln!(
+        "CALLS: {:#?}",
+        run.mocks().log().calls().iter().map(|c| (c.seq, c.target.clone(), c.outcome.clone())).collect::<Vec<_>>()
+    );
     run.assert_completed();
     run.assert_call_count(super::super::capability::TOOLS, Some("svc.do"), 2);
     assert_eq!(run.node_output("call")[0], json!({ "ok": true }));
