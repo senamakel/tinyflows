@@ -20,7 +20,7 @@ async fn dbg_diamond() {
     let graph = WorkflowGraph {
         name: "d".into(),
         nodes: vec![
-            node("t", NodeKind::Trigger, json!({"recursion_limit": 200})),
+            node("t", NodeKind::Trigger, json!({"recursion_limit": 200, "max_node_visits": 8})),
             node("l", NodeKind::Loop, json!({"max_iterations":3,"on_exceeded":"continue"})),
             node("apex", NodeKind::OutputParser, Value::Null),
             node("arm_a", NodeKind::Transform, json!({"set":{"arm":"a"}})),
