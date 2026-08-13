@@ -7,6 +7,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`tinyflows::testkit` — testing, mocking, and live debugging for workflows.**
+  Behind the default-off `testkit` feature; adds no dependencies.
+
+  The problem it addresses: the engine will happily run a graph whose every
+  binding resolved to `null`, whose agent node dispatched with an empty prompt,
+  and whose failure was swallowed by an `on_error` policy — and report all of it
+  as success, because each of those is a legal value rather than an error. What
+  was missing was not execution but the means to interrogate an execution.
+
+  - `testkit::mocks` — programmable, recording capability doubles.
+    `MockCaps::new().on_tool("slack.send", Respond::value(…))`, with `*` globs,
+    per-call sequences (`Respond::sequence`), injected failures, delays,
+    schema-synthesized answers, and per-node scoping (`only_from`). Every call
+    is logged in one sequence across all capabilities and attributed to the node
+    that made it.
+  - `testkit::trace` — a structured run record: each activation's input *and*
+    output, every `=`-binding with the value it resolved to, and — when it
+    resolved to nothing — the upstream node it was reading from. That last part
+    turns "it produced null" into a pointer at the node that should have
+    produced it.
+  - `testkit::harness` — `TestHarness` plus named assertions, including
+    `assert_no_null_bindings`, which catches the failure a green run hides.
+  - `testkit::debug` — real breakpoints. Pause before or after a node, inspect
+    what it was about to receive, override its output, skip it, fail it, patch
+    the run state, or single-step. Conditions cover `on_error`, the nth
+    activation of a loop, and arbitrary `=`-expressions. A `DebugSession` owns
+    the spawned run, so it can be driven from another task.
+  - `testkit::tools` — every one of the above as a named tool with a real JSON
+    Schema and a JSON-in/JSON-out `TestkitRegistry::dispatch`, so a host can
+    hand the whole module to an agent without writing an adapter. tinyflows
+    registers nothing and talks to no model; these are descriptors and handlers,
+    the same division `catalog` already draws for node kinds.
+
+- **`tinyflows::interception` — the engine's one execution-*gating* hook.**
+  Always compiled, and inert unless used. A `RunObserver`'s callbacks return
+  `()`, so it can watch a run and never change one; a `StepInterceptor` returns
+  a `StepAction` the engine obeys, which is what makes breakpoints and output
+  overrides expressible at all. New entry point `engine::run_intercepted`. With
+  no interceptor attached the engine builds no `StepFrame` and makes no call —
+  asserted by a property test over generated graphs, not only by inspection.
+
+- **`tinyflows::diagnostics` and `tinyflows::evidence`** — `Diagnosis`,
+  `diagnose`, and the evidence-bounding helpers moved out from behind the
+  `store` feature. Both are pure functions of engine records, and a trace or a
+  tool reply needs them as much as a durable record does. Re-exported from
+  `store::types`, so no downstream caller breaks.
+
+- **`caps::sample_for_schema`** is no longer behind `host-caps`; the auto-mock
+  needs it and should not have to pull in a process runner and an HTTP client to
+  get it. Still re-exported from `caps::host::mocks`.
+
+### Fixed
+
+- A node that failed once and then **succeeded on retry** is no longer reported
+  as failed to observers of an activation's settled state. The engine's retry
+  loop keeps the last failed attempt's error even after a later attempt
+  succeeds; surfacing it unconditionally showed a recovered node as a failed one
+  and would have fired every on-error breakpoint on it.
+
 ### Changed
 
 - **Breaking: the Chrome companion moved behind the `chrome-extension`
