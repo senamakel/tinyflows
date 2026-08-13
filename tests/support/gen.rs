@@ -165,18 +165,17 @@ impl Builder {
                 let apex = self.passthrough();
                 let join = self.add(NodeKind::Merge, Value::Null);
                 for (index, branch) in branches.iter().enumerate() {
+                    // A `transform` at the head of each branch stamps which
+                    // branch the items came down, so a determinism failure
+                    // names the branch that diverged rather than just the run.
+                    let tag = self.add(NodeKind::Transform, json!({ "set": { "branch": index } }));
                     let span = self.build(branch);
                     // Every branch leaves the apex on the *same* port, which is
                     // what the engine reads as a parallel fan-out rather than a
                     // conditional choice.
-                    self.connect(&apex, "main", &span.entry);
+                    self.connect(&apex, "main", &tag);
+                    self.connect(&tag, "main", &span.entry);
                     self.connect(&span.exit, "main", &join);
-                    // Tag each branch so a determinism failure names the branch
-                    // that diverged instead of just the run.
-                    let tag = self.add(NodeKind::Transform, json!({ "set": { "branch": index } }));
-                    let _ = tag; // recorded in the graph; not wired into the path
-                    self.nodes.pop();
-                    self.next_id -= 1;
                 }
                 Span {
                     entry: apex,
