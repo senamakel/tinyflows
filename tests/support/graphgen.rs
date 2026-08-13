@@ -225,6 +225,17 @@ impl Builder {
                     exit: out,
                 }
             }
+
+            Shape::Gate(rest) => {
+                let gate = self.add(NodeKind::OutputParser, json!({ "requires_approval": true }));
+                self.gates.push(gate.clone());
+                let span = self.build(rest);
+                self.connect(&gate, "main", &span.entry);
+                Span {
+                    entry: gate,
+                    exit: span.exit,
+                }
+            }
         }
     }
 }
