@@ -15,13 +15,32 @@
 //! see [`crate::engine`]. This node then decides, on each activation, whether to
 //! send its input round the `body` again or let it out through `done`.
 //!
-//! **Why the counter lives in run state.** The iteration count is written to
-//! this node's own slot via [`NodeOutput::meta`], so it is part of the state the
-//! engine checkpoints. A loop therefore resumes mid-iteration with its count
-//! intact, and the count is addressable from any expression in the graph as
-//! `=nodes.<loop id>.iteration`. Holding it in the executor instead would lose
-//! it on every pause, and threading it through the items would lose it to the
-//! first node in the body that reshapes them.
+//! **Why the counter and the accumulator live in run state.** Both are written
+//! to this node's own slot via [`NodeOutput::meta`], so they are part of the
+//! state the engine checkpoints. A loop therefore resumes mid-iteration with
+//! both intact, and both are addressable from any expression in the graph as
+//! `=nodes.<loop id>.iteration` / `=nodes.<loop id>.state`. Holding them in the
+//! executor instead would lose them on every pause, and threading them through
+//! the items would lose them to the first node in the body that reshapes them.
+//!
+//! **The accumulator is a fold.** `state.init` seeds it once; `state.update`
+//! folds each pass's body output into it, so `acc_next = f(acc_prev, output)`.
+//! This node is the *sole writer* of that slot, which is what keeps it simple:
+//! no reducer collision, no question of which branch wrote last, no interaction
+//! with the staleness stamping that loop re-entry uses.
+//!
+//! Because the reducer merges objects key-by-key, an accumulator written
+//! plainly could only ever *gain* keys — an error recorded on pass 1 would
+//! haunt every later pass. The accumulator is therefore written through
+//! [`crate::engine::replace`], which assigns the slot wholesale.
+//!
+//! **The fold is at-least-once.** If an activation is replayed after a resume,
+//! the update applies twice. This is not new — `iteration + 1` has always had
+//! the same property — but an accumulator makes it visible, as a duplicated
+//! append. Fixing it properly means stamping the fold with the super-step that
+//! produced it and skipping a repeat, which should be done for the counter and
+//! the accumulator together. Until then, an idempotent `update` (assign the
+//! next value rather than appending to the previous one) is immune.
 
 use async_trait::async_trait;
 use serde_json::{Value, json};

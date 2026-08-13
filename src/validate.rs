@@ -816,9 +816,7 @@ fn validate_loops(graph: &WorkflowGraph, errors: &mut Vec<ValidationError>) {
         {
             errors.push(ValidationError::InvalidNodeConfig {
                 node: node.id.clone(),
-                reason: format!(
-                    "loop `emit` must be \"items\", \"state\" or \"both\", got {emit}"
-                ),
+                reason: format!("loop `emit` must be \"items\", \"state\" or \"both\", got {emit}"),
             });
         }
         // A `success` exit that goes nowhere strands the converged case: the

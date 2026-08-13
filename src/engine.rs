@@ -2687,7 +2687,10 @@ mod merge_tests {
     fn objects_merge_key_by_key_and_scalars_overwrite() {
         let mut base = json!({ "a": 1, "nested": { "x": 1 } });
         merge(&mut base, json!({ "b": 2, "nested": { "y": 2 } }));
-        assert_eq!(base, json!({ "a": 1, "b": 2, "nested": { "x": 1, "y": 2 } }));
+        assert_eq!(
+            base,
+            json!({ "a": 1, "b": 2, "nested": { "x": 1, "y": 2 } })
+        );
     }
 
     /// The problem the sentinel solves: without it, a key can never be dropped.
@@ -2735,8 +2738,7 @@ mod merge_tests {
             json!({ "nodes": { "n": { "items": [ { "json": payload.clone() } ] } } }),
         );
         assert_eq!(
-            base["nodes"]["n"]["items"][0]["json"],
-            payload,
+            base["nodes"]["n"]["items"][0]["json"], payload,
             "item payloads ride inside an array and are copied verbatim"
         );
     }

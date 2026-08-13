@@ -675,7 +675,10 @@ async fn an_until_that_never_passes_reports_exhaustion_not_success() {
     }));
 
     let outcome = run_guarded(&graph).await.expect("run");
-    assert_eq!(outcome.output["nodes"]["l"]["exit_reason"], "max_iterations");
+    assert_eq!(
+        outcome.output["nodes"]["l"]["exit_reason"],
+        "max_iterations"
+    );
 }
 
 /// `success_port: true` routes a converged exit away from an exhausted one, so
@@ -689,7 +692,9 @@ async fn the_success_port_separates_convergence_from_exhaustion() {
         "state": { "init": { "tries": 0 }, "update": "={ tries: (.state.tries + 1) }" },
         "until": "=.state.tries >= 2"
     }));
-    graph.nodes.push(node("won", NodeKind::OutputParser, Value::Null));
+    graph
+        .nodes
+        .push(node("won", NodeKind::OutputParser, Value::Null));
     graph.edges.push(port_edge("l", "success", "won"));
 
     let outcome = run_guarded(&graph).await.expect("run");
@@ -743,7 +748,10 @@ async fn emit_state_puts_the_accumulator_on_the_done_port() {
         .as_array()
         .expect("downstream items");
     assert_eq!(items.len(), 1);
-    assert_eq!(items[0]["json"]["tries"], 2, "downstream got the accumulator");
+    assert_eq!(
+        items[0]["json"]["tries"], 2,
+        "downstream got the accumulator"
+    );
 }
 
 /// A loop with no `state` config behaves exactly as before.
@@ -855,9 +863,9 @@ async fn malformed_accumulator_config_is_refused() {
     ] {
         let errors = tinyflows::validate::validate_all(&loop_graph(bad.clone()));
         assert!(
-            errors
-                .iter()
-                .any(|e| matches!(e, ValidationError::InvalidNodeConfig { node, .. } if node == "l")),
+            errors.iter().any(
+                |e| matches!(e, ValidationError::InvalidNodeConfig { node, .. } if node == "l")
+            ),
             "config {bad} should be refused, got: {errors:?}"
         );
     }
