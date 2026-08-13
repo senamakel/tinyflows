@@ -66,6 +66,29 @@ fn runtime() -> tokio::runtime::Runtime {
         .expect("build runtime")
 }
 
+/// Reduces a final run state to "which nodes ran, and how many items each
+/// emitted", sorted for a stable comparison.
+///
+/// This is the comparable core of a run: it survives the two approval channels
+/// differing (see the module docs) while still changing the moment a node is
+/// skipped, duplicated, or loses its output across a pause.
+fn work_done(state: &Value) -> Vec<(String, usize)> {
+    let mut work: Vec<(String, usize)> = state["nodes"]
+        .as_object()
+        .map(|slots| {
+            slots
+                .iter()
+                .map(|(id, slot)| {
+                    let count = slot["items"].as_array().map_or(0, Vec::len);
+                    (id.clone(), count)
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    work.sort();
+    work
+}
+
 /// Runs `shape` two ways and returns `(pre_approved_state, resumed_state)`.
 ///
 /// Returns `None` when the graph is refused by the validator, which is not what
