@@ -87,19 +87,12 @@ pub async fn run_cancellable_with_observer(
     token: CancellationToken,
     observer: &Arc<dyn RunObserver>,
 ) -> Result<RunOutcome> {
-    let checkpointer: Arc<dyn Checkpointer<Value>> =
-        Arc::new(InMemoryCheckpointer::<Value>::default());
-    let thread_id = default_thread_id(workflow)?;
     let (_graph, _thread_id, outcome, _run_ids) = build_and_run(
         workflow,
         input,
         capabilities,
         observer,
-        checkpointer,
-        thread_id,
-        None,
-        None,
-        token,
+        RunConfig::new(workflow)?.with_token(token),
     )
     .await?;
     Ok(outcome)
