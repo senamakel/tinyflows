@@ -154,6 +154,7 @@ pub(super) fn build_graph(
         &token,
         node_timeout,
         &loop_edges,
+        config.interceptor.as_ref(),
     );
 
     builder = wiring::wire_graph(builder, graph, &trigger_id, &loop_edges);
