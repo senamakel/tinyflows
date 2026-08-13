@@ -25,6 +25,7 @@ pub use self::agent::{
     AgentInput, AgentModelSelection, AgentRunIdentity, AgentRunOutcome, AgentRunRequest,
     AgentRunner, AgentUsage, ContextBlock, StopReason, ToolDescriptor,
 };
+pub use self::schema::sample_for_schema;
 pub use self::shell::{ShellInterpreter, ShellOutcome, ShellRequest, ShellRunner, ShellScript};
 pub use self::tasks::{TaskRunner, TaskSpec, TaskState, TokioTaskRunner};
 
