@@ -89,6 +89,7 @@ mod tests {
             run: &run,
             nodes: &Value::Null,
             caps: &caps,
+            agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
         };

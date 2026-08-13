@@ -246,17 +246,79 @@ pub fn contract_for(kind: &str) -> Option<NodeKindContract> {
         "agent" => NodeKindContract {
             kind: "agent".to_string(),
             summary: "An LLM step, run via the host's LlmProvider capability.".to_string(),
-            description: "Runs config.prompt through the injected LlmProvider. config.agent_ref \
-                may select a host-registered agent persona; config.output_parser.schema requests a \
-                structured, field-addressable output item. The exact data-input convention (how \
-                the upstream item reaches the prompt) is defined by the host's LlmProvider."
+            description: "Runs config.prompt through the injected LlmProvider, or — when \
+                config.agent_ref names an agent type and the host wired an AgentRunner — through \
+                that agent's own loop. An agent type is defined either in the graph's top-level \
+                `agents` registry or by the host; the node may then NARROW it (fewer tools, lower \
+                limits, extra instructions) but never widen it. config.output_parser.schema \
+                requests a structured, field-addressable output item. tinyflows runs no agent \
+                loop itself: it assembles the request and the harness executes it."
                 .to_string(),
             config_fields: vec![
                 ConfigField::required("prompt", "string", "The instruction sent to the model."),
                 ConfigField::optional(
                     "agent_ref",
                     "string",
-                    "A host-registered agent-kind id to run this step as (persona/model).",
+                    "The agent type to run this step as. Resolved against the graph's `agents` \
+                     registry first, then the host's. Must be a LITERAL — an =expression is \
+                     rejected, since run data must not choose a differently-privileged agent.",
+                ),
+                ConfigField::optional(
+                    "instructions",
+                    "string",
+                    "Extra standing instructions for this step. APPENDED to the agent \
+                     definition's, never replacing them.",
+                ),
+                ConfigField::optional(
+                    "model",
+                    "string",
+                    "Model id, opaque to the engine. Overrides the agent definition's.",
+                ),
+                ConfigField::optional(
+                    "provider",
+                    "string",
+                    "Provider id, opaque to the engine (e.g. a gateway or routing key). Carried \
+                     separately from `model` so a host routing one model through several \
+                     providers need not parse a composite string.",
+                ),
+                ConfigField::optional(
+                    "working_dir",
+                    "string",
+                    "Working directory the agent runs in, when it runs somewhere with a \
+                     filesystem. Opaque and UNTRUSTED: the engine never touches the filesystem, \
+                     so the host must validate it against its own permitted roots.",
+                ),
+                ConfigField::optional(
+                    "context",
+                    "array",
+                    "Dynamic context blocks, each {kind, label?, optional?}: kind=text {text} \
+                     (literal or =expression); items (the node's input items); memory \
+                     {scope,query,limit?} and flavour {slug} (via the host's MemoryProvider); \
+                     host {source,params?} (expanded by the harness). A block that cannot be \
+                     resolved FAILS the node unless it sets optional:true.",
+                ),
+                ConfigField::optional(
+                    "tools",
+                    "array",
+                    "Tool grants, each {slug, connection_ref?}. slug is an exact id or a \
+                     trailing-.* namespace pattern; both it and connection_ref must be literals. \
+                     When the agent definition grants tools, this list may only NARROW them.",
+                ),
+                ConfigField::optional(
+                    "limits",
+                    "object",
+                    "Advisory ceilings for the harness's loop: {max_steps?, max_tool_calls?, \
+                     agent_timeout_secs?, tool_timeout_secs?}. agent_timeout_secs bounds the whole \
+                     run; tool_timeout_secs bounds each individual tool call, so one wedged tool \
+                     cannot eat the whole budget. May only LOWER the agent definition's. Advisory \
+                     because the loop runs host-side — node_timeout_secs is what the engine \
+                     itself enforces.",
+                ),
+                ConfigField::optional(
+                    "metadata",
+                    "object",
+                    "Free-form passthrough to the harness (tier hints, sandbox policy, …), \
+                     merged key-wise over the agent definition's. Never interpreted by the engine.",
                 ),
                 ConfigField::optional(
                     "output_parser",
@@ -284,6 +346,31 @@ pub fn contract_for(kind: &str) -> Option<NodeKindContract> {
                 "If the output feeds a condition, declare that field \"type\":\"boolean\" in \
                  output_parser.schema — an untyped field can carry the truthy string \"false\" and \
                  route to the wrong port."
+                    .to_string(),
+                "Reusable agent types live in the graph's TOP-LEVEL `agents` array (a sibling of \
+                 `nodes`/`edges`/`inputs`), each {id, name?, description?, instructions?, model?, \
+                 provider?, working_dir?, tools?, context?, limits?, metadata?}. A node's \
+                 agent_ref resolves there first, then against the host's registry; a ref neither \
+                 knows is passed through to the harness as an id, which is not an error."
+                    .to_string(),
+                "Merge order is definition-then-node, narrowing only: instructions append, \
+                 context appends, tools intersect, limits take the lower bound, metadata merges \
+                 per key, and model/provider/working_dir are overridden by the node."
+                    .to_string(),
+                "agent_ref, tool slug, tool connection_ref, a memory context scope, and a host \
+                 context source must all be LITERALS, never =expressions — otherwise run data \
+                 (which may include model output) could choose the credential a call acts as, the \
+                 tool it reaches, or the agent type it runs as."
+                    .to_string(),
+                "The output item carries a `meta` key alongside json/text/raw: `=item.meta.stop` \
+                 is \"finished\" or \"limit_stop\", so a downstream condition can branch on \
+                 whether the agent actually reached an answer instead of assuming it did. A \
+                 limit_stop output is PARTIAL and skips output_parser."
+                    .to_string(),
+                "A `memory` or `flavour` context block needs the host's MemoryProvider, and a \
+                 `host` block needs the harness's context resolver; without them the node fails \
+                 unless the block sets optional:true. Silently dropping context would leave the \
+                 agent answering confidently from nothing."
                     .to_string(),
             ],
         },

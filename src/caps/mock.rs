@@ -45,6 +45,218 @@ impl AgentRunner for MockAgentRunner {
     }
 }
 
+/// An [`AgentRunner`] that implements the **typed** seam: it echoes the
+/// assembled [`AgentRunRequest`](crate::caps::AgentRunRequest) rather than the
+/// raw config, and can answer registry and context lookups.
+///
+/// Where [`MockAgentRunner`] stands in for a host written against the previous
+/// release (only `run_agent`, so the default `run` shim applies), this one
+/// stands in for a harness that has opted in — which is what a test asserting
+/// merge semantics, context resolution, or tool narrowing needs to see.
+///
+/// The echo is deliberately *shaped* rather than a blob, so a downstream
+/// `condition` or `transform` in a dry run has stable fields to bind to.
+#[derive(Debug, Default, Clone)]
+pub struct MockAgentHarness {
+    /// Agent kinds this mock registry knows, consulted by
+    /// [`resolve_agent`](AgentRunner::resolve_agent) when the graph does not
+    /// declare the ref itself.
+    pub agents: Vec<crate::model::AgentDefinition>,
+}
+
+impl MockAgentHarness {
+    /// A harness with an empty registry — every `resolve_agent` misses, so refs
+    /// pass through as bare ids.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Registers an agent kind, mirroring [`MockWorkflowResolver::with`].
+    #[must_use]
+    pub fn with(mut self, agent: crate::model::AgentDefinition) -> Self {
+        self.agents.push(agent);
+        self
+    }
+}
+
+#[async_trait]
+impl AgentRunner for MockAgentHarness {
+    async fn run_agent(
+        &self,
+        agent_ref: &str,
+        request: Value,
+        conn: Option<&str>,
+    ) -> Result<Value> {
+        Ok(json!({ "agent": agent_ref, "request": request, "connection": conn }))
+    }
+
+    async fn run(
+        &self,
+        request: crate::caps::AgentRunRequest,
+    ) -> Result<crate::caps::AgentRunOutcome> {
+        let echo = json!({
+            "agent": request.agent.id,
+            "instructions": request.agent.instructions,
+            "model": request.model.model,
+            "provider": request.model.provider,
+            "working_dir": request.working_dir,
+            "limits": request.agent.limits,
+            "metadata": request.metadata,
+            "prompt": request.input.text,
+            "data": request.input.data,
+            "context": request
+                .context
+                .iter()
+                .map(|b| json!({ "label": b.label, "kind": b.source_kind, "text": b.text, "data": b.data }))
+                .collect::<Vec<_>>(),
+            "tools": request.tools.iter().map(|t| t.slug.clone()).collect::<Vec<_>>(),
+            "connection": request.connection_ref,
+            "identity": request.identity,
+        });
+        Ok(crate::caps::AgentRunOutcome {
+            stop: crate::caps::StopReason::Finished,
+            text: Some(format!("ran {}", request.agent.id)),
+            json: echo.clone(),
+            raw: echo,
+            usage: Some(crate::caps::AgentUsage {
+                steps: Some(1),
+                ..Default::default()
+            }),
+        })
+    }
+
+    async fn resolve_agent(
+        &self,
+        agent_ref: &str,
+    ) -> Result<Option<crate::model::AgentDefinition>> {
+        Ok(self.agents.iter().find(|a| a.id == agent_ref).cloned())
+    }
+
+    async fn list_agents(&self) -> Result<Vec<crate::model::AgentDefinition>> {
+        Ok(self.agents.clone())
+    }
+
+    async fn resolve_context(
+        &self,
+        source: &str,
+        params: &Value,
+        _identity: &crate::caps::AgentRunIdentity,
+    ) -> Result<Option<crate::caps::ContextBlock>> {
+        // `"unknown"` is the one source this mock refuses, so a test can cover
+        // the `Ok(None)` path (and the `optional` policy that rides on it)
+        // without needing a second mock.
+        if source == "unknown" {
+            return Ok(None);
+        }
+        Ok(Some(crate::caps::ContextBlock {
+            label: source.to_string(),
+            source_kind: "host".to_string(),
+            text: Some(format!("mock context for {source:?}")),
+            data: params.clone(),
+        }))
+    }
+
+    async fn resolve_tools(
+        &self,
+        grants: &[crate::model::ToolGrant],
+        conn: Option<&str>,
+    ) -> Result<Vec<crate::caps::ToolDescriptor>> {
+        // Expands a trailing-`.*` pattern into two concrete slugs, so a test can
+        // tell an expanded grant from a passed-through one.
+        Ok(grants
+            .iter()
+            .flat_map(|grant| {
+                match grant.slug.strip_suffix(".*") {
+                    Some(ns) => vec![format!("{ns}.alpha"), format!("{ns}.beta")],
+                    None => vec![grant.slug.clone()],
+                }
+                .into_iter()
+                .map(|slug| crate::caps::ToolDescriptor {
+                    description: Some(format!("mock tool {slug}")),
+                    input_schema: Some(json!({ "type": "object" })),
+                    connection_ref: grant
+                        .connection_ref
+                        .clone()
+                        .or_else(|| conn.map(str::to_string)),
+                    name: None,
+                    slug,
+                })
+                .collect::<Vec<_>>()
+            })
+            .collect())
+    }
+}
+
+/// An [`AgentRunner`] whose loop always stops on a limit, keeping partial
+/// output — for tests covering the `limit_stop` path (`meta.stop`, and the
+/// output parser being skipped on a knowingly partial payload).
+#[derive(Debug, Default, Clone)]
+pub struct MockLimitedAgentRunner;
+
+#[async_trait]
+impl AgentRunner for MockLimitedAgentRunner {
+    async fn run_agent(
+        &self,
+        _agent_ref: &str,
+        _request: Value,
+        _conn: Option<&str>,
+    ) -> Result<Value> {
+        Ok(Value::Null)
+    }
+
+    async fn run(
+        &self,
+        request: crate::caps::AgentRunRequest,
+    ) -> Result<crate::caps::AgentRunOutcome> {
+        let partial = json!({ "partial": true, "agent": request.agent.id });
+        Ok(crate::caps::AgentRunOutcome {
+            stop: crate::caps::StopReason::LimitStop {
+                limit: "max_steps".to_string(),
+            },
+            text: Some("got as far as I could".to_string()),
+            json: partial.clone(),
+            raw: partial,
+            usage: None,
+        })
+    }
+}
+
+/// An [`AgentRunner`] whose loop always pauses for a human — for tests covering
+/// the (currently unsupported) resume path failing loudly rather than emitting a
+/// half-run agent's output as an answer.
+#[derive(Debug, Default, Clone)]
+pub struct MockPausingAgentRunner;
+
+#[async_trait]
+impl AgentRunner for MockPausingAgentRunner {
+    async fn run_agent(
+        &self,
+        _agent_ref: &str,
+        _request: Value,
+        _conn: Option<&str>,
+    ) -> Result<Value> {
+        Ok(Value::Null)
+    }
+
+    async fn run(
+        &self,
+        _request: crate::caps::AgentRunRequest,
+    ) -> Result<crate::caps::AgentRunOutcome> {
+        Ok(crate::caps::AgentRunOutcome {
+            stop: crate::caps::StopReason::Paused {
+                token: Some("mock_pause_1".to_string()),
+                reason: "tool_approval".to_string(),
+                payload: json!({ "tool": "github.add_labels" }),
+            },
+            text: None,
+            json: Value::Null,
+            raw: Value::Null,
+            usage: None,
+        })
+    }
+}
+
 /// A [`ToolInvoker`] that echoes the slug and args it was called with.
 #[derive(Debug, Default, Clone)]
 pub struct MockTools;

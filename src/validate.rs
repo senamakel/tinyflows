@@ -453,7 +453,331 @@ pub fn validate_all(graph: &WorkflowGraph) -> Vec<ValidationError> {
         }
     }
 
+    validate_agents(graph, &mut errors);
+
     errors
+}
+
+/// The graph's agent registry and every `agent` node's agent configuration.
+///
+/// Two things are checked here that cannot be checked anywhere else:
+///
+/// - **Literal-only reference fields.** `agent_ref`, a tool `slug`, a tool
+///   `connection_ref`, and a memory context `scope` may not be
+///   `=`-expressions. An expression resolves from run data — which may include
+///   model output — so allowing one would let upstream data choose which
+///   credential a call acts as, which tool it reaches, or which agent type (and
+///   therefore which tool grants) a turn runs with. Rejecting them structurally,
+///   before a run starts, is what makes that unbypassable.
+/// - **Context node ancestry.** A `node` context source naming a node the agent
+///   cannot be reached from would resolve to nothing at run time, and the agent
+///   would reason over an empty block without any error. This is statically
+///   decidable, so it is caught here.
+///
+/// An `agent_ref` the graph's registry does not declare is deliberately **not**
+/// an error: validation runs without capabilities, and the harness's own
+/// registry is the documented fallback. Hosts that want author-time resolution
+/// call [`unresolved_agent_refs`].
+fn validate_agents(graph: &WorkflowGraph, errors: &mut Vec<ValidationError>) {
+    use crate::model::{AgentLimits, ContextSource, ContextSourceKind, ToolGrant};
+
+    /// Whether an authored string is an `=`-expression rather than a literal.
+    fn is_expression(value: &str) -> bool {
+        value.starts_with('=')
+    }
+
+    let mut seen_agents = HashSet::new();
+    for agent in &graph.agents {
+        if agent.id.is_empty() {
+            errors.push(ValidationError::InvalidAgentDefinition {
+                agent: String::new(),
+                reason: "agent definition requires a non-empty `id`".to_string(),
+            });
+        } else if !seen_agents.insert(agent.id.as_str()) {
+            errors.push(ValidationError::DuplicateAgentId(agent.id.clone()));
+        }
+
+        for grant in &agent.tools {
+            if let Some(reason) = tool_grant_problem(grant) {
+                errors.push(ValidationError::InvalidAgentDefinition {
+                    agent: agent.id.clone(),
+                    reason,
+                });
+            }
+        }
+        for (index, source) in agent.context.iter().enumerate() {
+            if let Some(reason) = context_source_problem(source, index) {
+                errors.push(ValidationError::InvalidAgentDefinition {
+                    agent: agent.id.clone(),
+                    reason,
+                });
+            }
+        }
+        if let Some(reason) = limits_problem(&agent.limits) {
+            errors.push(ValidationError::InvalidAgentDefinition {
+                agent: agent.id.clone(),
+                reason,
+            });
+        }
+    }
+
+    /// Why a tool grant is unacceptable, or `None`.
+    fn tool_grant_problem(grant: &ToolGrant) -> Option<String> {
+        if grant.slug.is_empty() {
+            return Some("tool grant requires a non-empty `slug`".to_string());
+        }
+        if is_expression(&grant.slug) {
+            return Some(format!(
+                "tool grant `slug` must be a literal, not the expression {:?} — a tool chosen \
+                 by run data is a tool chosen by whatever wrote that data",
+                grant.slug
+            ));
+        }
+        if grant.slug == "*" || (grant.slug.contains('*') && !grant.slug.ends_with(".*")) {
+            return Some(format!(
+                "tool grant slug {:?} is not a valid pattern — only a trailing `.*` on a \
+                 non-empty prefix is allowed (e.g. \"github.*\"); to use the harness's default \
+                 tools, omit `tools` entirely",
+                grant.slug
+            ));
+        }
+        match grant.connection_ref.as_deref() {
+            Some(conn) if is_expression(conn) => Some(format!(
+                "tool grant `connection_ref` must be a literal, not the expression {conn:?} — a \
+                 credential selected by run data is the prompt-injection shape this field exists \
+                 to prevent"
+            )),
+            _ => None,
+        }
+    }
+
+    /// Why a context source is unacceptable, ignoring graph-position checks
+    /// (which only apply to a node, not to a reusable definition).
+    fn context_source_problem(source: &ContextSource, index: usize) -> Option<String> {
+        let label = source.label_or_index(index);
+        match &source.kind {
+            ContextSourceKind::Text { text }
+                if text.is_null() || text.as_str().is_some_and(str::is_empty) =>
+            {
+                Some(format!("context source `{label}` has empty `text`"))
+            }
+            ContextSourceKind::Memory { scope, query, .. } => {
+                if !matches!(scope.as_str(), "user" | "flow" | "flows") {
+                    // Literal enum, for the same unbypassable reason the `memory`
+                    // node validates its scope this way: an `=`-expression is
+                    // never one of the three literals, so a run-time-resolved
+                    // scope can never reach the memory provider.
+                    Some(format!(
+                        "context source `{label}` has unknown memory scope {scope:?} \
+                         (expected a literal user|flow|flows)"
+                    ))
+                } else if query.is_empty() {
+                    Some(format!(
+                        "context source `{label}` has an empty memory `query`"
+                    ))
+                } else {
+                    None
+                }
+            }
+            ContextSourceKind::Flavour { slug } if slug.is_empty() => Some(format!(
+                "context source `{label}` has an empty flavour `slug`"
+            )),
+            ContextSourceKind::Host { source: name, .. } => {
+                if name.is_empty() {
+                    Some(format!(
+                        "context source `{label}` has an empty host `source`"
+                    ))
+                } else if is_expression(name) {
+                    Some(format!(
+                        "context source `{label}` host `source` must be a literal, not the \
+                         expression {name:?} — which corpus an agent reads from should not be \
+                         chosen by run data"
+                    ))
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// Why a limits block is unacceptable, or `None`.
+    fn limits_problem(limits: &AgentLimits) -> Option<String> {
+        let zero = [
+            ("max_steps", limits.max_steps),
+            ("max_tool_calls", limits.max_tool_calls),
+            ("agent_timeout_secs", limits.agent_timeout_secs),
+            ("tool_timeout_secs", limits.tool_timeout_secs),
+        ]
+        .into_iter()
+        .find(|(_, v)| *v == Some(0));
+        zero.map(|(field, _)| {
+            format!(
+                "`limits.{field}` must be greater than 0 (an agent that may take 0 steps \
+                     cannot run); omit it for no bound"
+            )
+        })
+    }
+
+    for node in &graph.nodes {
+        if node.kind != NodeKind::Agent {
+            continue;
+        }
+        let config = &node.config;
+
+        match config.get("agent_ref") {
+            Some(Value::String(agent_ref)) if is_expression(agent_ref) => {
+                errors.push(ValidationError::InvalidNodeConfig {
+                    node: node.id.clone(),
+                    reason: format!(
+                        "`agent_ref` must be a literal, not the expression {agent_ref:?} — an \
+                         expression resolves from run data, which would let upstream (possibly \
+                         model-influenced) data select a differently-privileged agent type"
+                    ),
+                });
+            }
+            Some(value) if !value.is_string() && !value.is_null() => {
+                errors.push(ValidationError::InvalidNodeConfig {
+                    node: node.id.clone(),
+                    reason: "`agent_ref` must be a string".to_string(),
+                });
+            }
+            _ => {}
+        }
+
+        // Tool grants. Parsed rather than hand-walked so an author gets the same
+        // shape errors the executor would raise, before a run starts.
+        match config.get("tools") {
+            Some(raw) if !raw.is_null() => {
+                match serde_json::from_value::<Vec<ToolGrant>>(raw.clone()) {
+                    Ok(grants) => {
+                        for grant in &grants {
+                            if let Some(reason) = tool_grant_problem(grant) {
+                                errors.push(ValidationError::InvalidNodeConfig {
+                                    node: node.id.clone(),
+                                    reason,
+                                });
+                            }
+                        }
+                        // A node may narrow its agent definition's grants, never
+                        // widen them. Only checkable when the definition is
+                        // in-graph; a harness-resolved one is dropped with a
+                        // warning at run time instead.
+                        if let Some(agent_ref) = config.get("agent_ref").and_then(Value::as_str)
+                            && let Some(definition) = graph.agent(agent_ref)
+                            && !definition.tools.is_empty()
+                        {
+                            for grant in &grants {
+                                if !definition
+                                    .tools
+                                    .iter()
+                                    .any(|g| g.covers(&grant.slug) || grant.covers(&g.slug))
+                                {
+                                    errors.push(ValidationError::InvalidNodeConfig {
+                                        node: node.id.clone(),
+                                        reason: format!(
+                                            "tool {:?} is not granted by agent {agent_ref:?} — a \
+                                             node may narrow its agent's tools, never widen them",
+                                            grant.slug
+                                        ),
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => errors.push(ValidationError::InvalidNodeConfig {
+                        node: node.id.clone(),
+                        reason: format!("invalid `tools`: {e}"),
+                    }),
+                }
+            }
+            _ => {}
+        }
+
+        match config.get("context") {
+            Some(raw) if !raw.is_null() => {
+                match serde_json::from_value::<Vec<ContextSource>>(raw.clone()) {
+                    Ok(sources) => {
+                        for (index, source) in sources.iter().enumerate() {
+                            if let Some(reason) = context_source_problem(source, index) {
+                                errors.push(ValidationError::InvalidNodeConfig {
+                                    node: node.id.clone(),
+                                    reason,
+                                });
+                            }
+                        }
+                    }
+                    Err(e) => errors.push(ValidationError::InvalidNodeConfig {
+                        node: node.id.clone(),
+                        reason: format!("invalid `context`: {e}"),
+                    }),
+                }
+            }
+            _ => {}
+        }
+
+        match config.get("limits") {
+            Some(raw) if !raw.is_null() => match serde_json::from_value::<AgentLimits>(raw.clone())
+            {
+                Ok(limits) => {
+                    if let Some(reason) = limits_problem(&limits) {
+                        errors.push(ValidationError::InvalidNodeConfig {
+                            node: node.id.clone(),
+                            reason,
+                        });
+                    }
+                }
+                Err(e) => errors.push(ValidationError::InvalidNodeConfig {
+                    node: node.id.clone(),
+                    reason: format!("invalid `limits`: {e}"),
+                }),
+            },
+            _ => {}
+        }
+    }
+}
+
+/// Every (node id, `agent_ref`) pair the graph's own registry does not resolve.
+///
+/// [`validate_all`] deliberately does not treat these as errors: it runs without
+/// capabilities, and the harness's registry is the documented fallback — a graph
+/// naming a host-curated agent is valid, not broken. A host that *can* consult
+/// its registry at author time calls this and checks each ref against its own
+/// catalogue, turning "will fail at run time" into an editor warning.
+///
+/// ```
+/// use tinyflows::model::WorkflowGraph;
+/// use tinyflows::validate::unresolved_agent_refs;
+///
+/// let graph: WorkflowGraph = serde_json::from_str(
+///     r#"{
+///       "agents": [{"id": "known"}],
+///       "nodes": [
+///         {"id": "a", "kind": "agent", "name": "a", "config": {"agent_ref": "known"}},
+///         {"id": "b", "kind": "agent", "name": "b", "config": {"agent_ref": "host_side"}}
+///       ],
+///       "edges": []
+///     }"#,
+/// )
+/// .unwrap();
+///
+/// assert_eq!(
+///     unresolved_agent_refs(&graph),
+///     vec![("b".to_string(), "host_side".to_string())]
+/// );
+/// ```
+#[must_use]
+pub fn unresolved_agent_refs(graph: &WorkflowGraph) -> Vec<(crate::model::NodeId, String)> {
+    graph
+        .nodes
+        .iter()
+        .filter(|node| node.kind == NodeKind::Agent)
+        .filter_map(|node| {
+            let agent_ref = node.config.get("agent_ref").and_then(Value::as_str)?;
+            (!agent_ref.is_empty() && graph.agent(agent_ref).is_none())
+                .then(|| (node.id.clone(), agent_ref.to_string()))
+        })
+        .collect()
 }
 
 /// Loop and cycle legality.
@@ -2148,5 +2472,216 @@ mod loop_tests {
             ..Default::default()
         };
         assert_eq!(validate_all(&graph), Vec::new());
+    }
+
+    // ---- agent registry + agent-node configuration ------------------------
+
+    mod agents {
+        use super::{node, node_cfg};
+        use crate::error::ValidationError;
+        use crate::model::{AgentDefinition, NodeKind, WorkflowGraph};
+        use crate::validate::{unresolved_agent_refs, validate_all};
+        use serde_json::json;
+
+        /// A one-agent-node graph with the given registry and node config.
+        fn agent_graph(agents: Vec<AgentDefinition>, config: serde_json::Value) -> WorkflowGraph {
+            WorkflowGraph {
+                agents,
+                nodes: vec![
+                    node("t", NodeKind::Trigger),
+                    node_cfg("a", NodeKind::Agent, config),
+                ],
+                edges: vec![crate::model::Edge {
+                    from_node: "t".into(),
+                    from_port: "main".into(),
+                    to_node: "a".into(),
+                    to_port: "main".into(),
+                }],
+                ..Default::default()
+            }
+        }
+
+        fn reasons(graph: &WorkflowGraph) -> Vec<String> {
+            validate_all(graph)
+                .iter()
+                .map(ToString::to_string)
+                .collect()
+        }
+
+        #[test]
+        fn a_well_formed_registry_and_node_validate_clean() {
+            let agent: AgentDefinition = serde_json::from_value(json!({
+                "id": "triager",
+                "model": "opus",
+                "provider": "anthropic",
+                "tools": [{ "slug": "github.*" }],
+                "context": [{ "kind": "memory", "scope": "user", "query": "prefs" }],
+                "limits": { "max_steps": 8, "tool_timeout_secs": 30 }
+            }))
+            .unwrap();
+            let graph = agent_graph(
+                vec![agent],
+                json!({
+                    "agent_ref": "triager",
+                    "prompt": "go",
+                    "tools": [{ "slug": "github.search" }],
+                    "limits": { "max_steps": 4 }
+                }),
+            );
+            assert_eq!(validate_all(&graph), Vec::new());
+        }
+
+        #[test]
+        fn duplicate_agent_ids_are_rejected() {
+            let graph = agent_graph(
+                vec![AgentDefinition::new("dup"), AgentDefinition::new("dup")],
+                json!({}),
+            );
+            assert!(
+                validate_all(&graph).contains(&ValidationError::DuplicateAgentId("dup".into())),
+                "{:?}",
+                validate_all(&graph)
+            );
+        }
+
+        #[test]
+        fn an_empty_agent_id_is_rejected() {
+            let graph = agent_graph(vec![AgentDefinition::new("")], json!({}));
+            assert!(reasons(&graph).iter().any(|r| r.contains("non-empty `id`")));
+        }
+
+        #[test]
+        fn an_expression_agent_ref_is_rejected() {
+            // The escalation guard: an expression resolves from run data, which
+            // could include model output, and would choose the agent's tools.
+            let graph = agent_graph(vec![], json!({ "agent_ref": "=item.which_agent" }));
+            assert!(
+                reasons(&graph)
+                    .iter()
+                    .any(|r| r.contains("must be a literal")),
+                "{:?}",
+                reasons(&graph)
+            );
+        }
+
+        #[test]
+        fn an_expression_tool_slug_or_connection_is_rejected() {
+            let by_slug = agent_graph(vec![], json!({ "tools": [{ "slug": "=item.tool" }] }));
+            assert!(
+                reasons(&by_slug)
+                    .iter()
+                    .any(|r| r.contains("`slug` must be a literal"))
+            );
+
+            let by_conn = agent_graph(
+                vec![],
+                json!({ "tools": [{ "slug": "ok", "connection_ref": "=item.acct" }] }),
+            );
+            assert!(
+                reasons(&by_conn)
+                    .iter()
+                    .any(|r| r.contains("`connection_ref` must be a literal"))
+            );
+        }
+
+        #[test]
+        fn only_a_trailing_dot_star_is_a_valid_tool_pattern() {
+            for bad in ["*", "*.post", "sla*ck"] {
+                let g = agent_graph(vec![], json!({ "tools": [{ "slug": bad }] }));
+                assert!(
+                    reasons(&g).iter().any(|r| r.contains("valid pattern")),
+                    "{bad:?} should be rejected: {:?}",
+                    reasons(&g)
+                );
+            }
+            let good = agent_graph(vec![], json!({ "tools": [{ "slug": "slack.*" }] }));
+            assert_eq!(validate_all(&good), Vec::new());
+        }
+
+        #[test]
+        fn a_node_may_not_widen_its_agents_tool_grants() {
+            let mut agent = AgentDefinition::new("triager");
+            agent.tools = vec![crate::model::ToolGrant::new("github.search")];
+            let graph = agent_graph(
+                vec![agent],
+                json!({ "agent_ref": "triager", "tools": [{ "slug": "shell.exec" }] }),
+            );
+            assert!(
+                reasons(&graph)
+                    .iter()
+                    .any(|r| r.contains("is not granted by agent")),
+                "{:?}",
+                reasons(&graph)
+            );
+        }
+
+        #[test]
+        fn an_unknown_memory_scope_is_rejected() {
+            let graph = agent_graph(
+                vec![],
+                json!({ "context": [{ "kind": "memory", "scope": "=item.scope", "query": "q" }] }),
+            );
+            assert!(
+                reasons(&graph)
+                    .iter()
+                    .any(|r| r.contains("unknown memory scope")),
+                "{:?}",
+                reasons(&graph)
+            );
+        }
+
+        #[test]
+        fn a_zero_limit_is_rejected() {
+            let graph = agent_graph(vec![], json!({ "limits": { "max_steps": 0 } }));
+            assert!(
+                reasons(&graph).iter().any(|r| r.contains("greater than 0")),
+                "{:?}",
+                reasons(&graph)
+            );
+        }
+
+        #[test]
+        fn a_malformed_context_or_limits_block_reports_the_key() {
+            let graph = agent_graph(vec![], json!({ "context": "not an array" }));
+            assert!(
+                reasons(&graph)
+                    .iter()
+                    .any(|r| r.contains("invalid `context`"))
+            );
+        }
+
+        #[test]
+        fn an_unresolved_agent_ref_is_deferred_not_an_error() {
+            // Validation runs without capabilities and the harness registry is
+            // the documented fallback, so this is valid — but reportable.
+            let graph = agent_graph(vec![], json!({ "agent_ref": "host_side" }));
+            assert_eq!(validate_all(&graph), Vec::new());
+            assert_eq!(
+                unresolved_agent_refs(&graph),
+                vec![("a".to_string(), "host_side".to_string())]
+            );
+
+            let declared = agent_graph(
+                vec![AgentDefinition::new("host_side")],
+                json!({ "agent_ref": "host_side" }),
+            );
+            assert!(unresolved_agent_refs(&declared).is_empty());
+        }
+
+        #[test]
+        fn the_new_error_variants_carry_stable_codes() {
+            assert_eq!(
+                ValidationError::DuplicateAgentId("x".into()).code(),
+                "duplicate_agent_id"
+            );
+            assert_eq!(
+                ValidationError::InvalidAgentDefinition {
+                    agent: "x".into(),
+                    reason: "y".into()
+                }
+                .code(),
+                "invalid_agent_definition"
+            );
+        }
     }
 }

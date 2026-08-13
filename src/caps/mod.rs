@@ -5,6 +5,7 @@
 //! adapter seam (`src/openhuman/tinyflows/`) wires these to its inference stack,
 //! curated Composio tools, `HttpRequestTool`, and sandboxed code runtimes.
 
+pub mod agent;
 #[cfg(any(test, feature = "mock"))]
 pub mod mock;
 pub mod shell;
@@ -16,6 +17,10 @@ use serde_json::Value;
 
 use crate::error::Result;
 
+pub use self::agent::{
+    AgentInput, AgentModelSelection, AgentRunIdentity, AgentRunOutcome, AgentRunRequest,
+    AgentRunner, AgentUsage, ContextBlock, StopReason, ToolDescriptor,
+};
 pub use self::shell::{ShellInterpreter, ShellOutcome, ShellRequest, ShellRunner, ShellScript};
 
 /// A chat / LLM provider used by `agent` and `output_parser` nodes.
@@ -27,37 +32,6 @@ pub trait LlmProvider: Send + Sync {
     /// provider credential id) that names the account the call acts as; the host
     /// resolves it to real secrets inside this implementation.
     async fn complete(&self, request: Value, conn: Option<&str>) -> Result<Value>;
-}
-
-/// Runs a host-registered, multi-turn **agent** identified by a stable id.
-///
-/// Where [`LlmProvider::complete`] is a single chat call, an `AgentRunner` runs
-/// a *named agent kind* the host has defined — a coding agent, a researcher, a
-/// crypto agent — each bringing its own curated tool access, model, sandbox, and
-/// iteration policy. An `agent` node selects one via a trusted `agent_ref` in its
-/// config; when the host wires this capability, the node runs that agent to
-/// completion instead of issuing a bare completion.
-///
-/// The engine stays host-agnostic: `agent_ref` is an opaque id the host resolves
-/// against its own agent registry. This capability is **optional** — hosts
-/// without an agent registry leave [`Capabilities::agent`] `None`, and `agent`
-/// nodes fall back to [`LlmProvider`].
-#[async_trait]
-pub trait AgentRunner: Send + Sync {
-    /// Runs the host-registered agent identified by `agent_ref` to completion.
-    ///
-    /// `request` is the (expression-resolved) node config — prompt/input plus any
-    /// per-node overrides the host chooses to honor (e.g. a narrowing tool
-    /// allow-list). `conn` is the same opaque, host-managed connection reference
-    /// the other capabilities take. The returned JSON is treated exactly like a
-    /// completion response by the `agent` node (enveloped into `{ json, text,
-    /// raw }`), so downstream binding is identical to a plain agent turn.
-    ///
-    /// # Errors
-    /// Returns an [`EngineError::Capability`](crate::error::EngineError::Capability)
-    /// when `agent_ref` is unknown or the agent run fails.
-    async fn run_agent(&self, agent_ref: &str, request: Value, conn: Option<&str>)
-    -> Result<Value>;
 }
 
 /// Host-injected memory access for `memory` nodes.

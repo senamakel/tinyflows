@@ -29,15 +29,37 @@ use crate::nodes::{NodeContext, NodeExecutor, NodeOutput};
 ///   (validate → one LLM auto-fix → re-validate), honoring
 ///   `config.output_parser.auto_fix` (default `true`).
 ///
-/// **Agent-kind selection** (`config.agent_ref`): when set to a host-registered
-/// agent id and the host wired the optional [`AgentRunner`](crate::caps::AgentRunner)
-/// capability, the node runs that named agent — with its own curated tools,
-/// model, and sandbox — to completion, instead of a bare completion. The inline
-/// tool sub-port is then skipped (the registered agent owns its tool loop); the
-/// output-parser sub-port still applies. `agent_ref` is read from trusted node
-/// config, never from model output. With no `agent_ref` (or no `AgentRunner`),
-/// the node falls back to [`LlmProvider`](crate::caps::LlmProvider). Either way
-/// the output is the same `{ json, text, raw }` envelope.
+/// **Agent-kind selection** (`config.agent_ref`): when set and the host wired the
+/// optional [`AgentRunner`](crate::caps::AgentRunner) capability, the node runs
+/// that named agent to completion instead of issuing a bare completion.
+/// `agent_ref` resolves against the graph's own
+/// [`agents`](crate::model::WorkflowGraph::agents) registry first, then the
+/// harness's, then passes through as a bare id. The resulting
+/// [`AgentDefinition`](crate::model::AgentDefinition) is merged with the node's
+/// overrides — **narrowing only** — and assembled into a typed
+/// [`AgentRunRequest`](crate::caps::AgentRunRequest) carrying the resolved
+/// instructions, model, provider, working directory, context blocks, tool
+/// descriptors, limits, and metadata. See
+/// [`agent_request`](super::agent_request) for the merge rules.
+///
+/// The inline tool sub-port is skipped on that path (the agent owns its own tool
+/// loop, and re-invoking a tool it already called would duplicate the side
+/// effect); the output-parser sub-port still applies. `agent_ref` is read from
+/// trusted node config, never from model output.
+///
+/// With no `agent_ref` (or no `AgentRunner`) the node falls back to
+/// [`LlmProvider`](crate::caps::LlmProvider) exactly as it always has — the one
+/// addition being that a declared `context` is still resolved into blocks, so an
+/// author's context is not silently dropped on a host without a harness.
+///
+/// **Output.** The agent-kind path emits `{ json, text, raw, meta }`, where
+/// `meta.stop` is `"finished"` or `"limit_stop"` — so a downstream `condition`
+/// can branch on whether the agent actually reached an answer. A `limit_stop`
+/// payload is partial and skips the output parser. The degraded path emits the
+/// original three-key envelope unchanged. A harness reporting
+/// [`Paused`](crate::caps::StopReason::Paused) fails the node: resuming a paused
+/// agent is not supported yet, and emitting a half-run agent's output as if it
+/// were an answer is the failure this refuses to make.
 ///
 /// Sub-ports **not** yet wired (documented follow-ups): a `chat_model` sub-port
 /// (attached model selection beyond what the request already carries) and a
@@ -70,11 +92,13 @@ impl NodeExecutor for AgentNode {
                 ctx.observer,
                 opts,
                 move |index| async move {
-                    let (cfg, diags) = crate::nodes::resolve_config_traced_for_item(
-                        ctx,
-                        ctx.input[index].json.clone(),
-                    );
-                    let item = run_turn(ctx, &cfg).await?;
+                    let item_json = ctx.input[index].json.clone();
+                    let (cfg, diags) =
+                        crate::nodes::resolve_config_traced_for_item(ctx, item_json.clone());
+                    // The same scope the config was resolved against, so an
+                    // agent definition's own `=`-expressions see this item.
+                    let scope = crate::nodes::expr_scope_for(ctx, item_json);
+                    let item = run_turn_indexed(ctx, &cfg, &scope, Some(index)).await?;
                     Ok((item, diags))
                 },
             )
@@ -84,7 +108,8 @@ impl NodeExecutor for AgentNode {
 
         // Single turn against the first-item scope (or empty input).
         let (cfg, diagnostics) = crate::nodes::resolve_config_traced(&ctx);
-        let item = run_turn(&ctx, &cfg).await?;
+        let scope = crate::nodes::expr_scope(&ctx);
+        let item = run_turn(&ctx, &cfg, &scope).await?;
         Ok(NodeOutput::main(vec![item]).with_diagnostics(diagnostics))
     }
 }
@@ -93,7 +118,18 @@ impl NodeExecutor for AgentNode {
 /// registered agent kind), the optional tool sub-port, the optional
 /// output-parser sub-port, and finally the stable `{ json, text, raw }`
 /// envelope. Returns the emitted [`Item`] (without pairing — the caller sets it).
-async fn run_turn(ctx: &NodeContext<'_>, cfg: &Value) -> Result<Item> {
+async fn run_turn(ctx: &NodeContext<'_>, cfg: &Value, scope: &Value) -> Result<Item> {
+    run_turn_indexed(ctx, cfg, scope, None).await
+}
+
+/// [`run_turn`], told which input item it is running for under `per_item`
+/// execution, so the harness can attribute the run.
+async fn run_turn_indexed(
+    ctx: &NodeContext<'_>,
+    cfg: &Value,
+    scope: &Value,
+    item_index: Option<usize>,
+) -> Result<Item> {
     let conn = cfg.get("connection_ref").and_then(Value::as_str);
 
     // Agent-kind selection: a trusted `agent_ref` in config routes this node
@@ -102,23 +138,45 @@ async fn run_turn(ctx: &NodeContext<'_>, cfg: &Value) -> Result<Item> {
     // comes from resolved node config — never from model output — so it can't
     // be steered by prompt injection. Falls back to `LlmProvider` when no
     // `agent_ref` is set or the host wired no agent registry.
-    let agent_ref = cfg
-        .get("agent_ref")
-        .and_then(Value::as_str)
-        .filter(|s| !s.is_empty());
+    let agent_ref = super::agent_request::agent_ref_of(cfg);
     let via_agent_kind = agent_ref.is_some() && ctx.caps.agent.is_some();
-    let response = match (agent_ref, ctx.caps.agent.as_ref()) {
-        (Some(agent_ref), Some(runner)) => {
-            tracing::debug!(agent_ref, "agent node: running registered agent kind");
-            runner.run_agent(agent_ref, cfg.clone(), conn).await?
+
+    if let (Some(agent_ref), Some(runner)) = (agent_ref, ctx.caps.agent.as_ref()) {
+        tracing::debug!(agent_ref, "agent node: running registered agent kind");
+        let request =
+            super::agent_request::assemble(ctx, cfg, agent_ref, scope, item_index).await?;
+        let outcome = runner.run(request).await?;
+        return finish_agent_run(ctx, cfg, conn, agent_ref, outcome).await;
+    }
+
+    // Degraded path: no agent kind selected, or no harness wired. The node
+    // config *is* the completion request, exactly as it has always been — when
+    // a `tools` sub-port is configured its descriptors ride along so the model
+    // can elect to call one.
+    //
+    // The one addition: when the author declared `context`, its sources are
+    // resolved and the key is replaced with the resulting blocks, so declared
+    // context still reaches the model on a host with no `AgentRunner`. Nodes
+    // that declare no context are untouched, so an existing graph's request is
+    // byte-identical to what it has always been.
+    let request = match cfg.get("context") {
+        Some(raw) if !raw.is_null() => {
+            let sources: Vec<crate::model::ContextSource> = serde_json::from_value(raw.clone())
+                .map_err(|e| {
+                    crate::error::EngineError::Capability(format!(
+                        "agent node {}: invalid `context`: {e}",
+                        ctx.node.id
+                    ))
+                })?;
+            let identity = super::agent_request::identity_of(ctx, item_index);
+            let blocks = super::agent_request::resolve_context(ctx, &sources, &identity).await?;
+            let mut request = cfg.clone();
+            request["context"] = serde_json::to_value(blocks).unwrap_or(Value::Null);
+            request
         }
-        _ => {
-            // The node config *is* the completion request; when a `tools`
-            // sub-port is configured its descriptors ride along so the model
-            // can elect to call one.
-            ctx.caps.llm.complete(cfg.clone(), conn).await?
-        }
+        _ => cfg.clone(),
     };
+    let response = ctx.caps.llm.complete(request, conn).await?;
 
     // `text`/`raw` are derived from the untouched completion; `value` is the
     // structured payload we thread the sub-ports (tool hop, output parser)
@@ -210,6 +268,86 @@ async fn run_turn(ctx: &NodeContext<'_>, cfg: &Value) -> Result<Item> {
     Ok(Item::new(super::envelope::from_parts(json, text, raw)))
 }
 
+/// Turns a harness's [`AgentRunOutcome`] into the emitted [`Item`]: honor the
+/// stop reason, apply the output-parser sub-port, and publish the envelope.
+///
+/// The stop reason is read **before** the payload, which is the point of having
+/// one. A bare value cannot distinguish an agent that answered from one that ran
+/// out of budget one step short, and the workflow marches downstream with a
+/// partial answer either way.
+async fn finish_agent_run(
+    ctx: &NodeContext<'_>,
+    cfg: &Value,
+    conn: Option<&str>,
+    agent_ref: &str,
+    outcome: crate::caps::AgentRunOutcome,
+) -> Result<Item> {
+    use crate::caps::StopReason;
+
+    let mut meta = serde_json::json!({ "stop": outcome.stop.as_str(), "agent_ref": agent_ref });
+
+    match &outcome.stop {
+        StopReason::Finished => {}
+        StopReason::LimitStop { limit } => {
+            tracing::warn!(
+                node = %ctx.node.id,
+                agent_ref,
+                limit = %limit,
+                "agent node: the agent stopped on a limit; its output is partial"
+            );
+            meta["limit"] = Value::from(limit.clone());
+        }
+        StopReason::Paused { reason, .. } => {
+            // A pause is resumable, not finished — and the engine cannot yet
+            // route one into its checkpoint/resume machinery. Failing loudly
+            // beats emitting a half-run agent's output as if it were an answer;
+            // see `StopReason::Paused`.
+            return Err(crate::error::EngineError::Capability(format!(
+                "agent node {}: agent `{agent_ref}` paused ({reason}); resuming a paused agent \
+                 is not supported yet, so the run cannot continue",
+                ctx.node.id
+            )));
+        }
+    }
+
+    if let Some(usage) = outcome.usage {
+        meta["usage"] = serde_json::to_value(usage).unwrap_or(Value::Null);
+    }
+
+    // Output-parser sub-port. Deliberately skipped on a limit stop: validating
+    // a knowingly partial payload against the author's schema either fails for
+    // the wrong reason or, with `auto_fix`, spends a model call inventing the
+    // missing half.
+    let mut value = outcome.json;
+    if matches!(outcome.stop, StopReason::Finished)
+        && let Some(parser) = cfg.get("output_parser").filter(|p| !p.is_null())
+        && let Some(parser_schema) = parser.get("schema").filter(|s| !s.is_null())
+    {
+        let auto_fix = parser
+            .get("auto_fix")
+            .and_then(Value::as_bool)
+            .unwrap_or(true);
+        let parser_conn = parser
+            .get("connection_ref")
+            .and_then(Value::as_str)
+            .or(conn);
+        value =
+            schema::parse_and_validate(value, parser_schema, auto_fix, &ctx.caps.llm, parser_conn)
+                .await?;
+    }
+
+    let json = match value {
+        Value::Object(_) | Value::Array(_) => value,
+        _ => Value::Null,
+    };
+    Ok(Item::new(super::envelope::from_parts_with_meta(
+        json,
+        outcome.text,
+        outcome.raw,
+        meta,
+    )))
+}
+
 #[cfg(test)]
 mod tests {
     use crate::caps::mock::mock_capabilities;
@@ -296,6 +434,7 @@ mod tests {
                 run: &run_meta,
                 nodes: &Value::Null,
                 caps: &caps,
+                agents: &[],
                 observer: &crate::observability::NoopObserver,
                 token: crate::engine::CancellationToken::new(),
             })
@@ -313,6 +452,7 @@ mod tests {
                 run: &run_meta,
                 nodes: &Value::Null,
                 caps: &caps,
+                agents: &[],
                 observer: &crate::observability::NoopObserver,
                 token: crate::engine::CancellationToken::new(),
             })
@@ -336,6 +476,7 @@ mod tests {
             run: &run_meta,
             nodes: &Value::Null,
             caps: &caps,
+            agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
         };
@@ -363,6 +504,7 @@ mod tests {
             run: &run_meta,
             nodes: &Value::Null,
             caps: &caps,
+            agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
         };
@@ -382,6 +524,7 @@ mod tests {
             run: &run_meta,
             nodes: &Value::Null,
             caps: &caps,
+            agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
         };
@@ -407,6 +550,7 @@ mod tests {
             run: &run_meta,
             nodes: &Value::Null,
             caps: &caps,
+            agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
         };
@@ -436,6 +580,7 @@ mod tests {
             run: &run_meta,
             nodes: &Value::Null,
             caps,
+            agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
         };
@@ -598,6 +743,7 @@ mod tests {
             run: &run_meta,
             nodes: &Value::Null,
             caps: &caps,
+            agents: &[],
             observer: &crate::observability::NoopObserver,
             token: crate::engine::CancellationToken::new(),
         };
@@ -678,5 +824,355 @@ mod tests {
         let value = run_agent(&node, &mock_capabilities()).await;
         assert_eq!(value["json"]["completion"]["prompt"], "hi");
         assert!(value["json"].get("tool_result").is_none());
+    }
+
+    // ---- configurable agents: registry, merge, context, tools, stop reasons --
+
+    mod configurable {
+        use super::{agent_node, run_agent};
+        use crate::caps::mock::{
+            MockAgentHarness, MockLimitedAgentRunner, MockPausingAgentRunner,
+            mock_capabilities_with_agent,
+        };
+        use crate::caps::{AgentRunner, Capabilities};
+        use crate::data::Item;
+        use crate::model::{
+            AgentDefinition, AgentLimits, ContextSource, ContextSourceKind, ToolGrant,
+        };
+        use crate::nodes::{NodeContext, NodeExecutor};
+        use serde_json::{Value, json};
+
+        fn triager() -> AgentDefinition {
+            AgentDefinition {
+                id: "triager".into(),
+                instructions: Some("Be terse.".into()),
+                model: Some("sonnet".into()),
+                provider: Some("anthropic".into()),
+                working_dir: Some("/srv/checkout".into()),
+                limits: AgentLimits {
+                    max_steps: Some(8),
+                    max_tool_calls: Some(20),
+                    agent_timeout_secs: Some(300),
+                    tool_timeout_secs: Some(30),
+                },
+                tools: vec![
+                    ToolGrant::new("github.search"),
+                    ToolGrant {
+                        slug: "github.label".into(),
+                        connection_ref: Some("conn_definition".into()),
+                    },
+                ],
+                metadata: json!({ "tier": "fast" }).as_object().unwrap().clone(),
+                ..Default::default()
+            }
+        }
+
+        /// Runs an `agent` node against an in-graph registry and a typed harness.
+        async fn run_with_registry(
+            config: Value,
+            agents: &[AgentDefinition],
+            caps: &Capabilities,
+        ) -> Value {
+            let node = agent_node(config);
+            let input = vec![Item::new(json!({ "seed": 1 }))];
+            let run_meta = json!({ "run_id": "run_7", "sub_workflow_depth": 2 });
+            let out = super::super::AgentNode
+                .execute(NodeContext {
+                    node: &node,
+                    input: &input,
+                    run: &run_meta,
+                    nodes: &Value::Null,
+                    caps,
+                    agents,
+                    observer: &crate::observability::NoopObserver,
+                    token: crate::engine::CancellationToken::new(),
+                })
+                .await
+                .expect("execute");
+            out.items[0].json.clone()
+        }
+
+        #[tokio::test]
+        async fn an_in_graph_definition_reaches_the_harness_merged_with_node_overrides() {
+            let caps = mock_capabilities_with_agent(MockAgentHarness::new());
+            let value = run_with_registry(
+                json!({
+                    "agent_ref": "triager",
+                    "prompt": "Triage it.",
+                    "instructions": "Prefer `bug`.",
+                    "model": "opus",
+                    "working_dir": "/srv/other",
+                    "tools": [{ "slug": "github.search" }],
+                    "limits": { "max_steps": 4 },
+                    "metadata": { "extra": true }
+                }),
+                &[triager()],
+                &caps,
+            )
+            .await;
+            let echo = &value["json"];
+
+            assert_eq!(echo["agent"], "triager");
+            assert_eq!(
+                echo["instructions"], "Be terse.\n\nPrefer `bug`.",
+                "node instructions append to the definition's"
+            );
+            assert_eq!(echo["model"], "opus", "the node overrides the model");
+            assert_eq!(
+                echo["provider"], "anthropic",
+                "an un-overridden provider survives from the definition"
+            );
+            assert_eq!(echo["working_dir"], "/srv/other");
+            assert_eq!(echo["prompt"], "Triage it.");
+            assert_eq!(
+                echo["data"][0]["seed"], 1,
+                "input items ride along structurally"
+            );
+            assert_eq!(echo["limits"]["max_steps"], 4, "the node tightened it");
+            assert_eq!(
+                echo["limits"]["max_tool_calls"], 20,
+                "un-narrowed bound survives"
+            );
+            assert_eq!(echo["limits"]["tool_timeout_secs"], 30);
+            assert_eq!(echo["limits"]["agent_timeout_secs"], 300);
+            assert_eq!(echo["metadata"]["tier"], "fast");
+            assert_eq!(echo["metadata"]["extra"], true);
+            assert_eq!(
+                echo["tools"],
+                json!(["github.search"]),
+                "the node narrowed the definition's two grants to one"
+            );
+            assert_eq!(echo["identity"]["node_id"], "n");
+            assert_eq!(echo["identity"]["run_id"], "run_7");
+            assert_eq!(echo["identity"]["depth"], 2);
+            assert_eq!(value["meta"]["stop"], "finished");
+            assert_eq!(value["meta"]["agent_ref"], "triager");
+            assert_eq!(value["meta"]["usage"]["steps"], 1);
+        }
+
+        #[tokio::test]
+        async fn the_in_graph_registry_wins_over_the_harnesss() {
+            let host_side = AgentDefinition {
+                id: "triager".into(),
+                model: Some("host-model".into()),
+                ..Default::default()
+            };
+            let caps = mock_capabilities_with_agent(MockAgentHarness::new().with(host_side));
+            let value =
+                run_with_registry(json!({ "agent_ref": "triager" }), &[triager()], &caps).await;
+            assert_eq!(
+                value["json"]["model"], "sonnet",
+                "the graph's definition wins"
+            );
+        }
+
+        #[tokio::test]
+        async fn the_harness_registry_answers_when_the_graph_does_not() {
+            let caps = mock_capabilities_with_agent(MockAgentHarness::new().with(triager()));
+            let value = run_with_registry(json!({ "agent_ref": "triager" }), &[], &caps).await;
+            assert_eq!(value["json"]["model"], "sonnet");
+            assert_eq!(value["json"]["provider"], "anthropic");
+        }
+
+        #[tokio::test]
+        async fn an_unknown_ref_passes_through_as_a_bare_id() {
+            // Not an error: the harness may resolve refs internally, which is
+            // exactly what it did before a registry existed.
+            let caps = mock_capabilities_with_agent(MockAgentHarness::new());
+            let value = run_with_registry(json!({ "agent_ref": "mystery" }), &[], &caps).await;
+            assert_eq!(value["json"]["agent"], "mystery");
+            assert!(value["json"]["model"].is_null());
+        }
+
+        #[tokio::test]
+        async fn context_sources_resolve_in_declaration_order() {
+            let mut agent = triager();
+            agent.context = vec![
+                ContextSource::new(ContextSourceKind::Host {
+                    source: "soul".into(),
+                    params: json!({ "k": "v" }),
+                }),
+                ContextSource::new(ContextSourceKind::Memory {
+                    scope: "user".into(),
+                    query: "preferences".into(),
+                    limit: Some(3),
+                }),
+            ];
+            let caps = mock_capabilities_with_agent(MockAgentHarness::new());
+            let value = run_with_registry(
+                json!({
+                    "agent_ref": "triager",
+                    "context": [
+                        { "kind": "text", "label": "Body", "text": "=item.seed" },
+                        { "kind": "items" }
+                    ]
+                }),
+                &[agent],
+                &caps,
+            )
+            .await;
+            let blocks = value["json"]["context"].as_array().expect("context blocks");
+
+            assert_eq!(blocks.len(), 4, "definition blocks first, then the node's");
+            assert_eq!(blocks[0]["kind"], "host");
+            assert_eq!(blocks[0]["data"]["k"], "v");
+            assert_eq!(blocks[1]["kind"], "memory");
+            assert_eq!(blocks[2]["label"], "Body");
+            assert_eq!(
+                blocks[2]["text"], "1",
+                "the =expression resolved against the item"
+            );
+            assert_eq!(blocks[3]["kind"], "items");
+            assert_eq!(blocks[3]["data"][0]["seed"], 1);
+            assert_eq!(
+                blocks[3]["label"], "context_3",
+                "an unlabelled block is numbered by its position in the ASSEMBLED list, \
+                 not within the node's own `context` array"
+            );
+        }
+
+        #[tokio::test]
+        async fn an_unresolvable_context_source_fails_the_node_unless_optional() {
+            let caps = mock_capabilities_with_agent(MockAgentHarness::new());
+            let node = agent_node(json!({
+                "agent_ref": "triager",
+                "context": [{ "kind": "host", "source": "unknown" }]
+            }));
+            let input: Vec<Item> = vec![];
+            let run_meta = Value::Null;
+            let err = super::super::AgentNode
+                .execute(NodeContext {
+                    node: &node,
+                    input: &input,
+                    run: &run_meta,
+                    nodes: &Value::Null,
+                    caps: &caps,
+                    agents: &[],
+                    observer: &crate::observability::NoopObserver,
+                    token: crate::engine::CancellationToken::new(),
+                })
+                .await
+                .expect_err("an unresolved required block must fail the node");
+            let message = err.to_string();
+            assert!(message.contains("could not be resolved"), "{message}");
+            assert!(message.contains("optional"), "{message}");
+
+            // ...and marking it optional makes it survivable.
+            let value = run_with_registry(
+                json!({
+                    "agent_ref": "triager",
+                    "context": [{ "kind": "host", "source": "unknown", "optional": true }]
+                }),
+                &[],
+                &caps,
+            )
+            .await;
+            assert_eq!(value["json"]["context"], json!([]));
+        }
+
+        #[tokio::test]
+        async fn tool_grants_are_expanded_by_the_harness() {
+            let mut agent = triager();
+            agent.tools = vec![ToolGrant::new("github.*")];
+            let caps = mock_capabilities_with_agent(MockAgentHarness::new());
+            let value = run_with_registry(json!({ "agent_ref": "triager" }), &[agent], &caps).await;
+            assert_eq!(
+                value["json"]["tools"],
+                json!(["github.alpha", "github.beta"]),
+                "the harness expanded the namespace pattern"
+            );
+        }
+
+        #[tokio::test]
+        async fn a_limit_stop_is_visible_and_skips_the_output_parser() {
+            let caps = mock_capabilities_with_agent(MockLimitedAgentRunner);
+            let value = run_with_registry(
+                json!({
+                    "agent_ref": "triager",
+                    // A schema the partial payload could never satisfy: if the
+                    // parser ran, this would fail the node instead of emitting.
+                    "output_parser": {
+                        "schema": { "type": "object", "required": ["definitely_absent"] },
+                        "auto_fix": false
+                    }
+                }),
+                &[],
+                &caps,
+            )
+            .await;
+            assert_eq!(value["meta"]["stop"], "limit_stop");
+            assert_eq!(value["meta"]["limit"], "max_steps");
+            assert_eq!(
+                value["json"]["partial"], true,
+                "the partial payload is kept"
+            );
+            assert_eq!(value["text"], "got as far as I could");
+        }
+
+        #[tokio::test]
+        async fn a_paused_agent_fails_loudly_rather_than_looking_finished() {
+            let caps = mock_capabilities_with_agent(MockPausingAgentRunner);
+            let node = agent_node(json!({ "agent_ref": "triager" }));
+            let input: Vec<Item> = vec![];
+            let run_meta = Value::Null;
+            let err = super::super::AgentNode
+                .execute(NodeContext {
+                    node: &node,
+                    input: &input,
+                    run: &run_meta,
+                    nodes: &Value::Null,
+                    caps: &caps,
+                    agents: &[],
+                    observer: &crate::observability::NoopObserver,
+                    token: crate::engine::CancellationToken::new(),
+                })
+                .await
+                .expect_err("a pause must not be reported as a finished answer");
+            let message = err.to_string();
+            assert!(message.contains("paused"), "{message}");
+            assert!(message.contains("tool_approval"), "{message}");
+        }
+
+        #[tokio::test]
+        async fn declared_context_still_resolves_without_a_harness() {
+            // No `AgentRunner` wired: the node degrades to a completion, but the
+            // author's declared context must not be silently dropped.
+            let node = agent_node(json!({
+                "prompt": "hi",
+                "context": [{ "kind": "memory", "scope": "user", "query": "prefs" }]
+            }));
+            let value = run_agent(&node, &crate::caps::mock::mock_capabilities()).await;
+            let blocks = &value["json"]["completion"]["context"];
+            assert_eq!(blocks[0]["source_kind"], "memory");
+            assert!(
+                blocks[0]["data"].get("results").is_some(),
+                "the memory capability resolved the block: {blocks}"
+            );
+        }
+
+        #[tokio::test]
+        async fn a_legacy_host_receives_the_byte_identical_config_it_always_did() {
+            // THE non-breaking guarantee, end to end: `MockAgentRunner`
+            // implements only `run_agent`, so the default `run` shim applies and
+            // the host sees exactly the (agent_ref, resolved config, conn) it
+            // received before the typed seam existed.
+            let caps = mock_capabilities_with_agent(crate::caps::mock::MockAgentRunner);
+            let config = json!({
+                "agent_ref": "researcher",
+                "prompt": "hi",
+                "connection_ref": "acct_9"
+            });
+            let value = run_agent(&agent_node(config.clone()), &caps).await;
+            assert_eq!(value["raw"]["agent"], "researcher");
+            assert_eq!(value["raw"]["request"], config);
+            assert_eq!(value["raw"]["connection"], "acct_9");
+            assert_eq!(value["meta"]["stop"], "finished");
+        }
+
+        #[tokio::test]
+        async fn list_agents_exposes_the_harness_catalogue() {
+            let harness = MockAgentHarness::new().with(triager());
+            assert_eq!(harness.list_agents().await.unwrap().len(), 1);
+        }
     }
 }

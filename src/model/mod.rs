@@ -21,10 +21,19 @@
 //! A graph also declares its parameters — see [`WorkflowInput`] and
 //! [`resolve_inputs`]. They are the workflow's public signature, validated
 //! before a run starts and addressed from node config as `=inputs.<name>`.
+//!
+//! ## Agents
+//!
+//! A graph may also declare reusable **agent types** — see [`AgentDefinition`]
+//! and [`WorkflowGraph::agents`]. An `agent` node selects one by `agent_ref` and
+//! may narrow it (tighter limits, fewer tools, extra instructions), so one
+//! definition serves many nodes and travels with the workflow between hosts.
 
+mod agent;
 mod inputs;
 mod node_kind;
 
+pub use agent::{AgentDefinition, AgentLimits, ContextSource, ContextSourceKind, ToolGrant};
 pub use inputs::{InputError, InputType, WorkflowInput, is_valid_input_name, resolve_inputs};
 pub use node_kind::{NodeKind, TriggerKind};
 
@@ -156,6 +165,19 @@ pub struct WorkflowGraph {
     /// configuration as `=inputs.<name>`.
     #[serde(default)]
     pub inputs: Vec<WorkflowInput>,
+    /// Reusable **agent types** this workflow declares — its own agent
+    /// registry, mirroring [`inputs`](Self::inputs).
+    ///
+    /// An `agent` node's `config.agent_ref` resolves here first, so a workflow
+    /// that carries its own definitions behaves identically on every host. A ref
+    /// this registry does not declare falls back to the harness's own registry
+    /// (see [`AgentRunner::resolve_agent`](crate::caps::AgentRunner::resolve_agent)),
+    /// and a ref neither resolves is passed through to the harness as an id.
+    ///
+    /// Empty for graphs authored before the registry existed, and for graphs
+    /// whose agents are entirely host-defined.
+    #[serde(default)]
+    pub agents: Vec<AgentDefinition>,
     /// The nodes in the graph.
     #[serde(default)]
     pub nodes: Vec<Node>,
@@ -173,6 +195,7 @@ impl Default for WorkflowGraph {
             id: None,
             name: String::new(),
             inputs: Vec::new(),
+            agents: Vec::new(),
             nodes: Vec::new(),
             edges: Vec::new(),
         }
@@ -212,6 +235,27 @@ impl WorkflowGraph {
     #[must_use]
     pub fn node(&self, id: &str) -> Option<&Node> {
         self.nodes.iter().find(|n| n.id == id)
+    }
+
+    /// Looks up an in-graph [`AgentDefinition`] by id.
+    ///
+    /// Returns `None` when the graph declares no such agent — a normal outcome,
+    /// not a failure: the `agent` node then falls back to the harness's registry
+    /// and finally to passing the ref through as an id.
+    ///
+    /// ```
+    /// use tinyflows::model::WorkflowGraph;
+    ///
+    /// let graph: WorkflowGraph = serde_json::from_str(
+    ///     r#"{"agents":[{"id":"triager","model":"claude-opus-5"}],"nodes":[],"edges":[]}"#,
+    /// )
+    /// .unwrap();
+    /// assert_eq!(graph.agent("triager").unwrap().model.as_deref(), Some("claude-opus-5"));
+    /// assert!(graph.agent("nobody").is_none());
+    /// ```
+    #[must_use]
+    pub fn agent(&self, id: &str) -> Option<&AgentDefinition> {
+        self.agents.iter().find(|a| a.id == id)
     }
 
     /// Returns the ids of the **direct** successors of `start` — the target node
@@ -272,6 +316,7 @@ mod tests {
                     .with_default(serde_json::json!(3))
                     .with_description("How deep to recurse"),
             ],
+            agents: Vec::new(),
             nodes: vec![node("t", NodeKind::Trigger), node("a", NodeKind::Agent)],
             edges: vec![Edge {
                 from_node: "t".to_string(),
@@ -423,6 +468,7 @@ mod tests {
             id: Some("wf_1".to_string()),
             name: "demo".to_string(),
             inputs: Vec::new(),
+            agents: Vec::new(),
             nodes: vec![Node {
                 id: "t".to_string(),
                 kind: NodeKind::Trigger,
