@@ -11,25 +11,31 @@ Install the companion CLI from crates.io with:
 cargo install tinyflows --features chrome-extension
 ```
 
-## Build, install, and pair
+## Install, build, and pair
+
+After `cargo install`, the `tinyflows` binary is on your `PATH`. It materializes
+its embedded, versioned extension into a local directory and drives the
+companion, so nothing below needs a source checkout:
 
 ```bash
-cd extension
-npm ci
-npm run verify
-npm run build
-cd ..
-cargo run --features chrome-extension -- extension path
+mkdir -p ~/tinyflows-extension
+cd ~/tinyflows-extension
+tinyflows extension path
 ```
 
 Open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select the printed directory. The CLI materializes its embedded, versioned extension there, so the path remains valid after `cargo install` removes its build sources. Copy the extension id shown by Chrome, then start the companion:
 
 ```bash
-cargo run --features chrome-extension -- pair
-cargo run --features chrome-extension -- companion start \
+tinyflows pair
+tinyflows companion start \
   --extension-id <32-character-extension-id> \
   --workflows-dir "$PWD/workflows"
 ```
+
+To rebuild the extension from a source checkout instead (e.g. when developing
+the `extension/` package), run `npm ci && npm run verify && npm run build`
+first — the installed `tinyflows` binary then serves the freshly built
+`extension/dist` output.
 
 `pair` prints a loopback relay URL and a pairing token. Paste both into the toolbar popup. The token is stored in `~/.tinyflows/credentials/chrome-extension-relay.secret` with mode `0600` on Unix. It is carried in `Sec-WebSocket-Protocol`, never in the URL. Rotate it with `tinyflows pair --rotate`, restart the companion, and pair the extension again.
 
