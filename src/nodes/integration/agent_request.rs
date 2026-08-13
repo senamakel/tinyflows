@@ -125,6 +125,9 @@ pub(crate) fn merge_node_overrides(
     if let Some(provider) = cfg.get("provider").and_then(Value::as_str) {
         definition.provider = Some(provider.to_string());
     }
+    if let Some(working_dir) = cfg.get("working_dir").and_then(Value::as_str) {
+        definition.working_dir = Some(working_dir.to_string());
+    }
 
     let node_context: Vec<ContextSource> = field(cfg, "context", node_id)?;
     definition.context.extend(node_context);
