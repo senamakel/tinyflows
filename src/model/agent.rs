@@ -358,12 +358,40 @@ impl ContextSource {
         }
     }
 
-    /// This source's label, or the positional fallback `"context_<index>"`.
+    /// This source's label, or the best available fallback.
+    ///
+    /// An unlabelled source falls back to whatever identifies it — a host
+    /// source's name, a flavour's slug, a memory scope — and only to the
+    /// positional `"context_<index>"` when the kind carries no identifier of its
+    /// own. That fallback is what an author sees in a "could not be resolved"
+    /// error, and `context_0` does not tell them which block to go fix.
+    ///
+    /// ```
+    /// use tinyflows::model::{ContextSource, ContextSourceKind};
+    /// use serde_json::Value;
+    ///
+    /// let host = ContextSource::new(ContextSourceKind::Host {
+    ///     source: "repo_conventions".into(),
+    ///     params: Value::Null,
+    /// });
+    /// assert_eq!(host.label_or_index(0), "repo_conventions");
+    ///
+    /// // A kind with nothing to name itself by falls back to its position.
+    /// assert_eq!(ContextSource::new(ContextSourceKind::Items).label_or_index(3), "context_3");
+    /// ```
     #[must_use]
     pub fn label_or_index(&self, index: usize) -> String {
-        self.label
-            .clone()
-            .unwrap_or_else(|| format!("context_{index}"))
+        if let Some(label) = &self.label {
+            return label.clone();
+        }
+        match &self.kind {
+            ContextSourceKind::Host { source, .. } => source.clone(),
+            ContextSourceKind::Flavour { slug } => slug.clone(),
+            ContextSourceKind::Memory { scope, .. } => format!("memory:{scope}"),
+            ContextSourceKind::Text { .. } | ContextSourceKind::Items => {
+                format!("context_{index}")
+            }
+        }
     }
 }
 
