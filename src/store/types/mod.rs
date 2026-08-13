@@ -38,7 +38,7 @@ mod workflow;
 #[path = "types_tests.rs"]
 mod tests;
 
-pub use diagnosis::Diagnosis;
+pub use crate::diagnostics::Diagnosis;
 pub use error::WorkflowError;
 pub use note::{NoteId, NoteKind, NoteSource, WorkflowNote};
 pub use proposal::{
