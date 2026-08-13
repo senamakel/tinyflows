@@ -160,6 +160,19 @@ pub struct WorkflowGraph {
     /// configuration as `=inputs.<name>`.
     #[serde(default)]
     pub inputs: Vec<WorkflowInput>,
+    /// Reusable **agent types** this workflow declares — its own agent
+    /// registry, mirroring [`inputs`](Self::inputs).
+    ///
+    /// An `agent` node's `config.agent_ref` resolves here first, so a workflow
+    /// that carries its own definitions behaves identically on every host. A ref
+    /// this registry does not declare falls back to the harness's own registry
+    /// (see [`AgentRunner::resolve_agent`](crate::caps::AgentRunner::resolve_agent)),
+    /// and a ref neither resolves is passed through to the harness as an id.
+    ///
+    /// Empty for graphs authored before the registry existed, and for graphs
+    /// whose agents are entirely host-defined.
+    #[serde(default)]
+    pub agents: Vec<AgentDefinition>,
     /// The nodes in the graph.
     #[serde(default)]
     pub nodes: Vec<Node>,
