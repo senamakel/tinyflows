@@ -140,6 +140,34 @@ runs the identical cases against it.
 Workflow scores live here, not on `WorkflowRecord`: a score is a fact that spans
 runs, and the engine's record is a fact about one document.
 
+## Tenancy
+
+The scope lives on the **handle**, not on every method, because the failure it
+prevents is forgetting to pass it. `ledger.for_tenant("user-7")` at the edge of
+a request is a thing a reviewer can see; six scope arguments threaded through
+intake and closing is a thing that goes wrong once and leaks one tenant's
+lessons into another's prompt. Nothing in the loop takes a tenant argument.
+
+One rule everywhere: **writes go to this handle's bucket; reads return this
+handle's bucket plus the global one.** An unscoped handle's bucket *is* global,
+so a single-tenant deployment that never calls `for_tenant` reads back exactly
+what it wrote.
+
+This matters because a lesson is free text. Its `trigger` and `claim` are
+written from one tenant's episode and can name their repositories, paths and
+internals, and `consolidate()` renders every retrievable lesson into the
+model's prompt. So `promote` stamps the handle's scope and **ignores whatever
+the argument says** — a caller, or a model answer deserialized straight into a
+`Lesson`, cannot publish into another bucket by asking.
+
+Episode rows were never at risk: they are keyed by episode and `tried()` reads
+one episode at a time. It is the knowledge plane — lessons and workflow
+scores — that needed the key.
+
+`ledger::conformance::run_tenants` is public alongside `run_all`, and takes
+three handles onto one store because how a backend makes a scoped one is its
+own business.
+
 ## Deliberately out of scope
 
 - **Human-in-the-loop parking.** `StopReason::Paused` is not routed into the

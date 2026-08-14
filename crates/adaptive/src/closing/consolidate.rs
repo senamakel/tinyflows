@@ -179,6 +179,8 @@ fn read_lesson(raw: &serde_json::Value) -> Option<Lesson> {
         claim: claim.to_string(),
         applied: 0,
         helped: 0,
+        // Stamped by the ledger from its own handle, never chosen here.
+        scope_key: None,
     })
 }
 
@@ -281,6 +283,7 @@ mod tests {
             claim: "pure Python will not get there".into(),
             applied: 3,
             helped: 2,
+            scope_key: None,
         }];
         let rendered = render(&goal, true, &[row("r1", "a")], &existing);
         assert!(rendered.contains("- L7:"), "{rendered}");

@@ -140,6 +140,15 @@ pub struct Lesson {
     /// How many of those ended satisfied.
     #[serde(default)]
     pub helped: u32,
+    /// Whose lesson this is. `None` is global — visible to everyone.
+    ///
+    /// Never set by a caller: [`Ledger::promote`] stamps it from the handle's
+    /// own [`scope`](Ledger::scope). A lesson's `trigger` and `claim` are free
+    /// text drawn from one tenant's episode and can name their repositories,
+    /// paths and internals, so which tenant owns it is not a decision a model
+    /// or a caller gets to make.
+    #[serde(default)]
+    pub scope_key: Option<String>,
 }
 
 impl Lesson {
@@ -174,6 +183,30 @@ pub struct Score {
 /// cannot read its own history should degrade to a first-time run, never stop.
 #[async_trait]
 pub trait Ledger: Send + Sync {
+    /// Whose knowledge this handle reads and writes. `None` is the global
+    /// bucket.
+    ///
+    /// The scope lives on the handle rather than on every method because the
+    /// failure it prevents is *forgetting to pass it*. One `for_tenant` at the
+    /// edge of a request is a thing a reviewer can see; six scope arguments
+    /// threaded through intake and closing is a thing that goes wrong once and
+    /// leaks one tenant's lessons into another's prompt.
+    ///
+    /// One rule, everywhere:
+    ///
+    /// * **writes** go to this handle's bucket;
+    /// * **reads** return this handle's bucket plus the global one.
+    ///
+    /// An unscoped handle's bucket *is* global, so a single-tenant deployment
+    /// that never calls `for_tenant` reads back exactly what it wrote and
+    /// nothing changes for it.
+    ///
+    /// Episode rows are not affected: they are already keyed by episode, and
+    /// [`tried`](Ledger::tried) reads one episode at a time.
+    fn scope(&self) -> Option<&str> {
+        None
+    }
+
     /// Record one finished attempt. Returns the assigned id.
     async fn append(&self, row: &LedgerRow) -> Result<String>;
 
@@ -197,6 +230,9 @@ pub trait Ledger: Send + Sync {
     }
 
     /// Keep a lesson, citing the rows it was drawn from.
+    ///
+    /// The stored lesson's [`scope_key`](Lesson::scope_key) is this handle's
+    /// [`scope`](Ledger::scope), whatever the argument says.
     ///
     /// A claim with no rows behind it is a guess, so the citation is part of
     /// the call rather than an optional extra.

@@ -40,6 +40,7 @@ const COUNTERS: &str = "counters";
 /// A ledger backed by a MongoDB database.
 pub struct MongoLedger {
     db: Database,
+    scope: Option<String>,
 }
 
 impl MongoLedger {
@@ -59,9 +60,31 @@ impl MongoLedger {
     /// # Errors
     /// When an index cannot be created.
     pub async fn with_database(db: Database) -> Result<Self> {
-        let store = Self { db };
+        let store = Self { db, scope: None };
         store.ensure_indexes().await?;
         Ok(store)
+    }
+
+    /// A handle onto the same database, scoped to one tenant.
+    ///
+    /// Cheap — a `Database` is a handle over a shared pool. Construct one per
+    /// request at the edge of the service and hand it to the loop; everything
+    /// downstream reads and writes the right bucket without knowing a tenant
+    /// exists.
+    #[must_use]
+    pub fn for_tenant(&self, scope: impl Into<String>) -> Self {
+        Self {
+            db: self.db.clone(),
+            scope: Some(scope.into()),
+        }
+    }
+
+    /// This handle's bucket, as stored: `""` for global. Stored as a present
+    /// empty string rather than an absent field, so the upsert filter on
+    /// workflow scores matches one document instead of creating a new one each
+    /// time — the same reason sqlite makes the column NOT NULL.
+    fn bucket(&self) -> &str {
+        self.scope.as_deref().unwrap_or_default()
     }
 
     async fn ensure_indexes(&self) -> Result<()> {
@@ -159,6 +182,10 @@ fn read_row(doc: &Document) -> LedgerRow {
 
 #[async_trait]
 impl Ledger for MongoLedger {
+    fn scope(&self) -> Option<&str> {
+        self.scope.as_deref()
+    }
+
     async fn append(&self, row: &LedgerRow) -> Result<String> {
         let seq = self.next_seq(ROWS).await?;
         let id = format!("ldg_{seq:08}");
@@ -205,6 +232,8 @@ impl Ledger for MongoLedger {
                 "claim": &lesson.claim,
                 "applied": i64::from(lesson.applied),
                 "helped": i64::from(lesson.helped),
+                // The handle's, never the argument's.
+                "scope_key": self.bucket(),
                 "seq": seq,
             })
             .await?;
@@ -223,9 +252,14 @@ impl Ledger for MongoLedger {
     }
 
     async fn lessons(&self, kind: Option<LessonKind>) -> Result<Vec<Lesson>> {
+        // This bucket plus global. An unscoped handle's bucket is global, so
+        // the two halves coincide and it sees exactly what it wrote. A lesson
+        // written before scoping existed has no field at all, which `$in` with
+        // a null matches — those read as global, which is what they were.
+        let mine = doc! { "$in": [self.bucket(), ""] };
         let filter = match kind {
-            Some(want) => doc! { "kind": kind_str(want) },
-            None => doc! {},
+            Some(want) => doc! { "kind": kind_str(want), "scope_key": mine },
+            None => doc! { "scope_key": mine },
         };
         let mut cursor = self
             .lessons_c()
@@ -243,6 +277,7 @@ impl Ledger for MongoLedger {
                 claim: text(&d, "claim"),
                 applied: as_u32(&d, "applied"),
                 helped: as_u32(&d, "helped"),
+                scope_key: Some(text(&d, "scope_key")).filter(|s| !s.is_empty()),
             });
         }
         Ok(out)
@@ -288,7 +323,7 @@ impl Ledger for MongoLedger {
         // reading the wrong evidence.
         self.scores()
             .update_one(
-                doc! { "workflow_id": workflow_id },
+                doc! { "workflow_id": workflow_id, "scope_key": self.bucket() },
                 doc! { "$inc": { "applied": 1_i64, "helped": i64::from(helped) } },
             )
             .upsert(true)
@@ -299,7 +334,7 @@ impl Ledger for MongoLedger {
     async fn workflow_score(&self, workflow_id: &str) -> Result<Score> {
         let found = self
             .scores()
-            .find_one(doc! { "workflow_id": workflow_id })
+            .find_one(doc! { "workflow_id": workflow_id, "scope_key": self.bucket() })
             .await?;
         Ok(found.map_or_else(Score::default, |d| Score {
             applied: as_u32(&d, "applied"),
@@ -326,6 +361,12 @@ mod tests {
         let name = format!("adaptive_conformance_{}", std::process::id());
         let store = MongoLedger::connect(&uri, &name).await.expect("connect");
         conformance::run_all(&store).await;
+        conformance::run_tenants(
+            &store,
+            &store.for_tenant("user-a"),
+            &store.for_tenant("user-b"),
+        )
+        .await;
         store.db.drop().await.expect("drop the throwaway database");
     }
 }

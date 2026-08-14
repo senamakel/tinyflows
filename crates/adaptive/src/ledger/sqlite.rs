@@ -44,6 +44,10 @@ const DDL: &[&str] = &[
     // are common, and a timestamp tie makes the ledger read in an arbitrary
     // order — which silently reorders the exclusion list.
     "CREATE INDEX IF NOT EXISTS ix_rows_episode ON ledger_rows(episode, seq)",
+    // `scope_key` is NOT NULL with '' for global rather than nullable: it is
+    // part of the workflow-scores primary key, and SQLite does not treat two
+    // NULLs as equal, so a nullable column there would let every global score
+    // insert a fresh row instead of upserting the same one.
     "CREATE TABLE IF NOT EXISTS lessons (
         id        TEXT PRIMARY KEY,
         kind      TEXT NOT NULL,
@@ -52,23 +56,39 @@ const DDL: &[&str] = &[
         claim     TEXT NOT NULL,
         applied   INTEGER NOT NULL DEFAULT 0,
         helped    INTEGER NOT NULL DEFAULT 0,
+        scope_key TEXT NOT NULL DEFAULT '',
         seq       INTEGER NOT NULL
     )",
+    "CREATE INDEX IF NOT EXISTS ix_lessons_scope ON lessons(scope_key, seq)",
     "CREATE TABLE IF NOT EXISTS lesson_evidence (
         lesson_id TEXT NOT NULL,
         row_id    TEXT NOT NULL,
         PRIMARY KEY (lesson_id, row_id)
     )",
     "CREATE TABLE IF NOT EXISTS workflow_scores (
-        workflow_id TEXT PRIMARY KEY,
+        scope_key   TEXT NOT NULL DEFAULT '',
+        workflow_id TEXT NOT NULL,
         applied     INTEGER NOT NULL DEFAULT 0,
-        helped      INTEGER NOT NULL DEFAULT 0
+        helped      INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (scope_key, workflow_id)
     )",
+];
+
+/// Applied after [`DDL`], failures ignored.
+///
+/// A ledger written before scoping existed has the columns missing rather than
+/// empty, and `CREATE TABLE IF NOT EXISTS` will not add them. `ADD COLUMN`
+/// errors once the column is there, which is the expected case on every start
+/// after the first — so these are the statements whose failure means success.
+const MIGRATIONS: &[&str] = &[
+    "ALTER TABLE lessons ADD COLUMN scope_key TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE workflow_scores ADD COLUMN scope_key TEXT NOT NULL DEFAULT ''",
 ];
 
 /// A ledger backed by one sqlite file.
 pub struct SqliteLedger {
-    conn: Mutex<Connection>,
+    conn: std::sync::Arc<Mutex<Connection>>,
+    scope: Option<String>,
 }
 
 impl SqliteLedger {
@@ -95,9 +115,31 @@ impl SqliteLedger {
         for statement in DDL {
             conn.execute(statement, [])?;
         }
+        for statement in MIGRATIONS {
+            let _ = conn.execute(statement, []);
+        }
         Ok(Self {
-            conn: Mutex::new(conn),
+            conn: std::sync::Arc::new(Mutex::new(conn)),
+            scope: None,
         })
+    }
+
+    /// A handle onto the same database, scoped to one tenant.
+    ///
+    /// Cheap — it shares the connection. Construct one per request at the edge
+    /// of the service and hand it to the loop; everything downstream reads and
+    /// writes the right bucket without knowing a tenant exists.
+    #[must_use]
+    pub fn for_tenant(&self, scope: impl Into<String>) -> Self {
+        Self {
+            conn: std::sync::Arc::clone(&self.conn),
+            scope: Some(scope.into()),
+        }
+    }
+
+    /// This handle's bucket, as stored: `''` for global.
+    fn bucket(&self) -> &str {
+        self.scope.as_deref().unwrap_or_default()
     }
 
     fn guard(&self) -> Result<std::sync::MutexGuard<'_, Connection>> {
@@ -141,6 +183,10 @@ fn read_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<LedgerRow> {
 
 #[async_trait]
 impl Ledger for SqliteLedger {
+    fn scope(&self) -> Option<&str> {
+        self.scope.as_deref()
+    }
+
     async fn append(&self, row: &LedgerRow) -> Result<String> {
         let conn = self.guard()?;
         let seq = next_seq(&conn, "ledger_rows")?;
@@ -180,8 +226,9 @@ impl Ledger for SqliteLedger {
         let seq = next_seq(&conn, "lessons")?;
         let id = new_id("les", seq);
         conn.execute(
-            "INSERT INTO lessons(id, kind, trigger, mechanism, claim, applied, helped, seq)
-             VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",
+            "INSERT INTO lessons(id, kind, trigger, mechanism, claim, applied, helped,
+                                 scope_key, seq)
+             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)",
             params![
                 id,
                 serde_json::to_string(&lesson.kind)
@@ -192,6 +239,8 @@ impl Ledger for SqliteLedger {
                 lesson.claim,
                 i64::from(lesson.applied),
                 i64::from(lesson.helped),
+                // The handle's, never the argument's.
+                self.bucket(),
                 seq,
             ],
         )?;
@@ -206,9 +255,13 @@ impl Ledger for SqliteLedger {
 
     async fn lessons(&self, kind: Option<LessonKind>) -> Result<Vec<Lesson>> {
         let conn = self.guard()?;
-        let mut stmt = conn.prepare("SELECT * FROM lessons ORDER BY seq")?;
+        // This bucket plus global. An unscoped handle's bucket is global, so
+        // the two halves coincide and it sees exactly what it wrote.
+        let mut stmt = conn
+            .prepare("SELECT * FROM lessons WHERE scope_key = ?1 OR scope_key = '' ORDER BY seq")?;
         let all = stmt
-            .query_map([], |r| {
+            .query_map([self.bucket()], |r| {
+                let scope: String = r.get("scope_key")?;
                 Ok(Lesson {
                     id: r.get("id")?,
                     kind: LessonKind::parse(&r.get::<_, String>("kind")?),
@@ -217,6 +270,7 @@ impl Ledger for SqliteLedger {
                     claim: r.get("claim")?,
                     applied: r.get::<_, i64>("applied")?.try_into().unwrap_or(0),
                     helped: r.get::<_, i64>("helped")?.try_into().unwrap_or(0),
+                    scope_key: (!scope.is_empty()).then_some(scope),
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -253,11 +307,12 @@ impl Ledger for SqliteLedger {
         // Upsert: the first run of a workflow is the common case and must not
         // need a separate registration step.
         conn.execute(
-            "INSERT INTO workflow_scores(workflow_id, applied, helped) VALUES(?1, 1, ?2)
-             ON CONFLICT(workflow_id) DO UPDATE SET
+            "INSERT INTO workflow_scores(scope_key, workflow_id, applied, helped)
+             VALUES(?1, ?2, 1, ?3)
+             ON CONFLICT(scope_key, workflow_id) DO UPDATE SET
                 applied = applied + 1,
-                helped  = helped + ?2",
-            params![workflow_id, i64::from(helped)],
+                helped  = helped + ?3",
+            params![self.bucket(), workflow_id, i64::from(helped)],
         )?;
         Ok(())
     }
@@ -266,8 +321,9 @@ impl Ledger for SqliteLedger {
         let conn = self.guard()?;
         let found = conn
             .query_row(
-                "SELECT applied, helped FROM workflow_scores WHERE workflow_id = ?1",
-                [workflow_id],
+                "SELECT applied, helped FROM workflow_scores
+                 WHERE scope_key = ?1 AND workflow_id = ?2",
+                params![self.bucket(), workflow_id],
                 |r| {
                     Ok(Score {
                         applied: r.get::<_, i64>(0)?.try_into().unwrap_or(0),
@@ -289,6 +345,28 @@ mod tests {
     async fn passes_the_conformance_suite() {
         let store = SqliteLedger::in_memory().expect("open in-memory ledger");
         conformance::run_all(&store).await;
+    }
+
+    #[tokio::test]
+    async fn passes_the_tenant_isolation_suite() {
+        let store = SqliteLedger::in_memory().expect("open in-memory ledger");
+        let a = store.for_tenant("user-a");
+        let b = store.for_tenant("user-b");
+        conformance::run_tenants(&store, &a, &b).await;
+    }
+
+    #[tokio::test]
+    async fn a_scoped_handle_shares_the_connection_rather_than_the_file() {
+        // Cheap enough to make per request: a row written through the tenant
+        // handle is visible through the one it came from, so there is no second
+        // database and no reopen.
+        let store = SqliteLedger::in_memory().expect("open in-memory ledger");
+        let tenant = store.for_tenant("user-a");
+        tenant
+            .append(&conformance::row("ep-shared", 1, "authored"))
+            .await
+            .expect("append");
+        assert_eq!(store.rows("ep-shared").await.expect("rows").len(), 1);
     }
 
     #[tokio::test]
