@@ -67,7 +67,11 @@ What survives is exactly the loop.
 - [x] **2b · host facts** — `HostFacts`: what this machine permits, rendered into
       the authoring prompt and checked after, plus the store's own
       `HostPolicy::check_graph`. An absent fact means unknown, never forbidden.
-- [ ] **3 · execute** — `run_with_checkpointer`, host capabilities.
+- [x] **3 · execute** — `run_attempt()`: compile, run **observed**, and come
+      back with the three evidence sources. Thin on purpose — it holds no
+      opinion, reads no history, and never returns an error, because an attempt
+      that leaves no ledger row is one the next pass repeats. Not
+      `run_with_checkpointer`: see below.
 - [x] **4 · judge** — evidence from three sources: the `RunOutcome`, the
       engine's own `Diagnosis` of what the steps did, and what changed outside
       the run. Mechanical evidence settles three verdicts before any model is
@@ -131,3 +135,14 @@ Things that cost a day each if met in production instead.
   Both docs are corrected.
 - **A dry run proves wiring, not work.** A `code` node's script and an `agent`
   node's real reply are both invisible to one.
+- **`run_with_checkpointer` installs a `NoopObserver`.** No observer means no
+  steps, and no steps means `diagnose` returns a blank `Diagnosis` — which is
+  not "nothing was wrong", it is "nobody looked". The judge's findings, the
+  three mechanical verdicts and `graph_is_suspect` all read it, so the durable
+  entry point silently disables repair. `run_with_checkpointer_journaled_observed`
+  keeps both, at the cost of a journal. We run observed and unpersisted: a
+  checkpointer buys durable *resume*, and resume is out of scope.
+- **`never_ran` only reports `agent`, `tool_call` and `http_request`.** A
+  routed-past `transform` is not a surprise worth warning about, so it is
+  omitted by design. A test that asserts on skipped control-flow nodes will
+  fail against a correct engine.
