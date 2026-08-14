@@ -42,7 +42,7 @@
 //! None. A `void` node's `name` is where the human reason goes ("Fire and
 //! forget: audit log") — it is already required, and unlike a config key it is
 //! rendered by [`crate::visualization`]. Config is ignored entirely, including
-//! `={{ … }}` expressions, so this node can emit no binding diagnostics.
+//! `=`-expressions, so this node can emit no binding diagnostics.
 //!
 //! # What it leaves behind
 //!

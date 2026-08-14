@@ -121,5 +121,13 @@ Things that cost a day each if met in production instead.
 - **The envelope.** `agent`, `tool_call` and `http_request` wrap output in
   `{json, text, raw}`. `=nodes.x.item.f` is null where `=nodes.x.item.json.f`
   was meant — compiles, validates, dry-runs green, runs empty.
+- **Bindings are `=expr`, and there are no braces.** `CLAUDE.md` and one node
+  doc said `={{ … }}`; the implementation never accepted it. `is_expression` is
+  `starts_with('=')`, and the remainder is either a simple dotted path
+  (`=nodes.fetch.item.json.body`) or a jq program (`=.items | length`). `{{ }}`
+  is neither: it routes to jq, fails to compile, and a failed program is
+  `Value::Null`. Measured, not reasoned about — `={{ nodes.fetch.item.json.body }}`
+  evaluates to `null` against a scope where the dotted form yields `"hello"`.
+  Both docs are corrected.
 - **A dry run proves wiring, not work.** A `code` node's script and an `agent`
   node's real reply are both invisible to one.

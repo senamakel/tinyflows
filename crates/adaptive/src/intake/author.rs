@@ -43,6 +43,23 @@ Rules that are checked, not requested:
   an id — and read it in config rather than pasting the literal. A graph with
   the value baked in is a graph that works once.
 
+How one node reads another. A config string starting with `=` is an expression;
+everything else is a literal.
+
+    =item.name                     a field of the direct predecessor's output
+    =nodes.fetch.item.json.body    a field of any completed node, by node id
+    =run.trigger.payload           what the trigger carried
+    =.items | length               a leading dot makes the rest a jq program
+
+There are no braces. `={{ ... }}` is not a binding — it is a jq program that
+fails to compile, and a failed program is null, so the step runs with an empty
+value and reports success.
+
+`agent`, `tool_call` and `http_request` wrap their output in
+`{json, text, raw}`. Their fields are under `.json`: write
+`=nodes.fetch.item.json.body`, never `=nodes.fetch.item.body`. The second form
+validates, dry-runs green, and resolves to null every time.
+
 Design guidance, which is judgement rather than a check:
 
 - Fewer nodes is better. An `agent` node is a whole coding-agent session on some
