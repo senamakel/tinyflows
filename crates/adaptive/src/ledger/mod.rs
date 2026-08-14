@@ -79,6 +79,19 @@ pub struct LedgerRow {
     pub cost_usd: f64,
     /// RFC 3339. Supplied by the caller so a frozen clock can drive tests.
     pub at: String,
+    /// Whether the judge called this attempt satisfied.
+    ///
+    /// A field rather than `outcome == "satisfied"`: that string match works
+    /// and is one reworded line away from silently reporting every episode as
+    /// failed.
+    #[serde(default)]
+    pub satisfied: bool,
+    /// Whether it got closer than the state before it.
+    ///
+    /// Stored because the stall rule is computed from it, and an episode a
+    /// restarted process cannot recompute is an episode it has to start over.
+    #[serde(default)]
+    pub advanced: bool,
 }
 
 /// The four kinds of thing an episode can teach.
@@ -195,6 +208,54 @@ pub const MAX_LINEAGE_DEPTH: usize = 8;
 /// How many members of one family [`Ledger::lineage`] will return.
 pub const MAX_FAMILY: usize = 64;
 
+/// How an episode ended, or that it has not.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "state", content = "reason")]
+pub enum EpisodeStatus {
+    /// Still going.
+    Running,
+    /// The goal was met.
+    Satisfied,
+    /// Stopped without success, for the reason
+    /// [`crate::closing::Next::StandDown`] gave.
+    StoodDown(String),
+}
+
+/// One goal, from the first attempt to whatever ended it.
+///
+/// The loop's own checkpoint, and the thing that makes an episode survive the
+/// process running it. Everything here is either unrecoverable from the rows
+/// (the goal) or expensive and error-prone to recompute (the counters), which
+/// is the test for what belongs on it.
+///
+/// Not the engine's `Checkpointer`: that holds mid-run superstep state for
+/// `engine::resume`, which this crate deliberately does not use. This is
+/// between runs, which is the boundary the whole crate sits on.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Episode {
+    /// The caller's id. Minted by whoever owns episodes — a service, a CLI —
+    /// and opaque here.
+    pub id: String,
+    /// What was asked. Unrecoverable from the rows, so a restart without it
+    /// cannot continue.
+    pub goal: crate::contracts::Goal,
+    /// Whose it is, stamped from the handle's scope on write.
+    #[serde(default)]
+    pub scope_key: Option<String>,
+    /// Where it is.
+    pub status: EpisodeStatus,
+    /// Attempts spent.
+    #[serde(default)]
+    pub attempt: u32,
+    /// Consecutive attempts that made no progress.
+    #[serde(default)]
+    pub stalled: u32,
+    /// RFC 3339, caller-supplied.
+    pub started_at: String,
+    /// RFC 3339, caller-supplied.
+    pub updated_at: String,
+}
+
 /// Everything that spans runs.
 ///
 /// Every method is fallible and none of them panics on an absent row: a missing
@@ -293,6 +354,27 @@ pub trait Ledger: Send + Sync {
 
     /// What was derived directly from `id`.
     async fn children_of(&self, id: &str) -> Result<Vec<String>>;
+
+    /// Write an episode, creating or replacing it.
+    ///
+    /// The [`scope_key`](Episode::scope_key) stored is this handle's, whatever
+    /// the argument says — the same rule as [`promote`](Ledger::promote), for
+    /// the same reason.
+    async fn save_episode(&self, episode: &Episode) -> Result<()>;
+
+    /// Read one episode, if this handle's scope can see it.
+    ///
+    /// This is resume: a process that restarts mid-episode reads the goal and
+    /// the counters back and carries on, rather than starting the goal over
+    /// with a ledger that says it has already been attempted four times.
+    async fn episode(&self, id: &str) -> Result<Option<Episode>>;
+
+    /// Every episode in this handle's scope, optionally filtered by state.
+    ///
+    /// `Running` on boot is the recovery list. Without it a deploy silently
+    /// abandons every episode that was in flight — the rows stay, nothing ever
+    /// looks at them again, and the goal is never answered.
+    async fn episodes(&self, running_only: bool) -> Result<Vec<Episode>>;
 
     /// Every workflow in `id`'s family, **root first**, including `id`.
     ///

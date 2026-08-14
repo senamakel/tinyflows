@@ -18,7 +18,7 @@ use tinyflows::diagnostics::Diagnosis;
 use tinyflows::engine::RunOutcome;
 use tinyflows::evidence::bounded_evidence;
 
-use crate::contracts::{Blocker, Goal, Verdict};
+use crate::contracts::{Blocker, Goal, Tier, Verdict};
 use crate::intake::{Result, ask};
 
 const SYSTEM: &str = "\
@@ -169,7 +169,7 @@ pub async fn judge(
         evidence.render()
     );
 
-    let answer = ask(caps, conn, SYSTEM, &user).await?;
+    let answer = ask(caps, conn, Tier::Judge, SYSTEM, &user).await?;
     let satisfied = answer["satisfied"].as_bool().unwrap_or(false);
     Ok(Verdict {
         satisfied,

@@ -115,7 +115,6 @@ async fn a_failed_attempt_is_still_recorded_and_still_scored() {
             diagnosis: &diagnosis,
             changed: "wrote report.md".into(),
         },
-        0,
         &Budget::default(),
         &ledger,
         &caps_with(llm),
@@ -161,7 +160,6 @@ async fn a_satisfied_attempt_moves_both_halves_of_the_score() {
             diagnosis: &diagnosis,
             changed: "wrote report.md".into(),
         },
-        0,
         &Budget::default(),
         &ledger,
         &caps_with(llm),
@@ -203,7 +201,6 @@ async fn a_run_where_nothing_happened_never_reaches_the_model() {
             diagnosis: &diagnosis,
             changed: String::new(),
         },
-        0,
         &Budget::default(),
         &ledger,
         &caps,
@@ -247,7 +244,6 @@ async fn a_parked_approval_is_not_a_failure() {
             diagnosis: &diagnosis,
             changed: String::new(),
         },
-        0,
         &Budget::default(),
         &ledger,
         &caps,
@@ -293,7 +289,6 @@ async fn two_flat_attempts_in_a_row_stand_down_on_the_stall_rule() {
                 diagnosis: &diagnosis,
                 changed: String::new(),
             },
-            stalled,
             &budget,
             &ledger,
             &caps,
@@ -335,6 +330,8 @@ async fn consolidation_keeps_a_lesson_and_cites_the_rows_behind_it() {
                 cause: "the loop never terminated".into(),
                 cost_usd: 0.0,
                 at: "2026-01-01T00:00:00Z".into(),
+                satisfied: false,
+                advanced: false,
             })
             .await
             .expect("appended");
@@ -393,6 +390,8 @@ async fn a_lesson_with_nothing_behind_it_is_not_kept() {
             cause: String::new(),
             cost_usd: 0.0,
             at: "2026-01-01T00:00:00Z".into(),
+            satisfied: false,
+            advanced: false,
         })
         .await
         .expect("appended");
@@ -436,6 +435,8 @@ async fn consolidation_failing_does_not_fail_the_episode() {
             cause: String::new(),
             cost_usd: 0.0,
             at: "2026-01-01T00:00:00Z".into(),
+            satisfied: false,
+            advanced: false,
         })
         .await
         .expect("appended");

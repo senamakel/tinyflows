@@ -138,6 +138,8 @@ mod tests {
             cause: cause.into(),
             cost_usd: 0.0,
             at: "2026-01-01T00:00:00Z".into(),
+            satisfied: false,
+            advanced: false,
         }
     }
 

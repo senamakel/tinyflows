@@ -608,6 +608,8 @@ async fn a_family_whose_champion_was_already_tried_still_offers_its_variant() {
             cause: String::new(),
             cost_usd: 0.0,
             at: "2026-01-01T00:00:00Z".into(),
+            satisfied: false,
+            advanced: false,
         })
         .await
         .expect("append");
@@ -652,6 +654,8 @@ async fn with_history(tag: &str) -> (FileWorkflowStore, SqliteLedger, std::path:
                 cause: cause.into(),
                 cost_usd: 0.0,
                 at: "2026-01-01T00:00:00Z".into(),
+                satisfied: false,
+                advanced: false,
             })
             .await
             .expect("append");

@@ -98,6 +98,51 @@ What survives is exactly the loop.
       write-only until now. Authored attempts are fingerprinted by graph shape,
       so two of them no longer fold into one exclusion-list entry.
 
+## An instance is not a goal run
+
+Two lifetimes, and putting them in one object is the mistake worth naming.
+
+A **`Loop` is per tenant** — a scoped ledger, a store, capabilities, host facts,
+a runner, a budget. Building one costs a database pool and an HTTP client, so it
+is built once and shared.
+
+A **goal run is an episode id**, not an object. Its state lives in the `Episode`
+record: goal, status, attempt, stalled.
+
+```rust
+let engine = Loop { ledger: &ledger.for_tenant("user-7"), store, caps, .. };
+let finished = engine.run("ep-9f2", &goal).await?;   // many of these, concurrently
+```
+
+That split buys both things at once. Many goal runs share one instance, because
+the instance holds nothing per-episode. And an episode survives the process:
+kill this one mid-run and `Loop::unfinished()` on the next boot hands back
+everything that was in flight, each resumable by id.
+
+Had the instance *been* the goal run, both would be false — config rebuilt per
+goal, and a deploy losing every episode's counters while leaving its rows behind
+to look like progress.
+
+The record holds exactly what the rows cannot: the **goal** (unrecoverable), and
+the **stall count** (recomputable only if `advanced` is stored, so it is, on the
+row). `satisfied` is a field too — it used to be recoverable only by matching
+`outcome == "satisfied"`, one reworded line from reporting every episode failed.
+
+## Inference: the crate names the job, the host picks the model
+
+Every request carries a `tier` — `select`, `author`, `judge`, `consolidate`,
+`repair`. The crate never names a model, a vendor or a URL, which is the
+host-agnostic rule it inherits; only the host knows what a job maps to.
+
+That is what makes a tier sweep a config change rather than a code change.
+Judging is the expensive opinion — a judge that says yes wrongly ends the
+episode — and selecting is a cheap one; without a name on the request a host
+cannot route them differently.
+
+Called `tier` and not `role` because a chat request already has `role` on every
+message. Five rather than medulla-v2's three: a host maps several tiers to one
+model in a line of config and cannot split one tier into two at all.
+
 ## Where the engine runs
 
 The loop and the engine may sit in one process or on opposite ends of a socket.

@@ -15,7 +15,7 @@ use tinyflows::model::WorkflowGraph;
 use tinyflows::store::WorkflowStore;
 
 use super::{Attempt, IntakeError, Result, ask};
-use crate::contracts::{Approach, Goal};
+use crate::contracts::{Approach, Goal, Tier};
 
 /// One stored workflow as the chooser sees it.
 #[derive(Debug, Clone)]
@@ -115,7 +115,7 @@ pub async fn select(
         goal.text.trim()
     );
 
-    let answer = ask(caps, conn, SYSTEM, &user).await?;
+    let answer = ask(caps, conn, Tier::Select, SYSTEM, &user).await?;
     let Some(id) = answer["workflow_id"]
         .as_str()
         .filter(|s| !s.trim().is_empty())

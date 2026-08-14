@@ -12,7 +12,9 @@ use std::sync::Mutex;
 use async_trait::async_trait;
 use rusqlite::{Connection, OptionalExtension, params};
 
-use super::{Ledger, LedgerError, LedgerRow, Lesson, LessonKind, Result, Score};
+use super::{
+    Episode, EpisodeStatus, Ledger, LedgerError, LedgerRow, Lesson, LessonKind, Result, Score,
+};
 
 impl From<rusqlite::Error> for LedgerError {
     fn from(err: rusqlite::Error) -> Self {
@@ -38,6 +40,8 @@ const DDL: &[&str] = &[
         cause         TEXT NOT NULL DEFAULT '',
         cost_usd      REAL NOT NULL DEFAULT 0,
         at            TEXT NOT NULL,
+        satisfied     INTEGER NOT NULL DEFAULT 0,
+        advanced      INTEGER NOT NULL DEFAULT 0,
         seq           INTEGER NOT NULL
     )",
     // Ordered by `seq`, not by `at`: two attempts finishing in the same second
@@ -79,6 +83,17 @@ const DDL: &[&str] = &[
         PRIMARY KEY (scope_key, variant)
     )",
     "CREATE INDEX IF NOT EXISTS ix_variants_parent ON variants(scope_key, parent)",
+    "CREATE TABLE IF NOT EXISTS episodes (
+        id         TEXT PRIMARY KEY,
+        scope_key  TEXT NOT NULL DEFAULT '',
+        goal       TEXT NOT NULL,
+        status     TEXT NOT NULL,
+        attempt    INTEGER NOT NULL DEFAULT 0,
+        stalled    INTEGER NOT NULL DEFAULT 0,
+        started_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )",
+    "CREATE INDEX IF NOT EXISTS ix_episodes_scope ON episodes(scope_key, updated_at)",
 ];
 
 /// Applied after [`DDL`], failures ignored.
@@ -90,6 +105,8 @@ const DDL: &[&str] = &[
 const MIGRATIONS: &[&str] = &[
     "ALTER TABLE lessons ADD COLUMN scope_key TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE workflow_scores ADD COLUMN scope_key TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE ledger_rows ADD COLUMN satisfied INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE ledger_rows ADD COLUMN advanced INTEGER NOT NULL DEFAULT 0",
 ];
 
 /// A ledger backed by one sqlite file.
@@ -185,7 +202,41 @@ fn read_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<LedgerRow> {
         cause: r.get("cause")?,
         cost_usd: r.get("cost_usd")?,
         at: r.get("at")?,
+        satisfied: r.get::<_, i64>("satisfied")? != 0,
+        advanced: r.get::<_, i64>("advanced")? != 0,
     })
+}
+
+/// Read an episode row, deferring the JSON columns' failure to the caller.
+///
+/// The inner `Result` is deliberate: `query_map` cannot carry a
+/// [`LedgerError`], and swallowing a goal that no longer parses would hand the
+/// loop an empty goal and let it run against nothing.
+fn read_episode(r: &rusqlite::Row<'_>) -> rusqlite::Result<Result<Episode>> {
+    let goal: String = r.get("goal")?;
+    let status: String = r.get("status")?;
+    let scope: String = r.get("scope_key")?;
+    Ok((|| {
+        Ok(Episode {
+            id: r.get("id").unwrap_or_default(),
+            goal: serde_json::from_str(&goal).map_err(|e| LedgerError::Corrupt(e.to_string()))?,
+            scope_key: (!scope.is_empty()).then_some(scope),
+            status: serde_json::from_str(&status)
+                .map_err(|e| LedgerError::Corrupt(e.to_string()))?,
+            attempt: r
+                .get::<_, i64>("attempt")
+                .unwrap_or(0)
+                .try_into()
+                .unwrap_or(0),
+            stalled: r
+                .get::<_, i64>("stalled")
+                .unwrap_or(0)
+                .try_into()
+                .unwrap_or(0),
+            started_at: r.get("started_at").unwrap_or_default(),
+            updated_at: r.get("updated_at").unwrap_or_default(),
+        })
+    })())
 }
 
 #[async_trait]
@@ -200,8 +251,9 @@ impl Ledger for SqliteLedger {
         let id = new_id("ldg", seq);
         conn.execute(
             "INSERT INTO ledger_rows(id, episode, attempt, approach_sig, approach_desc,
-                                     workflow_id, outcome, cause, cost_usd, at, seq)
-             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
+                                     workflow_id, outcome, cause, cost_usd, at,
+                                     satisfied, advanced, seq)
+             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",
             params![
                 id,
                 row.episode,
@@ -213,6 +265,8 @@ impl Ledger for SqliteLedger {
                 row.cause,
                 row.cost_usd,
                 row.at,
+                i64::from(row.satisfied),
+                i64::from(row.advanced),
                 seq,
             ],
         )?;
@@ -361,6 +415,56 @@ impl Ledger for SqliteLedger {
             )
             .optional()?;
         Ok(found)
+    }
+
+    async fn save_episode(&self, episode: &Episode) -> Result<()> {
+        let conn = self.guard()?;
+        conn.execute(
+            "INSERT INTO episodes(id, scope_key, goal, status, attempt, stalled,
+                                  started_at, updated_at)
+             VALUES(?1,?2,?3,?4,?5,?6,?7,?8)
+             ON CONFLICT(id) DO UPDATE SET
+                goal = ?3, status = ?4, attempt = ?5, stalled = ?6, updated_at = ?8",
+            params![
+                episode.id,
+                self.bucket(),
+                serde_json::to_string(&episode.goal)
+                    .map_err(|e| LedgerError::Corrupt(e.to_string()))?,
+                serde_json::to_string(&episode.status)
+                    .map_err(|e| LedgerError::Corrupt(e.to_string()))?,
+                i64::from(episode.attempt),
+                i64::from(episode.stalled),
+                episode.started_at,
+                episode.updated_at,
+            ],
+        )?;
+        Ok(())
+    }
+
+    async fn episode(&self, id: &str) -> Result<Option<Episode>> {
+        let conn = self.guard()?;
+        let found = conn
+            .query_row(
+                "SELECT * FROM episodes WHERE id = ?1 AND scope_key = ?2",
+                params![id, self.bucket()],
+                read_episode,
+            )
+            .optional()?;
+        found.transpose()
+    }
+
+    async fn episodes(&self, running_only: bool) -> Result<Vec<Episode>> {
+        let conn = self.guard()?;
+        let mut stmt = conn
+            .prepare("SELECT * FROM episodes WHERE scope_key = ?1 ORDER BY updated_at DESC, id")?;
+        let all = stmt
+            .query_map([self.bucket()], read_episode)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        all.into_iter()
+            .filter(|e| {
+                !running_only || e.as_ref().is_ok_and(|e| e.status == EpisodeStatus::Running)
+            })
+            .collect()
     }
 
     async fn children_of(&self, id: &str) -> Result<Vec<String>> {

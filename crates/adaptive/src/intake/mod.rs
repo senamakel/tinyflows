@@ -239,10 +239,15 @@ async fn collapse_families(
 pub(crate) async fn ask(
     caps: &Capabilities,
     conn: Option<&str>,
+    tier: crate::contracts::Tier,
     system: &str,
     user: &str,
 ) -> Result<Value> {
     let request = serde_json::json!({
+        // Which job, never which model. A host reads this to route judging and
+        // selecting to different places; one that ignores it gets the old
+        // behaviour, which is why it is a plain field and not a required one.
+        "tier": tier.as_str(),
         "messages": [
             { "role": "system", "content": system },
             { "role": "user", "content": user },

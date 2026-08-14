@@ -32,7 +32,7 @@ use tinyflows::store::{WorkflowRecord, WorkflowStore};
 use tinyflows::validate::validate_all;
 
 use super::judge::Evidence;
-use crate::contracts::{Goal, Verdict};
+use crate::contracts::{Goal, Tier, Verdict};
 use crate::intake::{IntakeError, Result, ask};
 use crate::ledger::Ledger;
 
@@ -146,7 +146,7 @@ pub async fn repair(
         evidence.render()
     );
 
-    let answer = ask(caps, conn, SYSTEM, &user).await?;
+    let answer = ask(caps, conn, Tier::Repair, SYSTEM, &user).await?;
     let ops = read_ops(&answer)?;
     if ops.is_empty() {
         return Ok(None);

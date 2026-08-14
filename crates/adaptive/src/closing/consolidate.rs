@@ -18,7 +18,7 @@
 
 use tinyflows::caps::Capabilities;
 
-use crate::contracts::Goal;
+use crate::contracts::{Goal, Tier};
 use crate::intake::ask;
 use crate::ledger::{Ledger, LedgerRow, Lesson, LessonKind};
 
@@ -85,7 +85,7 @@ pub async fn consolidate(
     let existing = ledger.lessons(None).await.unwrap_or_default();
 
     let user = render(goal, satisfied, &rows, &existing);
-    let Ok(answer) = ask(caps, conn, SYSTEM, &user).await else {
+    let Ok(answer) = ask(caps, conn, Tier::Consolidate, SYSTEM, &user).await else {
         return Vec::new();
     };
 
@@ -217,6 +217,8 @@ mod tests {
             cause: "the file was never written".into(),
             cost_usd: 0.0,
             at: "2026-01-01T00:00:00Z".into(),
+            satisfied: false,
+            advanced: false,
         }
     }
 

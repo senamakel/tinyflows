@@ -20,7 +20,7 @@ pub use repair::{Variant, graph_is_suspect, repair};
 
 use crate::contracts::{Approach, Budget, Goal, Verdict};
 use crate::intake::Result;
-use crate::ledger::{Ledger, LedgerRow};
+use crate::ledger::{Episode, EpisodeStatus, Ledger, LedgerRow};
 use tinyflows::caps::Capabilities;
 
 /// What the loop should do next.
@@ -52,12 +52,19 @@ pub struct Closed {
 
 /// Judge a finished run, record it, score it, and say what to do next.
 ///
-/// `stalled` is the count carried from the previous pass; the caller keeps it
-/// because this function is stateless by design — two episodes sharing one
-/// closing layer must not share a counter.
+/// The stall count is **read from and written back to the episode record**,
+/// not threaded by the caller. It used to be a parameter, on the reasoning that
+/// two episodes sharing one closing layer must not share a counter — true, but
+/// the fix was keying it by episode, not making the caller hold it. A counter
+/// that lives only in the caller's memory is a counter a deploy loses, and an
+/// episode whose stall count silently resets to zero will keep retrying an
+/// approach that stopped working four attempts ago.
+///
+/// The episode record is created here when it does not exist, so
+/// [`Ledger::save_episode`] is optional for a caller that only wants the loop.
 ///
 /// # Errors
-/// When inference fails, or the ledger cannot be written.
+/// When inference fails, or the ledger cannot be read or written.
 #[allow(clippy::too_many_arguments)]
 pub async fn close(
     goal: &Goal,
@@ -65,7 +72,6 @@ pub async fn close(
     attempt: u32,
     approach: &Approach,
     evidence: &Evidence<'_>,
-    stalled: u32,
     budget: &Budget,
     ledger: &dyn Ledger,
     caps: &Capabilities,
@@ -73,6 +79,17 @@ pub async fn close(
     now: &str,
 ) -> Result<Closed> {
     let verdict = judge(goal, evidence, caps, conn).await?;
+    let mut record = ledger.episode(episode).await?.unwrap_or(Episode {
+        id: episode.to_string(),
+        goal: goal.clone(),
+        scope_key: None,
+        status: EpisodeStatus::Running,
+        attempt: 0,
+        stalled: 0,
+        started_at: now.to_string(),
+        updated_at: now.to_string(),
+    });
+    let stalled = record.stalled;
 
     // Recorded before anything is decided, and whatever the verdict. A failed
     // attempt nobody wrote down is one the next attempt repeats.
@@ -93,6 +110,8 @@ pub async fn close(
             cause: verdict.gap.clone(),
             cost_usd: 0.0,
             at: now.to_string(),
+            satisfied: verdict.satisfied,
+            advanced: verdict.advanced,
         })
         .await?;
 
@@ -109,6 +128,18 @@ pub async fn close(
         stalled + 1
     };
     let next = decide_next(&verdict, attempt, stalled, budget);
+
+    // Written after the row and the score, so a checkpoint never claims an
+    // attempt the ledger has no record of.
+    record.attempt = attempt;
+    record.stalled = stalled;
+    record.updated_at = now.to_string();
+    record.status = match &next {
+        Next::Done => EpisodeStatus::Satisfied,
+        Next::Retry => EpisodeStatus::Running,
+        Next::StandDown(reason) => EpisodeStatus::StoodDown(reason.clone()),
+    };
+    ledger.save_episode(&record).await?;
 
     Ok(Closed {
         verdict,

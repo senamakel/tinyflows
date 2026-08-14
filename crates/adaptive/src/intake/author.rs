@@ -17,7 +17,7 @@ use tinyflows::store::HostPolicy;
 use tinyflows::validate::validate_all;
 
 use super::{Attempt, IntakeError, Result, ask};
-use crate::contracts::{Approach, Goal};
+use crate::contracts::{Approach, Goal, Tier};
 use crate::host::HostFacts;
 
 const SYSTEM: &str = "\
@@ -107,7 +107,7 @@ pub async fn author(
         }
     );
 
-    let answer = ask(caps, conn, SYSTEM, &user).await?;
+    let answer = ask(caps, conn, Tier::Author, SYSTEM, &user).await?;
     let raw = answer
         .get("graph")
         .cloned()

@@ -157,6 +157,54 @@ impl Budget {
     }
 }
 
+/// Which job the loop is asking a model to do.
+///
+/// Emitted on every inference request as `tier`, and that is the whole of it —
+/// the crate names the **job**, never a model, a vendor or a URL, because only
+/// the host knows which of those a job maps to. That is the host-agnostic rule
+/// the engine sits on and this crate keeps.
+///
+/// It is what makes a tier sweep a config change rather than a code change:
+/// judging is the expensive opinion and selecting is a cheap one, and without a
+/// name on the request a host cannot route them differently.
+///
+/// Called `tier` rather than `role` on the wire because a chat request already
+/// has `role` on every message, and two meanings of one key in one payload is a
+/// bug waiting for a hurried reader.
+///
+/// Five, not medulla-v2's three: a host can map several tiers to one model in a
+/// line of config, and cannot split one tier into two at all.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Tier {
+    /// Does a stored workflow already do this? Cheap; a short list and a yes/no.
+    Select,
+    /// Write a graph. The hardest reasoning the loop does.
+    Author,
+    /// Did the run achieve the goal? The opinion worth paying for — a judge
+    /// that says yes wrongly ends the episode.
+    Judge,
+    /// What is this episode worth remembering? Off the critical path, and
+    /// nothing downstream blocks on it.
+    Consolidate,
+    /// Repair a graph that fell short. Structured editing against a diagnosis.
+    Repair,
+}
+
+impl Tier {
+    /// The name that goes on the wire.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Select => "select",
+            Self::Author => "author",
+            Self::Judge => "judge",
+            Self::Consolidate => "consolidate",
+            Self::Repair => "repair",
+        }
+    }
+}
+
 /// What the user asked for, and what would prove it done.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Goal {

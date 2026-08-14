@@ -11,7 +11,9 @@ use mongodb::bson::{Document, doc};
 use mongodb::options::{IndexOptions, ReturnDocument};
 use mongodb::{Client, Collection, Database, IndexModel};
 
-use super::{Ledger, LedgerError, LedgerRow, Lesson, LessonKind, Result, Score};
+use super::{
+    Episode, EpisodeStatus, Ledger, LedgerError, LedgerRow, Lesson, LessonKind, Result, Score,
+};
 
 impl From<mongodb::error::Error> for LedgerError {
     fn from(err: mongodb::error::Error) -> Self {
@@ -36,6 +38,7 @@ const LESSONS: &str = "lessons";
 const EVIDENCE: &str = "lesson_evidence";
 const SCORES: &str = "workflow_scores";
 const VARIANTS: &str = "variants";
+const EPISODES: &str = "episodes";
 const COUNTERS: &str = "counters";
 
 /// A ledger backed by a MongoDB database.
@@ -129,6 +132,9 @@ impl MongoLedger {
     fn variants(&self) -> Collection<Document> {
         self.db.collection(VARIANTS)
     }
+    fn episodes_c(&self) -> Collection<Document> {
+        self.db.collection(EPISODES)
+    }
 
     /// The next value in a named sequence.
     ///
@@ -181,7 +187,25 @@ fn read_row(doc: &Document) -> LedgerRow {
         cause: text(doc, "cause"),
         cost_usd: doc.get_f64("cost_usd").unwrap_or(0.0),
         at: text(doc, "at"),
+        satisfied: doc.get_bool("satisfied").unwrap_or(false),
+        advanced: doc.get_bool("advanced").unwrap_or(false),
     }
+}
+
+fn read_episode(doc: &Document) -> Result<Episode> {
+    let scope = text(doc, "scope_key");
+    Ok(Episode {
+        id: text(doc, "_id"),
+        goal: serde_json::from_str(&text(doc, "goal"))
+            .map_err(|e| LedgerError::Corrupt(e.to_string()))?,
+        scope_key: (!scope.is_empty()).then_some(scope),
+        status: serde_json::from_str(&text(doc, "status"))
+            .map_err(|e| LedgerError::Corrupt(e.to_string()))?,
+        attempt: as_u32(doc, "attempt"),
+        stalled: as_u32(doc, "stalled"),
+        started_at: text(doc, "started_at"),
+        updated_at: text(doc, "updated_at"),
+    })
 }
 
 #[async_trait]
@@ -205,6 +229,8 @@ impl Ledger for MongoLedger {
                 "cause": &row.cause,
                 "cost_usd": row.cost_usd,
                 "at": &row.at,
+                "satisfied": row.satisfied,
+                "advanced": row.advanced,
                 "seq": seq,
             })
             .await?;
@@ -365,6 +391,59 @@ impl Ledger for MongoLedger {
             .find_one(doc! { "scope_key": self.bucket(), "variant": id })
             .await?;
         Ok(found.map(|d| text(&d, "parent")).filter(|p| !p.is_empty()))
+    }
+
+    async fn save_episode(&self, episode: &Episode) -> Result<()> {
+        let goal = serde_json::to_string(&episode.goal)
+            .map_err(|e| LedgerError::Corrupt(e.to_string()))?;
+        let status = serde_json::to_string(&episode.status)
+            .map_err(|e| LedgerError::Corrupt(e.to_string()))?;
+        self.episodes_c()
+            .update_one(
+                doc! { "_id": &episode.id },
+                doc! {
+                    "$set": {
+                        "goal": goal,
+                        "status": status,
+                        "attempt": i64::from(episode.attempt),
+                        "stalled": i64::from(episode.stalled),
+                        "updated_at": &episode.updated_at,
+                    },
+                    // Set once: the handle's scope and the first timestamp are
+                    // facts about the episode's creation, not its progress.
+                    "$setOnInsert": {
+                        "scope_key": self.bucket(),
+                        "started_at": &episode.started_at,
+                    },
+                },
+            )
+            .upsert(true)
+            .await?;
+        Ok(())
+    }
+
+    async fn episode(&self, id: &str) -> Result<Option<Episode>> {
+        let found = self
+            .episodes_c()
+            .find_one(doc! { "_id": id, "scope_key": self.bucket() })
+            .await?;
+        found.as_ref().map(read_episode).transpose()
+    }
+
+    async fn episodes(&self, running_only: bool) -> Result<Vec<Episode>> {
+        let mut cursor = self
+            .episodes_c()
+            .find(doc! { "scope_key": self.bucket() })
+            .sort(doc! { "updated_at": -1, "_id": 1 })
+            .await?;
+        let mut out = Vec::new();
+        while cursor.advance().await? {
+            let episode = read_episode(&cursor.deserialize_current()?)?;
+            if !running_only || episode.status == EpisodeStatus::Running {
+                out.push(episode);
+            }
+        }
+        Ok(out)
     }
 
     async fn children_of(&self, id: &str) -> Result<Vec<String>> {
