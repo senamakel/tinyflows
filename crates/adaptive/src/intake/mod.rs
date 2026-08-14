@@ -121,6 +121,12 @@ pub async fn decide(
 ///
 /// The scores come from our ledger rather than the record, because
 /// `WorkflowRecord` has no place for them: a score is a fact that spans runs.
+///
+/// Then one more pass: a repaired family collapses to a single row, its
+/// [`champion`]. Four near-identical graphs whose descriptions differ by a
+/// clause is not a choice, it is noise, and a planner asked to make it is being
+/// asked to guess. Which member survives is decided on score, never on being
+/// the newest — see [`crate::promotion`].
 async fn catalogue(
     store: &dyn WorkflowStore,
     ledger: &dyn Ledger,
@@ -149,7 +155,60 @@ async fn catalogue(
             helped: score.helped,
         });
     }
-    Ok(out)
+    collapse_families(out, ledger).await
+}
+
+/// Reduce each repaired family to its champion.
+///
+/// A member excluded earlier — disabled, or already tried this episode — is
+/// still counted when picking the champion but cannot be the one offered. That
+/// matters: if the champion is the workflow this episode just failed with,
+/// dropping the whole family would hide a variant that exists precisely because
+/// the champion fell short. So the family's *best still-offerable* member is
+/// what survives.
+async fn collapse_families(
+    candidates: Vec<Candidate>,
+    ledger: &dyn Ledger,
+) -> Result<Vec<Candidate>> {
+    let mut kept: Vec<Candidate> = Vec::new();
+    let mut settled: Vec<String> = Vec::new();
+
+    for candidate in candidates.iter() {
+        if settled.contains(&candidate.id) {
+            continue;
+        }
+        let lineage = ledger.lineage(&candidate.id).await?;
+        if lineage.len() <= 1 {
+            kept.push(candidate.clone());
+            settled.push(candidate.id.clone());
+            continue;
+        }
+
+        // Scores for the whole family, including members not on offer — a
+        // parent that is disabled still counts as evidence about its variants.
+        let mut family = Vec::with_capacity(lineage.len());
+        for id in &lineage {
+            family.push((id.clone(), ledger.workflow_score(id).await?));
+        }
+        let best = crate::promotion::champion(&family).unwrap_or(&candidate.id);
+
+        let offer = candidates
+            .iter()
+            .find(|c| c.id == best)
+            .or_else(|| {
+                // The champion is not offerable. Fall back to the best of what
+                // is, in family order, rather than dropping the family whole.
+                lineage
+                    .iter()
+                    .find_map(|id| candidates.iter().find(|c| &c.id == id))
+            })
+            .unwrap_or(candidate);
+        if !settled.contains(&offer.id) {
+            kept.push(offer.clone());
+        }
+        settled.extend(lineage);
+    }
+    Ok(kept)
 }
 
 /// Ask the host's model for one JSON object.

@@ -34,6 +34,7 @@ use tinyflows::validate::validate_all;
 use super::judge::Evidence;
 use crate::contracts::{Goal, Verdict};
 use crate::intake::{IntakeError, Result, ask};
+use crate::ledger::Ledger;
 
 const SYSTEM: &str = "\
 You repair a workflow graph that ran and fell short.
@@ -109,12 +110,14 @@ pub fn graph_is_suspect(verdict: &Verdict, evidence: &Evidence<'_>) -> bool {
 /// not have. A refused batch is an error rather than a silent `None` because
 /// the caller records it: a repair that keeps failing the same gate is itself
 /// evidence about the goal.
+#[allow(clippy::too_many_arguments)]
 pub async fn repair(
     goal: &Goal,
     verdict: &Verdict,
     evidence: &Evidence<'_>,
     parent_id: &str,
     store: &Arc<dyn WorkflowStore>,
+    ledger: &dyn Ledger,
     caps: &Capabilities,
     conn: Option<&str>,
 ) -> Result<Option<Variant>> {
@@ -193,6 +196,13 @@ pub async fn repair(
     store
         .save(&record)
         .map_err(|e| IntakeError::Store(e.to_string()))?;
+
+    // Recorded after the save, so a link never points at a workflow that was
+    // refused. Without it the variant is just another row in the catalogue and
+    // the promotion gate has no family to compare within — the parent's score,
+    // which is the entire reason this is a variant and not an edit, would have
+    // nothing to be compared *to*.
+    ledger.link_variant(parent_id, &id).await?;
 
     Ok(Some(Variant {
         record,

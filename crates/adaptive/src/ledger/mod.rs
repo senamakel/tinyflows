@@ -176,6 +176,25 @@ pub struct Score {
     pub helped: u32,
 }
 
+impl Score {
+    /// Both numbers are kept rather than a rate, because 1/1 and 40/40 are the
+    /// same rate and are not the same evidence. This is for ordering only.
+    #[must_use]
+    pub fn help_rate(&self) -> f64 {
+        if self.applied == 0 {
+            0.0
+        } else {
+            f64::from(self.helped) / f64::from(self.applied)
+        }
+    }
+}
+
+/// How far up a variant chain [`Ledger::lineage`] will walk before giving up.
+pub const MAX_LINEAGE_DEPTH: usize = 8;
+
+/// How many members of one family [`Ledger::lineage`] will return.
+pub const MAX_FAMILY: usize = 64;
+
 /// Everything that spans runs.
 ///
 /// Every method is fallible and none of them panics on an absent row: a missing
@@ -256,4 +275,50 @@ pub trait Ledger: Send + Sync {
     /// How a workflow has performed. Unknown ids answer `Score::default()`
     /// rather than erroring — a workflow nobody has run yet is 0/0, not a bug.
     async fn workflow_score(&self, workflow_id: &str) -> Result<Score>;
+
+    /// Record that `variant` was derived from `parent`.
+    ///
+    /// Lineage lives here rather than on `WorkflowRecord` for the usual reason:
+    /// the engine's record is a fact about one document, and *this graph came
+    /// from that one after it fell short* is a fact that spans runs. It is also
+    /// what stops a repaired family from filling the catalogue with six
+    /// near-identical rows a planner has to choose between blindly.
+    ///
+    /// Idempotent: re-linking the same pair is a no-op, because a repair that
+    /// converges on an existing variant id will try.
+    async fn link_variant(&self, parent: &str, variant: &str) -> Result<()>;
+
+    /// What `id` was derived from, if anything.
+    async fn parent_of(&self, id: &str) -> Result<Option<String>>;
+
+    /// What was derived directly from `id`.
+    async fn children_of(&self, id: &str) -> Result<Vec<String>>;
+
+    /// Every workflow in `id`'s family, **root first**, including `id`.
+    ///
+    /// Works from any member: it walks up to the root, then breadth-first down.
+    /// Both walks are bounded, so a cycle written by a buggy caller costs a
+    /// truncated answer rather than a loop that never returns — the ledger is
+    /// read on the hot path of every attempt, and a hang there stops
+    /// everything.
+    async fn lineage(&self, id: &str) -> Result<Vec<String>> {
+        let mut root = id.to_string();
+        for _ in 0..MAX_LINEAGE_DEPTH {
+            match self.parent_of(&root).await? {
+                Some(parent) if parent != root => root = parent,
+                _ => break,
+            }
+        }
+        let mut family = vec![root];
+        let mut next = 0;
+        while next < family.len() && family.len() < MAX_FAMILY {
+            for child in self.children_of(&family[next]).await? {
+                if !family.contains(&child) {
+                    family.push(child);
+                }
+            }
+            next += 1;
+        }
+        Ok(family)
+    }
 }

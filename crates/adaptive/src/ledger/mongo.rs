@@ -35,6 +35,7 @@ const ROWS: &str = "ledger_rows";
 const LESSONS: &str = "lessons";
 const EVIDENCE: &str = "lesson_evidence";
 const SCORES: &str = "workflow_scores";
+const VARIANTS: &str = "variants";
 const COUNTERS: &str = "counters";
 
 /// A ledger backed by a MongoDB database.
@@ -124,6 +125,9 @@ impl MongoLedger {
     }
     fn scores(&self) -> Collection<Document> {
         self.db.collection(SCORES)
+    }
+    fn variants(&self) -> Collection<Document> {
+        self.db.collection(VARIANTS)
     }
 
     /// The next value in a named sequence.
@@ -340,6 +344,40 @@ impl Ledger for MongoLedger {
             applied: as_u32(&d, "applied"),
             helped: as_u32(&d, "helped"),
         }))
+    }
+
+    async fn link_variant(&self, parent: &str, variant: &str) -> Result<()> {
+        self.variants()
+            .update_one(
+                doc! { "scope_key": self.bucket(), "variant": variant },
+                doc! { "$setOnInsert": {
+                    "scope_key": self.bucket(), "variant": variant, "parent": parent
+                } },
+            )
+            .upsert(true)
+            .await?;
+        Ok(())
+    }
+
+    async fn parent_of(&self, id: &str) -> Result<Option<String>> {
+        let found = self
+            .variants()
+            .find_one(doc! { "scope_key": self.bucket(), "variant": id })
+            .await?;
+        Ok(found.map(|d| text(&d, "parent")).filter(|p| !p.is_empty()))
+    }
+
+    async fn children_of(&self, id: &str) -> Result<Vec<String>> {
+        let mut cursor = self
+            .variants()
+            .find(doc! { "scope_key": self.bucket(), "parent": id })
+            .sort(doc! { "variant": 1 })
+            .await?;
+        let mut out = Vec::new();
+        while cursor.advance().await? {
+            out.push(text(&cursor.deserialize_current()?, "variant"));
+        }
+        Ok(out)
     }
 }
 

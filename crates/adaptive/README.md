@@ -84,8 +84,11 @@ What survives is exactly the loop.
       different task could act on, and only with rows cited; `repair()` turns a
       `GraphOp` batch into a **variant**, never an edit in place, and only when
       the diagnosis says the graph is the thing at fault.
-- [ ] **5b · promotion** — a variant supersedes its parent on score, not on
-      having been written.
+- [x] **5b · promotion** — a repaired family collapses to **one** catalogue row,
+      and which member holds it is decided on score. A variant is proven only
+      after `MIN_TRIALS` runs; until then the root keeps the position, so an
+      untested graph never displaces a 40/40 parent for everyone. Lineage lives
+      in the ledger, because *this graph came from that one* spans runs.
 - [ ] **6 · retry edge** — planner sees the ledger and the exclusion list.
 
 ## Where the engine runs

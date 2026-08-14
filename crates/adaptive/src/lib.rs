@@ -20,3 +20,4 @@ pub mod execute;
 pub mod host;
 pub mod intake;
 pub mod ledger;
+pub mod promotion;

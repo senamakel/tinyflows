@@ -496,3 +496,125 @@ async fn the_authoring_prompt_carries_what_the_host_permits() {
     assert!(prompt.contains("every agent node must name config.agent_ref"));
     assert!(prompt.contains("Only manual triggers fire here."));
 }
+
+// ---------------------------------------------------------------------------
+// Promotion: a repaired family is one row, and score decides which.
+// ---------------------------------------------------------------------------
+
+/// A parent and one variant, both stored and linked, with scores applied.
+async fn repaired_family(
+    tag: &str,
+    parent: (u32, u32),
+    variant: (u32, u32),
+) -> (FileWorkflowStore, SqliteLedger, std::path::PathBuf) {
+    let (store, root) = empty_store(tag);
+    store
+        .save(&stored("weekly", "writes the weekly report", None))
+        .expect("save");
+    store
+        .save(&stored(
+            "weekly-fix-1",
+            "writes the weekly report, with the binding corrected",
+            None,
+        ))
+        .expect("save");
+
+    let ledger = SqliteLedger::in_memory().expect("ledger");
+    ledger
+        .link_variant("weekly", "weekly-fix-1")
+        .await
+        .expect("link");
+    for (id, (applied, helped)) in [("weekly", parent), ("weekly-fix-1", variant)] {
+        for n in 0..applied {
+            ledger.score_workflow(id, n < helped).await.expect("score");
+        }
+    }
+    (store, ledger, root)
+}
+
+/// What the selector was actually shown.
+async fn offered(store: &FileWorkflowStore, ledger: &SqliteLedger) -> String {
+    let llm = std::sync::Arc::new(Scripted::new(vec![
+        json!({"workflow_id": "none"}),
+        json!({
+            "graph": tiny_graph("fallback", None),
+            "why": "declined",
+            "inputs": {},
+        }),
+    ]));
+    let caps = caps_with(llm.clone());
+    let _ = decide(
+        &Goal::new("write the weekly report"),
+        "ep-promo",
+        store,
+        ledger,
+        &HostFacts::unknown(),
+        &caps,
+        None,
+    )
+    .await;
+    llm.prompts().first().cloned().unwrap_or_default()
+}
+
+#[tokio::test]
+async fn a_repaired_family_is_offered_as_one_row_not_two() {
+    // Two near-identical graphs whose descriptions differ by a clause is not a
+    // choice, it is noise.
+    let (store, ledger, _root) = repaired_family("promo-1", (40, 40), (0, 0)).await;
+    let shown = offered(&store, &ledger).await;
+    let rows = shown.matches("weekly").count();
+    assert!(rows > 0, "the family must be offered at all: {shown}");
+    assert!(
+        !shown.contains("weekly-fix-1"),
+        "an unproven variant must not appear beside its proven parent: {shown}"
+    );
+}
+
+#[tokio::test]
+async fn a_fresh_variant_does_not_displace_a_proven_parent() {
+    let (store, ledger, _root) = repaired_family("promo-2", (40, 40), (0, 0)).await;
+    let shown = offered(&store, &ledger).await;
+    assert!(shown.contains("weekly"), "{shown}");
+    assert!(!shown.contains("weekly-fix-1"), "{shown}");
+}
+
+#[tokio::test]
+async fn a_variant_that_has_proven_better_is_the_one_offered() {
+    // Promotion on score, not on having been written.
+    let (store, ledger, _root) = repaired_family("promo-3", (10, 5), (4, 4)).await;
+    let shown = offered(&store, &ledger).await;
+    assert!(
+        shown.contains("weekly-fix-1"),
+        "the better member must take the position: {shown}"
+    );
+}
+
+#[tokio::test]
+async fn a_family_whose_champion_was_already_tried_still_offers_its_variant() {
+    // The case that matters most and is easiest to get wrong: this episode just
+    // failed with the parent, so the parent is excluded — and the variant
+    // exists *because* the parent fell short. Dropping the whole family would
+    // hide the one graph written for this exact situation.
+    let (store, ledger, _root) = repaired_family("promo-4", (40, 40), (0, 0)).await;
+    ledger
+        .append(&tinyflows_adaptive::ledger::LedgerRow {
+            id: String::new(),
+            episode: "ep-promo".into(),
+            attempt: 1,
+            approach_sig: "selected:weekly".into(),
+            approach_desc: "the champion".into(),
+            workflow_id: Some("weekly".into()),
+            outcome: "fell short".into(),
+            cause: String::new(),
+            cost_usd: 0.0,
+            at: "2026-01-01T00:00:00Z".into(),
+        })
+        .await
+        .expect("append");
+
+    let shown = offered(&store, &ledger).await;
+    assert!(
+        shown.contains("weekly-fix-1"),
+        "the variant must survive its champion being excluded: {shown}"
+    );
+}

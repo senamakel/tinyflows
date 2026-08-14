@@ -72,6 +72,13 @@ const DDL: &[&str] = &[
         helped      INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY (scope_key, workflow_id)
     )",
+    "CREATE TABLE IF NOT EXISTS variants (
+        scope_key TEXT NOT NULL DEFAULT '',
+        variant   TEXT NOT NULL,
+        parent    TEXT NOT NULL,
+        PRIMARY KEY (scope_key, variant)
+    )",
+    "CREATE INDEX IF NOT EXISTS ix_variants_parent ON variants(scope_key, parent)",
 ];
 
 /// Applied after [`DDL`], failures ignored.
@@ -333,6 +340,38 @@ impl Ledger for SqliteLedger {
             )
             .optional()?;
         Ok(found.unwrap_or_default())
+    }
+
+    async fn link_variant(&self, parent: &str, variant: &str) -> Result<()> {
+        let conn = self.guard()?;
+        conn.execute(
+            "INSERT OR IGNORE INTO variants(scope_key, variant, parent) VALUES(?1,?2,?3)",
+            params![self.bucket(), variant, parent],
+        )?;
+        Ok(())
+    }
+
+    async fn parent_of(&self, id: &str) -> Result<Option<String>> {
+        let conn = self.guard()?;
+        let found = conn
+            .query_row(
+                "SELECT parent FROM variants WHERE scope_key = ?1 AND variant = ?2",
+                params![self.bucket(), id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(found)
+    }
+
+    async fn children_of(&self, id: &str) -> Result<Vec<String>> {
+        let conn = self.guard()?;
+        let mut stmt = conn.prepare(
+            "SELECT variant FROM variants WHERE scope_key = ?1 AND parent = ?2 ORDER BY variant",
+        )?;
+        let found = stmt
+            .query_map(params![self.bucket(), id], |r| r.get(0))?
+            .collect::<rusqlite::Result<Vec<String>>>()?;
+        Ok(found)
     }
 }
 
