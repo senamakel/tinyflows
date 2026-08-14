@@ -50,11 +50,14 @@ use async_trait::async_trait;
 use serde_json::json;
 use tinyflows::caps::Capabilities;
 use tinyflows::compiler::compile;
-use tinyflows::diagnostics::{Diagnosis, capturing, diagnose};
+use tinyflows::diagnostics::{Diagnosis, capturing};
 use tinyflows::engine::{RunInput, RunOutcome, run_with_observer};
 
 use crate::closing::Evidence;
 use crate::intake::Attempt;
+
+pub mod wire;
+pub use wire::{PROMPT_BUDGET, RECORD_BUDGET, RunReport, RunRequest, StepOutcome, StepRecord};
 
 /// What changed outside the run, according to the host.
 ///
@@ -103,8 +106,9 @@ impl Workspace for Unobserved {}
 /// a borrowed [`Evidence`] without the caller keeping three variables alive.
 #[derive(Debug, Clone)]
 pub struct Ran {
-    /// What the engine returned. Synthesized on failure — see
-    /// [`failed`](Self::failed).
+    /// What the run amounted to, reconstructed from the steps and bounded for
+    /// reading. Not the engine's own outcome value — see
+    /// [`RunReport::into_ran`].
     pub outcome: RunOutcome,
     /// The engine's reading of what the steps actually did.
     pub diagnosis: Diagnosis,
@@ -118,6 +122,11 @@ pub struct Ran {
     /// that distinguishes "the graph is broken" from "the work fell short" —
     /// reads it here.
     pub failed: Option<String>,
+    /// Every node activation, at full record fidelity. The per-node transcript:
+    /// what to archive, and richer than what the judge is shown.
+    pub steps: Vec<StepRecord>,
+    /// What the run cost, in the runner's unit. Zero means not measured.
+    pub cost_usd: f64,
 }
 
 impl Ran {
@@ -132,75 +141,179 @@ impl Ran {
     }
 }
 
-/// Compile and run one attempt, observed.
+/// Whatever runs a graph.
+///
+/// The port the loop calls, and the reason the loop cannot tell whether the
+/// engine is in this process or on a machine across a socket. Two
+/// implementations ship — [`Local`] and [`Remote`] — and they are the *same
+/// code either side of a serialization boundary*: both go through [`serve`] to
+/// produce a [`RunReport`] and [`RunReport::into_ran`] to read it. There is no
+/// second path that could drift.
+#[async_trait]
+pub trait Runner: Send + Sync {
+    /// Run one attempt. Never fails — see the module note.
+    async fn run(&self, attempt: &Attempt) -> Ran;
+}
+
+/// Run the graph in this process.
+pub struct Local<'a> {
+    /// The real capabilities: agents, tools, HTTP, code.
+    pub caps: &'a Capabilities,
+    /// What can say whether anything changed.
+    pub workspace: &'a dyn Workspace,
+}
+
+#[async_trait]
+impl Runner for Local<'_> {
+    async fn run(&self, attempt: &Attempt) -> Ran {
+        run_attempt(attempt, self.caps, self.workspace).await
+    }
+}
+
+/// Carrying a request to an engine somewhere else, and a report back.
+///
+/// The crate owns the contract and not the transport: Socket.IO, HTTP, a queue
+/// and a unix socket are all the host's business. An implementation is expected
+/// to apply its own deadline and return `Err` when it expires — [`Remote`]
+/// treats that as an attempt, not as an exception.
+#[async_trait]
+pub trait Relay: Send + Sync {
+    /// Send `request` and wait for the matching report.
+    ///
+    /// # Errors
+    /// Whatever the transport calls a failure: no runner connected, a deadline,
+    /// a malformed reply. The string is recorded, so make it readable.
+    async fn dispatch(&self, request: &RunRequest) -> Result<RunReport, String>;
+}
+
+/// Run the graph somewhere else, over a [`Relay`].
+pub struct Remote<'a> {
+    /// The transport.
+    pub relay: &'a dyn Relay,
+    /// Correlates request and reply, and appears in the ledger row.
+    pub attempt_id: String,
+}
+
+#[async_trait]
+impl Runner for Remote<'_> {
+    async fn run(&self, attempt: &Attempt) -> Ran {
+        let request = RunRequest {
+            attempt_id: self.attempt_id.clone(),
+            graph: attempt.graph.clone(),
+            inputs: attempt.inputs.clone(),
+        };
+        match self.relay.dispatch(&request).await {
+            Ok(report) => report.into_ran(&attempt.graph),
+            Err(why) => unreported(&attempt.graph, &why),
+        }
+    }
+}
+
+/// What a runner does when it receives a [`RunRequest`].
+///
+/// The far side of [`Remote`], and the whole of [`Local`]. A host embedding the
+/// engine on a device calls this and sends the result back; a host running the
+/// engine in-process gets the identical value without a wire.
+pub async fn serve(
+    request: &RunRequest,
+    caps: &Capabilities,
+    workspace: &dyn Workspace,
+) -> RunReport {
+    let mark = workspace.mark().await;
+    let (capture, observer) = capturing();
+
+    let failure = match compile(&request.graph) {
+        Ok(compiled) => {
+            let input = RunInput::new(json!({})).with_inputs(request.inputs.clone());
+            match run_with_observer(&compiled, input, caps, &observer).await {
+                Ok(outcome) => {
+                    return report(request, &capture, workspace, &mark, None, outcome).await;
+                }
+                Err(err) => err.to_string(),
+            }
+        }
+        // Nothing ran, so there are no steps — and `diagnose` against an empty
+        // step list reports every node as never-reached, which is exactly true.
+        Err(err) => err.to_string(),
+    };
+
+    let empty = RunOutcome {
+        output: json!({}),
+        pending_approvals: Vec::new(),
+        cancelled: false,
+    };
+    report(request, &capture, workspace, &mark, Some(failure), empty).await
+}
+
+/// Assemble the report, reading the workspace last.
+///
+/// The reading happens after the run either way: a run that errored half way
+/// through still wrote whatever it wrote before it did, and that is often the
+/// only thing distinguishing "it broke" from "it broke having already done the
+/// work".
+async fn report(
+    request: &RunRequest,
+    capture: &Arc<tinyflows::diagnostics::CapturingObserver>,
+    workspace: &dyn Workspace,
+    mark: &str,
+    failed: Option<String>,
+    outcome: RunOutcome,
+) -> RunReport {
+    RunReport {
+        attempt_id: request.attempt_id.clone(),
+        steps: capture
+            .steps()
+            .iter()
+            .map(|step| StepRecord::bounded(step, RECORD_BUDGET))
+            .collect(),
+        pending_approvals: outcome.pending_approvals,
+        cancelled: outcome.cancelled,
+        changed: workspace.changed_since(mark).await,
+        failed,
+        // Not measurable from here. A host that meters its harness fills this
+        // in on the report before sending it.
+        cost_usd: 0.0,
+    }
+}
+
+/// Compile and run one attempt in this process, observed.
 ///
 /// Never fails. Compilation errors, validation errors and mid-run failures all
 /// come back as a [`Ran`] with `failed` set — see the module note: an attempt
 /// that produced no ledger row is an attempt the next pass repeats.
 pub async fn run_attempt(attempt: &Attempt, caps: &Capabilities, workspace: &dyn Workspace) -> Ran {
-    let mark = workspace.mark().await;
-    let (capture, observer) = capturing();
-
-    let compiled = match compile(&attempt.graph) {
-        Ok(compiled) => compiled,
-        // Nothing ran, so there are no steps — and `diagnose` against an empty
-        // step list reports every node as never-reached, which is exactly true.
-        Err(err) => return failed(attempt, &err.to_string(), &capture, workspace, &mark).await,
+    let request = RunRequest {
+        attempt_id: String::new(),
+        graph: attempt.graph.clone(),
+        inputs: attempt.inputs.clone(),
     };
-
-    let input = RunInput::new(json!({})).with_inputs(attempt.inputs.clone());
-    let result = run_with_observer(&compiled, input, caps, &observer).await;
-
-    // Read after the run either way: a run that errored half way through still
-    // wrote whatever it wrote before it did, and that is often the only thing
-    // distinguishing "it broke" from "it broke having already done the work".
-    let changed = workspace.changed_since(&mark).await;
-    let diagnosis = diagnose(&attempt.graph, &capture.steps());
-
-    match result {
-        Ok(outcome) => Ran {
-            outcome,
-            diagnosis,
-            changed,
-            failed: None,
-        },
-        Err(err) => Ran {
-            outcome: errored(&err.to_string()),
-            diagnosis,
-            changed,
-            failed: Some(err.to_string()),
-        },
-    }
+    serve(&request, caps, workspace)
+        .await
+        .into_ran(&attempt.graph)
 }
 
-/// The compile-time failure path, where not even the observer saw anything.
-async fn failed(
-    attempt: &Attempt,
-    message: &str,
-    capture: &Arc<tinyflows::diagnostics::CapturingObserver>,
-    workspace: &dyn Workspace,
-    mark: &str,
-) -> Ran {
-    Ran {
-        outcome: errored(message),
-        diagnosis: diagnose(&attempt.graph, &capture.steps()),
-        changed: workspace.changed_since(mark).await,
-        failed: Some(message.to_string()),
-    }
-}
-
-/// An outcome standing in for a run that did not produce one.
+/// The reply that never came.
 ///
-/// `error` rather than a made-up state: `bounded_evidence` renders it into the
-/// judge's prompt, and the absent `nodes` key is what the mechanical
-/// missing-evidence check reads. Both follow from telling the truth about a run
-/// that has no output.
-fn errored(message: &str) -> RunOutcome {
-    RunOutcome {
-        output: json!({ "error": message }),
-        pending_approvals: Vec::new(),
-        cancelled: false,
+/// Deliberately *not* an empty `changed`. Empty means "the host looked and saw
+/// nothing"; here nobody looked, and the difference decides the episode.
+///
+/// A run with no steps and an empty `changed` is settled mechanically as
+/// [`crate::contracts::Blocker::MissingEvidence`], which is **terminal** — the
+/// reasoning being that a retry with the same inputs produces the same nothing.
+/// That reasoning is right for a graph that did nothing and wrong for a device
+/// that dropped off: `ExternalWait` is terminal too, so either would strand the
+/// episode permanently because a socket blipped. Saying plainly that the result
+/// is unknown routes it to the judge, which can reach a continuable verdict.
+fn unreported(graph: &tinyflows::model::WorkflowGraph, why: &str) -> Ran {
+    RunReport {
+        changed: format!(
+            "unknown — the runner did not report ({why}). Whether the run did any \
+             of the work is not established either way."
+        ),
+        failed: Some(format!("no report from the runner: {why}")),
+        ..RunReport::default()
     }
+    .into_ran(graph)
 }
 
 #[cfg(test)]
@@ -238,14 +351,25 @@ mod tests {
         );
     }
 
+    fn bare_graph() -> tinyflows::model::WorkflowGraph {
+        tinyflows::model::WorkflowGraph {
+            schema_version: 1,
+            id: Some("g".into()),
+            name: "g".into(),
+            inputs: Vec::new(),
+            agents: Vec::new(),
+            nodes: Vec::new(),
+            edges: Vec::new(),
+        }
+    }
+
     #[test]
     fn a_failure_is_readable_as_evidence_not_as_an_absence() {
-        let ran = Ran {
-            outcome: errored("node 'fetch' timed out"),
-            diagnosis: Diagnosis::default(),
-            changed: String::new(),
+        let ran = RunReport {
             failed: Some("node 'fetch' timed out".into()),
-        };
+            ..RunReport::default()
+        }
+        .into_ran(&bare_graph());
         let evidence = ran.evidence();
         assert_eq!(
             evidence.outcome.output["error"],
@@ -253,5 +377,38 @@ mod tests {
         );
         // No `nodes` key: what the mechanical missing-evidence check reads.
         assert!(evidence.outcome.output.get("nodes").is_none());
+    }
+
+    #[test]
+    fn an_unreported_run_does_not_claim_nothing_changed() {
+        // The bug this exists to prevent. Empty `changed` plus no steps is
+        // settled mechanically as MissingEvidence, which is terminal — so a
+        // socket blip would end the episode for good. `ExternalWait` is
+        // terminal too, so there is no safe blocker to pick; the fix is to stop
+        // asserting a fact nobody established.
+        let ran = unreported(&bare_graph(), "deadline elapsed after 600s");
+
+        assert!(
+            !ran.changed.is_empty(),
+            "empty means the host looked and saw nothing; nobody looked"
+        );
+        assert!(ran.changed.contains("unknown"), "{}", ran.changed);
+        assert!(
+            ran.failed
+                .as_deref()
+                .unwrap_or_default()
+                .contains("deadline"),
+            "the transport's own words survive: {:?}",
+            ran.failed
+        );
+    }
+
+    #[test]
+    fn an_unreported_run_carries_no_invented_evidence() {
+        let ran = unreported(&bare_graph(), "no runner connected");
+        assert!(ran.steps.is_empty());
+        assert!(ran.outcome.pending_approvals.is_empty());
+        assert!(!ran.outcome.cancelled);
+        assert!(ran.outcome.output.get("nodes").is_none());
     }
 }

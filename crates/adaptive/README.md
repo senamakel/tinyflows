@@ -67,11 +67,13 @@ What survives is exactly the loop.
 - [x] **2b · host facts** — `HostFacts`: what this machine permits, rendered into
       the authoring prompt and checked after, plus the store's own
       `HostPolicy::check_graph`. An absent fact means unknown, never forbidden.
-- [x] **3 · execute** — `run_attempt()`: compile, run **observed**, and come
-      back with the three evidence sources. Thin on purpose — it holds no
-      opinion, reads no history, and never returns an error, because an attempt
-      that leaves no ledger row is one the next pass repeats. Not
-      `run_with_checkpointer`: see below.
+- [x] **3 · execute** — the `Runner` port: `Local` runs the graph in this
+      process, `Remote` relays it to one elsewhere, and the loop cannot tell
+      which. Both are `serve()` → `RunReport` → `into_ran()`, so there is no
+      second path to drift. Thin on purpose — it holds no opinion, reads no
+      history, and never returns an error, because an attempt that leaves no
+      ledger row is one the next pass repeats. Not `run_with_checkpointer`: see
+      the field notes.
 - [x] **4 · judge** — evidence from three sources: the `RunOutcome`, the
       engine's own `Diagnosis` of what the steps did, and what changed outside
       the run. Mechanical evidence settles three verdicts before any model is
@@ -85,6 +87,44 @@ What survives is exactly the loop.
 - [ ] **5b · promotion** — a variant supersedes its parent on score, not on
       having been written.
 - [ ] **6 · retry edge** — planner sees the ledger and the exclusion list.
+
+## Where the engine runs
+
+The loop and the engine may sit in one process or on opposite ends of a socket.
+`Runner` is the seam; `execute::wire` is the contract.
+
+```
+     server                                   device
+  ┌────────────┐   RunRequest{graph,inputs}  ┌────────────┐
+  │  intake    │ ──────────────────────────▶ │  serve()   │
+  │  closing   │ ◀────────────────────────── │  engine    │
+  └────────────┘   RunReport{steps,…}        └────────────┘
+```
+
+**Steps cross, not `output`.** A run's final `output` is a lossy projection of
+its steps: no status (so a swallowed error is invisible), no duration, no
+null-binding diagnostics, a looped node collapsed to one entry — and a run that
+returned `Err` has no `output` at all while its steps are all still there.
+`Diagnosis` is not sent either: it is a pure function of the graph and the
+steps, and the loop already has the graph.
+
+**Bounding is per node, at two budgets.** `bounded_within` is whole-value and
+non-recursive, so applied to a map of nodes one fat entry replaces every other
+node's output with a string preview. `RECORD_BUDGET` (256 KiB) bounds each step
+for the durable record; `PROMPT_BUDGET` (4 KiB) bounds each node again in the
+projection the judge reads.
+
+**Nothing about the episode crosses.** A runner sees one graph and its inputs —
+no ledger, no lessons, no exclusion list, no verdict. It cannot reconstruct what
+is being learned from it.
+
+**A runner that never answers is still an attempt.** `Remote` synthesizes a
+report rather than propagating an error, and deliberately does *not* report an
+empty `changed`: empty means "the host looked and saw nothing", which settles
+mechanically as `MissingEvidence` — terminal. `ExternalWait` is terminal too, so
+there is no safe blocker to pick. Saying the result is unknown routes it to the
+judge, which can reach a continuable verdict, so a socket blip cannot end an
+episode.
 
 ## Choosing a ledger backend
 
