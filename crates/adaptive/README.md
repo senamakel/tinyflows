@@ -64,6 +64,9 @@ What survives is exactly the loop.
       Selection sees the catalogue with both score counters and never sees a
       workflow this episode already tried; authoring is grounded on the engine's
       generated node catalogue and validated before it returns.
+- [x] **2b · host facts** — `HostFacts`: what this machine permits, rendered into
+      the authoring prompt and checked after, plus the store's own
+      `HostPolicy::check_graph`. An absent fact means unknown, never forbidden.
 - [ ] **3 · execute** — `run_with_checkpointer`, host capabilities.
 - [ ] **4 · judge** — evidence from three sources: `RunOutcome`, the
       `RunRecord`'s null-resolving expressions, and the workspace diff.

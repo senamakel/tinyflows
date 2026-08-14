@@ -26,6 +26,7 @@ use tinyflows::model::WorkflowGraph;
 use tinyflows::store::WorkflowStore;
 
 use crate::contracts::{Approach, Goal};
+use crate::host::HostFacts;
 use crate::ledger::Ledger;
 
 /// What intake decided to run, and how it got there.
@@ -57,6 +58,12 @@ pub enum IntakeError {
     /// The model authored a graph the engine would refuse.
     #[error("authored an invalid graph: {0}")]
     Invalid(String),
+    /// The graph is well formed but names something this host does not have —
+    /// a worker, a tool slug, a reachable address. Distinct from `Invalid`
+    /// because the graph is fine and the *machine* is the constraint, which is
+    /// what the retry has to be told.
+    #[error("this host cannot run that graph: {0}")]
+    Unsupported(String),
     /// A stored workflow was chosen whose declared inputs cannot be filled.
     #[error("workflow {id} needs an input nothing supplied: {missing}")]
     Unbindable {
@@ -85,6 +92,7 @@ pub async fn decide(
     episode: &str,
     store: &dyn WorkflowStore,
     ledger: &dyn Ledger,
+    facts: &HostFacts,
     caps: &Capabilities,
     conn: Option<&str>,
 ) -> Result<Attempt> {
@@ -97,7 +105,7 @@ pub async fn decide(
         // empty graph, which compiles to nothing and reads as the work failing.
         return bind(chosen, store);
     }
-    author(goal, caps, conn).await
+    author(goal, facts, store.policy(), caps, conn).await
 }
 
 /// The stored workflows worth offering, with what is known about each.

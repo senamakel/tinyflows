@@ -13,10 +13,12 @@
 use tinyflows::caps::Capabilities;
 use tinyflows::catalog::{NodeKindContract, all_contracts};
 use tinyflows::model::WorkflowGraph;
+use tinyflows::store::HostPolicy;
 use tinyflows::validate::validate_all;
 
 use super::{Attempt, IntakeError, Result, ask};
 use crate::contracts::{Approach, Goal};
+use crate::host::HostFacts;
 
 const SYSTEM: &str = "\
 You write a workflow graph that achieves a goal.
@@ -49,7 +51,11 @@ Design guidance, which is judgement rather than a check:
 - Use `agent` for work that cannot be specified, and the determined kinds for
   everything else. Fetching, reshaping and branching are not agent work.
 - Say what a step is for, concretely. The agent running it sees the goal and
-  that instruction and nothing else — not the other nodes, not what they found.";
+  that instruction and nothing else — not the other nodes, not what they found.
+
+Where a section below states what this host permits, it is the machine's own
+configuration and is enforced when the graph runs. A graph that ignores it saves
+cleanly, validates cleanly, and fails the first time it matters.";
 
 /// Write a graph for `goal`, grounded on the engine's own node catalogue.
 ///
@@ -58,11 +64,23 @@ Design guidance, which is judgement rather than a check:
 /// validate. An invalid graph is never returned: the caller would hand it
 /// straight to `compile`, and the resulting failure would be attributed to the
 /// work rather than to the authoring.
-pub async fn author(goal: &Goal, caps: &Capabilities, conn: Option<&str>) -> Result<Attempt> {
+pub async fn author(
+    goal: &Goal,
+    facts: &HostFacts,
+    policy: &dyn HostPolicy,
+    caps: &Capabilities,
+    conn: Option<&str>,
+) -> Result<Attempt> {
+    let permitted = facts.render();
     let user = format!(
-        "# Goal\n{}\n\n# Node catalogue — the only kinds and fields that exist\n{}",
+        "# Goal\n{}\n\n# Node catalogue — the only kinds and fields that exist\n{}{}",
         goal.text.trim(),
-        catalogue()
+        catalogue(),
+        if permitted.is_empty() {
+            String::new()
+        } else {
+            format!("\n\n{permitted}")
+        }
     );
 
     let answer = ask(caps, conn, SYSTEM, &user).await?;
@@ -85,6 +103,18 @@ pub async fn author(goal: &Goal, caps: &Capabilities, conn: Option<&str>) -> Res
                 .collect::<Vec<_>>()
                 .join("; "),
         ));
+    }
+
+    // Three gates, and the order is cost. `validate_all` is structural and
+    // free. `HostFacts::check` is our own reading of the machine's config.
+    // `check_graph` is the host's, which may know things we were not told —
+    // it runs last because it is the one that can reach outside this process.
+    let refused = facts.check(&graph);
+    if !refused.is_empty() {
+        return Err(IntakeError::Unsupported(refused.join("; ")));
+    }
+    if let Err(err) = policy.check_graph(graph.id.as_deref().unwrap_or("authored"), &graph) {
+        return Err(IntakeError::Unsupported(err.to_string()));
     }
 
     Ok(Attempt {

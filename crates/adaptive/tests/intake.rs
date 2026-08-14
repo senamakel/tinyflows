@@ -17,6 +17,7 @@ use tinyflows::model::{Edge, InputType, Node, NodeKind, WorkflowGraph, WorkflowI
 use tinyflows::store::types::WorkflowRecord;
 use tinyflows::store::{FileWorkflowStore, WorkflowStore};
 use tinyflows_adaptive::contracts::{Approach, Goal};
+use tinyflows_adaptive::host::HostFacts;
 use tinyflows_adaptive::intake::decide;
 use tinyflows_adaptive::ledger::{Ledger, sqlite::SqliteLedger};
 
@@ -148,6 +149,7 @@ async fn an_empty_store_authors_without_asking_whether_to_select() {
         "ep1",
         &store,
         &ledger,
+        &HostFacts::unknown(),
         &caps,
         None,
     )
@@ -185,6 +187,7 @@ async fn a_matching_workflow_is_selected_and_its_graph_is_loaded() {
         "ep1",
         &store,
         &ledger,
+        &HostFacts::unknown(),
         &caps,
         None,
     )
@@ -223,6 +226,7 @@ async fn declining_falls_through_to_authoring() {
         "ep1",
         &store,
         &ledger,
+        &HostFacts::unknown(),
         &caps,
         None,
     )
@@ -263,6 +267,7 @@ async fn a_workflow_already_tried_this_episode_is_not_offered_again() {
         "ep1",
         &store,
         &ledger,
+        &HostFacts::unknown(),
         &caps,
         None,
     )
@@ -301,6 +306,7 @@ async fn a_selection_whose_required_input_is_missing_is_refused_before_it_runs()
         "ep1",
         &store,
         &ledger,
+        &HostFacts::unknown(),
         &caps,
         None,
     )
@@ -331,6 +337,7 @@ async fn a_hallucinated_workflow_id_reads_as_a_decline() {
         "ep1",
         &store,
         &ledger,
+        &HostFacts::unknown(),
         &caps,
         None,
     )
@@ -356,9 +363,17 @@ async fn an_authored_graph_that_does_not_validate_is_an_error_not_a_return_value
     let (store, _root) = empty_store("7");
     let ledger = SqliteLedger::in_memory().expect("ledger");
 
-    let err = decide(&Goal::new("anything"), "ep1", &store, &ledger, &caps, None)
-        .await
-        .expect_err("an invalid graph must not leave intake");
+    let err = decide(
+        &Goal::new("anything"),
+        "ep1",
+        &store,
+        &ledger,
+        &HostFacts::unknown(),
+        &caps,
+        None,
+    )
+    .await
+    .expect_err("an invalid graph must not leave intake");
     assert!(err.to_string().contains("invalid"), "{err}");
 }
 
@@ -381,6 +396,7 @@ async fn a_disabled_workflow_is_never_offered() {
         "ep1",
         &store,
         &ledger,
+        &HostFacts::unknown(),
         &caps,
         None,
     )
@@ -392,4 +408,91 @@ async fn a_disabled_workflow_is_never_offered() {
         1,
         "offering a disabled workflow invites a choice that cannot be honoured"
     );
+}
+
+#[tokio::test]
+async fn a_graph_naming_a_worker_this_host_lacks_is_refused_before_it_runs() {
+    // The whole point of collecting host facts. Without this the graph saves
+    // cleanly, validates cleanly, and fails at run time — usually overnight,
+    // to nobody watching.
+    let mut agent_graph = tiny_graph("uses-an-agent", None);
+    agent_graph.nodes[1] = Node {
+        id: "work".into(),
+        kind: NodeKind::Agent,
+        type_version: 1,
+        name: "do it".into(),
+        config: json!({ "prompt": "do the thing", "agent_ref": "desktop" }),
+        ports: Vec::new(),
+        position: None,
+    };
+    agent_graph.edges[0].to_node = "work".into();
+
+    let llm = std::sync::Arc::new(Scripted::new(vec![json!({
+        "graph": agent_graph, "why": "needs an agent", "inputs": {},
+    })]));
+    let caps = caps_with(llm);
+    let (store, _root) = empty_store("gated");
+    let ledger = SqliteLedger::in_memory().expect("ledger");
+
+    let facts = HostFacts {
+        workers: vec!["laptop".into(), "ci".into()],
+        default_worker: Some("laptop".into()),
+        ..HostFacts::unknown()
+    };
+
+    let err = decide(
+        &Goal::new("do the thing"),
+        "ep1",
+        &store,
+        &ledger,
+        &facts,
+        &caps,
+        None,
+    )
+    .await
+    .expect_err("a worker this host lacks must not reach the engine");
+
+    assert!(
+        err.to_string().contains("desktop"),
+        "the error names it: {err}"
+    );
+    assert!(
+        err.to_string().contains("laptop"),
+        "and offers the alternatives: {err}"
+    );
+}
+
+#[tokio::test]
+async fn the_authoring_prompt_carries_what_the_host_permits() {
+    let llm = std::sync::Arc::new(Scripted::new(vec![json!({
+        "graph": tiny_graph("fine", None), "why": "ok", "inputs": {},
+    })]));
+    let caps = caps_with(llm.clone());
+    let (store, _root) = empty_store("facts-rendered");
+    let ledger = SqliteLedger::in_memory().expect("ledger");
+
+    let facts = HostFacts {
+        workers: vec!["laptop".into()],
+        default_worker: None,
+        allow_code: Some(false),
+        notes: vec!["Only manual triggers fire here.".into()],
+        ..HostFacts::unknown()
+    };
+
+    decide(
+        &Goal::new("anything"),
+        "ep1",
+        &store,
+        &ledger,
+        &facts,
+        &caps,
+        None,
+    )
+    .await
+    .expect("decide");
+
+    let prompt = &llm.prompts()[0];
+    assert!(prompt.contains("What this host permits"), "{prompt}");
+    assert!(prompt.contains("every agent node must name config.agent_ref"));
+    assert!(prompt.contains("Only manual triggers fire here."));
 }
