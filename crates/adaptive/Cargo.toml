@@ -23,6 +23,7 @@ sqlite = ["dep:rusqlite"]
 mongo = ["dep:mongodb"]
 
 [dev-dependencies]
+tinyflows = { path = "../..", features = ["store", "mock"] }
 tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread"] }
 
 [lints.rust]

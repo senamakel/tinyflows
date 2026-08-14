@@ -60,9 +60,10 @@ What survives is exactly the loop.
 - [x] **1b · ledger** — the `Ledger` trait plus two backends behind features,
       `sqlite` and `mongo`, both checked by one conformance suite. Kept separate
       from `WorkflowStore` so an upstream merge never contends with it.
-- [ ] **2 · intake** — prompt → goal → *select* (catalogue with `applied`/`helped`
-      shown; model picks and binds inputs, or says none fits) → *author*
-      (grounded on the node catalogue, validated, dry-run before it counts).
+- [x] **2 · intake** — `decide()`: select a stored workflow, else author one.
+      Selection sees the catalogue with both score counters and never sees a
+      workflow this episode already tried; authoring is grounded on the engine's
+      generated node catalogue and validated before it returns.
 - [ ] **3 · execute** — `run_with_checkpointer`, host capabilities.
 - [ ] **4 · judge** — evidence from three sources: `RunOutcome`, the
       `RunRecord`'s null-resolving expressions, and the workspace diff.
