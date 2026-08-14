@@ -9,13 +9,17 @@ The engine is not modified. This crate sits beside it and decides *which* graph
 to run; `tinyflows` decides nothing and runs one graph.
 
 ```
-prompt ─▶ INTAKE ──────────────────────────▶ engine::run ──▶ CLOSING ──▶ answer
-          ├ goal                             (unmodified)    ├ judge
-          ├ select a stored workflow, or                     ├ consolidate
-          └ author one when none fits                        ├ score / promote
-                     ▲                                       └ retry?
-                     └─────────── re-decide ─────────────────┘
+prompt ─▶ INTAKE ──────────▶ Runner ──▶ engine::run ──▶ CLOSING ──▶ answer
+          ├ goal              (local     (unmodified)   ├ judge
+          ├ select, or        or remote)                ├ consolidate
+          └ author                                      ├ score / promote
+                     ▲                                  └ retry?
+                     └──── rows + lessons ──────────────┘
 ```
+
+Every phase of the plan below is built. What closes the loop is the bottom
+edge: the next attempt sees what this episode already spent and what earlier
+ones learned, so a retry is a different idea rather than the same one reworded.
 
 ## Why it is a separate crate
 
@@ -89,7 +93,10 @@ What survives is exactly the loop.
       after `MIN_TRIALS` runs; until then the root keeps the position, so an
       untested graph never displaces a 40/40 parent for everyone. Lineage lives
       in the ledger, because *this graph came from that one* spans runs.
-- [ ] **6 · retry edge** — planner sees the ledger and the exclusion list.
+- [x] **6 · retry edge** — both planners see this episode's rows *and* the
+      lessons other episodes left. Closes the loop: `consolidate()` was
+      write-only until now. Authored attempts are fingerprinted by graph shape,
+      so two of them no longer fold into one exclusion-list entry.
 
 ## Where the engine runs
 

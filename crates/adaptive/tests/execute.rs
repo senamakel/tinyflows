@@ -70,6 +70,7 @@ fn attempt(graph: WorkflowGraph) -> Attempt {
     Attempt {
         approach: Approach::Authored {
             why: "for the test".into(),
+            fingerprint: "0000000".into(),
         },
         graph,
         inputs: Map::new(),

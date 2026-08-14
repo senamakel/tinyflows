@@ -72,7 +72,13 @@ Design guidance, which is judgement rather than a check:
 
 Where a section below states what this host permits, it is the machine's own
 configuration and is enforced when the graph runs. A graph that ignores it saves
-cleanly, validates cleanly, and fails the first time it matters.";
+cleanly, validates cleanly, and fails the first time it matters.
+
+Where a section lists what this episode already tried, write something
+DIFFERENT. Not the same graph with a reworded prompt — a different shape: other
+nodes, another order, a step that checks what the last attempt assumed. If every
+approach you can think of is already on that list, say so in `why` and write the
+smallest graph that would establish which assumption is wrong.";
 
 /// Write a graph for `goal`, grounded on the engine's own node catalogue.
 ///
@@ -85,12 +91,13 @@ pub async fn author(
     goal: &Goal,
     facts: &HostFacts,
     policy: &dyn HostPolicy,
+    past: &str,
     caps: &Capabilities,
     conn: Option<&str>,
 ) -> Result<Attempt> {
     let permitted = facts.render();
     let user = format!(
-        "# Goal\n{}\n\n# Node catalogue — the only kinds and fields that exist\n{}{}",
+        "# Goal\n{}\n\n# Node catalogue — the only kinds and fields that exist\n{}{}{past}",
         goal.text.trim(),
         catalogue(),
         if permitted.is_empty() {
@@ -137,10 +144,33 @@ pub async fn author(
     Ok(Attempt {
         approach: Approach::Authored {
             why: answer["why"].as_str().unwrap_or_default().to_string(),
+            fingerprint: fingerprint(&graph),
         },
         graph,
         inputs: answer["inputs"].as_object().cloned().unwrap_or_default(),
     })
+}
+
+/// A digest of the graph's runnable shape.
+///
+/// Nodes, edges and declared inputs — not the name, not the description. Two
+/// graphs that run identically and differ in prose are the same attempt, and
+/// the whole point of the exclusion list is that the second one is recognised
+/// as a repeat rather than counted as a fresh idea. Inputs are in because a
+/// graph that requires a value behaves differently from one that does not,
+/// even when every node matches.
+fn fingerprint(graph: &WorkflowGraph) -> String {
+    use std::hash::{DefaultHasher, Hash, Hasher};
+    let mut hasher = DefaultHasher::new();
+    let shape = serde_json::json!({
+        "nodes": &graph.nodes,
+        "edges": &graph.edges,
+        "inputs": &graph.inputs,
+    });
+    serde_json::to_string(&shape)
+        .unwrap_or_default()
+        .hash(&mut hasher);
+    format!("{:07x}", hasher.finish() & 0xfff_ffff)
 }
 
 /// The node catalogue, rendered for a prompt.

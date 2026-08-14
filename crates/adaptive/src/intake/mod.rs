@@ -99,13 +99,30 @@ pub async fn decide(
     let tried = ledger.tried(episode).await?;
     let candidates = catalogue(store, ledger, &tried).await?;
 
-    if let Some(chosen) = select(goal, &candidates, caps, conn).await? {
+    // Both planners see the same past, in the same words. The exclusion list
+    // stops a *selection* being repeated, but nothing structural stops the
+    // author writing attempt two's graph again on attempt four — only being
+    // shown attempt two does. And the lessons were being written and never
+    // read, which is a knowledge store that costs money and returns nothing.
+    let rows = ledger.rows(episode).await?;
+    let lessons = crate::recall::retrieve(
+        ledger.lessons(None).await?,
+        None,
+        crate::recall::RECALL_LIMIT,
+    );
+    let past = format!(
+        "{}{}",
+        crate::recall::render_history(&rows),
+        crate::recall::render_lessons(&lessons)
+    );
+
+    if let Some(chosen) = select(goal, &candidates, &past, caps, conn).await? {
         // `select` answers with an id; the graph and the input check come from
         // the store. Returning the choice unbound would hand the engine an
         // empty graph, which compiles to nothing and reads as the work failing.
         return bind(chosen, store);
     }
-    author(goal, facts, store.policy(), caps, conn).await
+    author(goal, facts, store.policy(), &past, caps, conn).await
 }
 
 /// The stored workflows worth offering, with what is known about each.

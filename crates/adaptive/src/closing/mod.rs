@@ -141,7 +141,7 @@ fn decide_next(verdict: &Verdict, attempt: u32, stalled: u32, budget: &Budget) -
 fn why(approach: &Approach) -> String {
     match approach {
         Approach::Selected { why, .. }
-        | Approach::Authored { why }
+        | Approach::Authored { why, .. }
         | Approach::Variant { why, .. } => why.clone(),
     }
 }

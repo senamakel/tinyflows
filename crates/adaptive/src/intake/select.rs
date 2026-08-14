@@ -79,7 +79,11 @@ work for a job nobody wanted, which costs more than writing a new one.
 Prefer a workflow with a record over one without, and weigh both numbers rather
 than the ratio — run 40× satisfied 30× is a known quantity, run 1× satisfied 1×
 is a coin landing once. A workflow that has never run is still a fair choice
-when it plainly matches; it just carries no evidence.";
+when it plainly matches; it just carries no evidence.
+
+When this episode has already tried something, decline rather than choose a
+workflow that would fall short the same way. Being told a second time that the
+report has no numbers in it costs a full run and establishes nothing.";
 
 /// Ask whether any candidate does the job, and bind its inputs if one does.
 ///
@@ -91,6 +95,7 @@ when it plainly matches; it just carries no evidence.";
 pub async fn select(
     goal: &Goal,
     candidates: &[Candidate],
+    past: &str,
     caps: &Capabilities,
     conn: Option<&str>,
 ) -> Result<Option<Attempt>> {
@@ -106,7 +111,7 @@ pub async fn select(
         .collect::<Vec<_>>()
         .join("\n");
     let user = format!(
-        "# Goal\n{}\n\n# Saved workflows\n{listing}",
+        "# Goal\n{}\n\n# Saved workflows\n{listing}{past}",
         goal.text.trim()
     );
 

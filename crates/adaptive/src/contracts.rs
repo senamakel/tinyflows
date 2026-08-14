@@ -199,6 +199,15 @@ pub enum Approach {
     Authored {
         /// Why nothing stored fitted.
         why: String,
+        /// A digest of the graph that was written.
+        ///
+        /// The exclusion list is built from [`signature`](Self::signature), so
+        /// without this every authoring attempt in an episode signs as the same
+        /// string, `tried()` folds them to one entry, and attempt four can
+        /// re-author attempt two's graph word for word with nothing to notice.
+        /// The digest is what makes two authored attempts distinguishable —
+        /// and makes an identical re-author visible as the repeat it is.
+        fingerprint: String,
     },
     /// A stored workflow was the right idea and the wrong graph, so a variant
     /// of it was proposed. Never an edit in place — the parent is untouched
@@ -221,7 +230,7 @@ impl Approach {
     pub fn signature(&self) -> String {
         match self {
             Self::Selected { workflow_id, .. } => format!("selected:{workflow_id}"),
-            Self::Authored { .. } => "authored".to_string(),
+            Self::Authored { fingerprint, .. } => format!("authored:{fingerprint}"),
             Self::Variant { parent_id, .. } => format!("variant:{parent_id}"),
         }
     }
@@ -316,16 +325,43 @@ mod tests {
 
     #[test]
     fn a_signature_names_the_kind_of_attempt_not_the_task() {
-        let authored = Approach::Authored {
-            why: "nothing fitted".into(),
-        };
-        assert_eq!(authored.signature(), "authored");
-
         let selected = Approach::Selected {
             workflow_id: "pr-review".into(),
             why: "matches".into(),
         };
         assert_eq!(selected.signature(), "selected:pr-review");
+    }
+
+    #[test]
+    fn two_authored_attempts_are_told_apart_by_their_graph() {
+        // Before the fingerprint every authoring attempt signed as "authored",
+        // `tried()` folded them to one entry, and attempt four could re-author
+        // attempt two word for word with nothing to notice.
+        let first = Approach::Authored {
+            why: "nothing fitted".into(),
+            fingerprint: "1111111".into(),
+        };
+        let second = Approach::Authored {
+            why: "still nothing fitted".into(),
+            fingerprint: "2222222".into(),
+        };
+        assert_ne!(first.signature(), second.signature());
+        assert_eq!(first.signature(), "authored:1111111");
+    }
+
+    #[test]
+    fn the_same_graph_authored_twice_signs_the_same_and_is_caught() {
+        // The other half: a differently-worded `why` around an identical graph
+        // is the same attempt, and must read as the repeat it is.
+        let first = Approach::Authored {
+            why: "nothing fitted".into(),
+            fingerprint: "1111111".into(),
+        };
+        let again = Approach::Authored {
+            why: "a fresh idea, honestly".into(),
+            fingerprint: "1111111".into(),
+        };
+        assert_eq!(first.signature(), again.signature());
     }
 
     #[test]

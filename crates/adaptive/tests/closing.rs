@@ -286,6 +286,7 @@ async fn two_flat_attempts_in_a_row_stand_down_on_the_stall_rule() {
             attempt,
             &Approach::Authored {
                 why: format!("attempt {attempt}"),
+                fingerprint: "0000000".into(),
             },
             &Evidence {
                 outcome: &outcome,
