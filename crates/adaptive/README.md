@@ -57,8 +57,9 @@ What survives is exactly the loop.
 
 - [x] **0 · repo** — workspace member beside the engine; engine untouched.
 - [x] **1a · contracts** — `Goal`, `Approach`, `Verdict`, `Blocker`, `Budget`.
-- [ ] **1b · stores** — bridge `tinyflows::store`; add the two tables it lacks:
-      ledger rows and scored lessons.
+- [x] **1b · ledger** — the `Ledger` trait plus two backends behind features,
+      `sqlite` and `mongo`, both checked by one conformance suite. Kept separate
+      from `WorkflowStore` so an upstream merge never contends with it.
 - [ ] **2 · intake** — prompt → goal → *select* (catalogue with `applied`/`helped`
       shown; model picks and binds inputs, or says none fits) → *author*
       (grounded on the node catalogue, validated, dry-run before it counts).
@@ -69,6 +70,20 @@ What survives is exactly the loop.
       batch as a **variant** when the graph is at fault; promotion behind an
       evidenced gate.
 - [ ] **6 · retry edge** — planner sees the ledger and the exclusion list.
+
+## Choosing a ledger backend
+
+```toml
+tinyflows-adaptive = { version = "0.1", features = ["sqlite"] }   # single process
+tinyflows-adaptive = { version = "0.1", features = ["mongo"] }    # hosted
+```
+
+Neither is compiled unless asked for. Both pass the same
+[`ledger::conformance`] suite, which is public — a host writing a third backend
+runs the identical cases against it.
+
+Workflow scores live here, not on `WorkflowRecord`: a score is a fact that spans
+runs, and the engine's record is a fact about one document.
 
 ## Deliberately out of scope
 

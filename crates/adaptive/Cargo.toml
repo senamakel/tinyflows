@@ -12,10 +12,20 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 async-trait = "0.1"
 thiserror = "2"
+rusqlite = { version = "0.40.2", features = ["bundled"], optional = true }
+mongodb = { version = "3.6.0", optional = true }
+
+[features]
+default = []
+# Two backends, and the choice is the host's. Neither is compiled unless asked
+# for, so a deployment that wants sqlite does not build a Mongo driver.
+sqlite = ["dep:rusqlite"]
+mongo = ["dep:mongodb"]
 
 [dev-dependencies]
-tokio = { version = "1", features = ["macros", "rt"] }
+tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread"] }
 
 [lints.rust]
 unsafe_code = "forbid"
 missing_docs = "warn"
+

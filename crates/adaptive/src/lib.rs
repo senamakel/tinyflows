@@ -15,3 +15,4 @@
 #![warn(missing_docs)]
 
 pub mod contracts;
+pub mod ledger;
