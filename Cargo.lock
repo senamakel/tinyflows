@@ -1716,6 +1716,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "tinyflows-adaptive"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tinyflows",
+ "tokio",
+]
+
+[[package]]
 name = "tinystr"
 version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
