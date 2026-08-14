@@ -68,11 +68,18 @@ What survives is exactly the loop.
       the authoring prompt and checked after, plus the store's own
       `HostPolicy::check_graph`. An absent fact means unknown, never forbidden.
 - [ ] **3 · execute** — `run_with_checkpointer`, host capabilities.
-- [ ] **4 · judge** — evidence from three sources: `RunOutcome`, the
-      `RunRecord`'s null-resolving expressions, and the workspace diff.
-- [ ] **5 · consolidate** — lessons; `record_use` on the workflow; a `GraphOp`
-      batch as a **variant** when the graph is at fault; promotion behind an
-      evidenced gate.
+- [x] **4 · judge** — evidence from three sources: the `RunOutcome`, the
+      engine's own `Diagnosis` of what the steps did, and what changed outside
+      the run. Mechanical evidence settles three verdicts before any model is
+      asked; the judge never sees the ledger, so it cannot propose what to try
+      next.
+- [x] **5 · consolidate** — `close()` records the row **whatever the verdict**
+      and scores the workflow that ran; `consolidate()` keeps only what a
+      different task could act on, and only with rows cited; `repair()` turns a
+      `GraphOp` batch into a **variant**, never an edit in place, and only when
+      the diagnosis says the graph is the thing at fault.
+- [ ] **5b · promotion** — a variant supersedes its parent on score, not on
+      having been written.
 - [ ] **6 · retry edge** — planner sees the ledger and the exclusion list.
 
 ## Choosing a ledger backend

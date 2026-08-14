@@ -14,6 +14,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod closing;
 pub mod contracts;
 pub mod host;
 pub mod intake;
