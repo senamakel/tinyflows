@@ -136,6 +136,60 @@ there is no safe blocker to pick. Saying the result is unknown routes it to the
 judge, which can reach a continuable verdict, so a socket blip cannot end an
 episode.
 
+## The contracts an external process touches
+
+Two kinds, and they fail differently. A **wire type** breaks when a derive is
+dropped or a field renamed — silently, in another repository. A **trait** breaks
+at compile time in the host that implements it.
+
+### Wire — serialized, crosses a boundary
+
+| Contract | Types | Casing |
+|---|---|---|
+| Execute | `RunRequest`, `RunReport`, `StepRecord`, `StepOutcome` | camelCase |
+| Nested in those | `WorkflowGraph`, `Node`, `Edge`, `WorkflowInput`, `NullResolution` | **snake_case** |
+| Run diagnosis | `Diagnosis`, `NullBinding`, `HiddenError`, `NeverRan` | camelCase |
+| Loop state | `Goal`, `Approach`, `Verdict`, `Blocker`, `Budget` | snake_case |
+| Knowledge | `LedgerRow`, `Lesson`, `LessonKind`, `Score` | snake_case |
+| Host & repair | `HostFacts`, `GraphOp`, `WorkflowRecord` | snake_case |
+
+**One payload, two conventions.** The envelope this crate added is camelCase;
+the engine's model types predate it and use serde's default, so the graph
+*inside* a camelCase request stays snake_case:
+
+```json
+{ "attemptId": "ep-1/3",
+  "graph": { "schema_version": 1,
+             "nodes": [{ "type_version": 1, "kind": "trigger" }],
+             "edges": [{ "from_node": "a", "from_port": "main" }] } }
+```
+
+Neither is wrong and changing either breaks something already shipped, so the
+seam is asserted rather than tidied. A relay that assumes one convention
+throughout produces a graph the engine refuses.
+
+`tests/contracts_surface.rs` asserts all of it at compile time.
+
+**Not serializable, deliberately:** `RunOutcome`, `ExecutionStep` and
+`StepStatus` are `Debug + Clone` only upstream. That is why steps cross as
+`StepRecord` and the outcome is rebuilt by `into_ran` rather than sent.
+
+### Traits — implemented in-process by a host
+
+| Trait | Who implements it |
+|---|---|
+| `Relay` | the service, to reach a runner elsewhere |
+| `Workspace` | whatever can say what changed outside a run |
+| `Ledger` | ships as `sqlite` and `mongo`; a third passes `conformance` |
+| `Runner` | ships as `Local` and `Remote`; rarely custom |
+| `LlmProvider`, `ToolInvoker`, `HttpClient`, `CodeRunner`, `StateStore`, `WorkflowResolver` | the engine's `Capabilities` bundle |
+| `AgentRunner`, `MemoryProvider` | optional capabilities |
+| `WorkflowStore`, `HostPolicy` | the engine's store seam — **synchronous** |
+
+`WorkflowStore` being synchronous is the one to plan around: a hosted service
+with an async driver cannot implement it without blocking, so load a per-episode
+snapshot before the loop and flush after.
+
 ## Choosing a ledger backend
 
 ```toml
