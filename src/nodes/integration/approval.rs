@@ -170,16 +170,31 @@ fn run_id(ctx: &NodeContext<'_>) -> Option<String> {
 /// and anything derived from the clock or a counter would create a fresh review
 /// on every resume. Hence run id + node id, or an explicit `config.request_id`
 /// for a host that wants to key reviews its own way.
-fn build_request(ctx: &NodeContext<'_>, config: &Value) -> ApprovalRequest {
+///
+/// Falling back to the bare node id when *neither* is available would let two
+/// different runs of the same graph collide on the same `request_id`: since
+/// [`ApprovalProvider::decide`](crate::caps::ApprovalProvider::decide) is
+/// create-or-fetch, a later run would silently inherit an earlier run's
+/// decision and route an unreviewed subject straight through `approved`. So a
+/// node with no `config.request_id` and no run-scoped identity is a
+/// configuration error, not a degraded default.
+fn build_request(ctx: &NodeContext<'_>, config: &Value) -> Result<ApprovalRequest> {
     let run = run_id(ctx);
-    let request_id = config
-        .get("request_id")
-        .and_then(Value::as_str)
-        .map(str::to_string)
-        .unwrap_or_else(|| match &run {
+    let request_id = match config.get("request_id").and_then(Value::as_str) {
+        Some(explicit) => explicit.to_string(),
+        None => match &run {
             Some(run) => format!("{run}:{}", ctx.node.id),
-            None => ctx.node.id.clone(),
-        });
+            None => {
+                return Err(EngineError::Capability(format!(
+                    "approval node {:?}: no `request_id` configured and no run-scoped identity \
+                     available (expected `run.id`, `run.run_id`, or `run.trigger.run_id`); set \
+                     `config.request_id` explicitly or seed a run id, otherwise later runs could \
+                     reuse an earlier run's decision",
+                    ctx.node.id
+                )));
+            }
+        },
+    };
 
     // The subject defaults to the item that arrived, which is the common case:
     // a node upstream produced the thing, and the human looks at it.
@@ -189,7 +204,7 @@ fn build_request(ctx: &NodeContext<'_>, config: &Value) -> ApprovalRequest {
         .or_else(|| ctx.input.first().map(|item| item.json.clone()))
         .unwrap_or(Value::Null);
 
-    ApprovalRequest {
+    Ok(ApprovalRequest {
         request_id,
         node_id: ctx.node.id.clone(),
         run_id: run,
@@ -215,7 +230,7 @@ fn build_request(ctx: &NodeContext<'_>, config: &Value) -> ApprovalRequest {
             })
             .unwrap_or_default(),
         metadata: config.get("metadata").cloned().unwrap_or(Value::Null),
-    }
+    })
 }
 
 /// A config field read as a string, ignoring a non-string (an unresolved
