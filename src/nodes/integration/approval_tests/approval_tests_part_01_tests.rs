@@ -269,6 +269,64 @@ async fn polling_spends_a_bounded_budget_then_follows_on_timeout() {
     );
 }
 
+/// A provider that stays `Pending` for its first `pending_calls` calls, then
+/// decides — the shape a real review surface has (nobody has looked yet, then
+/// someone does), which [`MockApprovals::pending`] alone cannot exercise since
+/// it never resolves.
+struct ResolvesAfter {
+    pending_calls: usize,
+    calls: std::sync::atomic::AtomicUsize,
+}
+
+#[async_trait::async_trait]
+impl crate::caps::ApprovalProvider for ResolvesAfter {
+    async fn decide(
+        &self,
+        _request: &crate::caps::ApprovalRequest,
+    ) -> crate::error::Result<crate::caps::ApprovalOutcome> {
+        let call = self
+            .calls
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        if call < self.pending_calls {
+            return Ok(crate::caps::ApprovalOutcome::Pending);
+        }
+        Ok(crate::caps::ApprovalOutcome::Decided(
+            crate::caps::ApprovalDecision {
+                decided_by: Some("late-reviewer".to_string()),
+                ..crate::caps::ApprovalDecision::approved()
+            },
+        ))
+    }
+}
+
+/// A poll that finally finds a `Decided` outcome must stop polling and take
+/// the verdict — proving the polling loop actually reads what `decide`
+/// returns each time, rather than always re-entering until the budget runs
+/// out.
+#[tokio::test]
+async fn a_polling_review_resolves_once_the_provider_decides() {
+    let graph = wf(json!({
+        "wait_mode": "poll",
+        "poll_interval_ms": 1,
+        "max_polls": 10,
+    }));
+    let compiled = compile(&graph).expect("compile");
+    let provider = ResolvesAfter {
+        pending_calls: 2,
+        calls: std::sync::atomic::AtomicUsize::new(0),
+    };
+    let caps = mock_capabilities_with_approvals(provider);
+
+    let out = run(&compiled, Value::Null, &caps).await.expect("run");
+
+    let slot = &out.output["nodes"]["review"];
+    assert_eq!(
+        slot["port"], "approved",
+        "a late decision must still be taken rather than timing out, got {slot:?}"
+    );
+    assert_eq!(slot["items"][0]["json"]["decided_by"], "late-reviewer");
+}
+
 #[tokio::test]
 async fn on_timeout_error_is_the_default_and_names_the_node() {
     let graph = wf(json!({ "wait_mode": "poll", "poll_interval_ms": 1, "max_polls": 1 }));
