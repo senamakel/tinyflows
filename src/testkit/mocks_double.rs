@@ -31,18 +31,11 @@ pub(super) struct Double {
     mocks: Arc<MockCaps>,
     /// The node this double was scoped to, stamped onto every call it logs.
     node_id: Option<String>,
-    /// Backing map for the [`StateStore`] impl, which is the one capability
-    /// whose whole job is to remember.
-    state: Mutex<HashMap<String, Value>>,
 }
 
 impl Double {
     pub(super) fn new(mocks: Arc<MockCaps>, node_id: Option<String>) -> Self {
-        Self {
-            mocks,
-            node_id,
-            state: Mutex::new(HashMap::new()),
-        }
+        Self { mocks, node_id }
     }
 
     /// Consult the rules, log whatever happens, and return it.
