@@ -6,6 +6,7 @@
 //! curated Composio tools, `HttpRequestTool`, and sandboxed code runtimes.
 
 pub mod agent;
+pub mod approval;
 #[cfg(any(test, feature = "host-caps"))]
 pub mod host;
 #[cfg(any(test, feature = "mock"))]
@@ -23,6 +24,9 @@ use crate::error::Result;
 pub use self::agent::{
     AgentInput, AgentModelSelection, AgentRunIdentity, AgentRunOutcome, AgentRunRequest,
     AgentRunner, AgentUsage, ContextBlock, StopReason, ToolDescriptor,
+};
+pub use self::approval::{
+    ApprovalDecision, ApprovalOutcome, ApprovalProvider, ApprovalRequest, ApprovalSubject,
 };
 pub use self::shell::{ShellInterpreter, ShellOutcome, ShellRequest, ShellRunner, ShellScript};
 pub use self::tasks::{TaskRunner, TaskSpec, TaskState, TokioTaskRunner};
@@ -247,6 +251,13 @@ pub struct Capabilities {
     /// rather than a correctness one, which is exactly why it is worth saying
     /// out loud here and in the node catalog.
     pub tasks: Option<Arc<dyn TaskRunner>>,
+    /// Optional human-review surface for `approval` nodes. `None` on hosts
+    /// without one, in which case an `approval` node falls back to pausing the
+    /// run and letting the host settle it through
+    /// [`engine::resume`](crate::engine::resume) — so the node still works, it
+    /// just has no way to *push* the request at anybody. See
+    /// [`ApprovalProvider`] for the create-or-fetch contract.
+    pub approvals: Option<Arc<dyn ApprovalProvider>>,
 }
 
 #[cfg(test)]
