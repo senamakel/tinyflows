@@ -105,6 +105,10 @@ async fn main() {
                 "review",
                 NodeKind::Approval,
                 json!({
+                    // A real host would key this on the run id (e.g.
+                    // `"=run.id"`) rather than a literal, so two runs of this
+                    // graph never collide on the same review.
+                    "request_id": "hitl-review-example",
                     "title": "Publish this post?",
                     "prompt": "Approving publishes it to the public feed.",
                     "subject_kind": "url",
