@@ -5,9 +5,7 @@
 //! graph to reach them would be testing the engine instead.
 
 use super::*;
-use crate::caps::{
-    ApprovalOutcome, ApprovalProvider, ApprovalRequest, ApprovalSubject, LlmProvider, ToolInvoker,
-};
+use crate::caps::{ApprovalOutcome, ApprovalRequest, ApprovalSubject};
 use serde_json::json;
 
 fn mocks(build: impl FnOnce(MockCaps) -> MockCaps) -> Arc<MockCaps> {
