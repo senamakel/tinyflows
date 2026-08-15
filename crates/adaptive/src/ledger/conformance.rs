@@ -62,6 +62,7 @@ pub async fn run_all(store: &dyn Ledger) {
     workflow_scores_accumulate(store).await;
     run_lineage(store).await;
     run_episodes(store).await;
+    run_transcripts(store).await;
 }
 
 async fn appended_rows_come_back_in_order(store: &dyn Ledger) {
@@ -493,7 +494,10 @@ async fn saving_twice_updates_rather_than_duplicating(store: &dyn Ledger) {
         EpisodeStatus::StoodDown(reason) => assert!(reason.contains("out of attempts")),
         other => panic!("expected the second write to win, got {other:?}"),
     }
-    let all = store.episodes(false).await.expect("episodes");
+    let all = store
+        .episodes(false, super::Page::ALL)
+        .await
+        .expect("episodes");
     assert_eq!(
         all.iter().filter(|e| e.id == "ep-twice").count(),
         1,
@@ -511,7 +515,10 @@ async fn running_only_filters_to_the_recovery_list(store: &dyn Ledger) {
         .await
         .expect("save");
 
-    let running = store.episodes(true).await.expect("episodes");
+    let running = store
+        .episodes(true, super::Page::ALL)
+        .await
+        .expect("episodes");
     assert!(running.iter().any(|e| e.id == "ep-live"));
     assert!(
         !running.iter().any(|e| e.id == "ep-won"),
@@ -530,4 +537,127 @@ async fn a_rows_verdict_survives_as_fields_not_as_prose(store: &dyn Ledger) {
     let back = &store.rows("ep-fields").await.expect("rows")[0];
     assert!(back.satisfied);
     assert!(back.advanced);
+}
+
+/// Run every transcript and paging case.
+///
+/// # Panics
+/// On any failure.
+pub async fn run_transcripts(store: &dyn Ledger) {
+    an_attempt_with_no_transcript_is_empty_not_an_error(store).await;
+    a_transcript_round_trips_in_order(store).await;
+    a_looped_node_keeps_every_iteration(store).await;
+    saving_a_transcript_twice_replaces_rather_than_appends(store).await;
+    a_page_windows_the_episode_list(store).await;
+}
+
+fn step(node_id: &str, n: u64) -> crate::execute::StepRecord {
+    crate::execute::StepRecord {
+        node_id: node_id.to_string(),
+        status: crate::execute::StepOutcome::Success,
+        output: serde_json::json!({ "i": n }),
+        duration_ms: n,
+        null_bindings: Vec::new(),
+    }
+}
+
+async fn an_attempt_with_no_transcript_is_empty_not_an_error(store: &dyn Ledger) {
+    assert!(store.steps("ldg_nothing").await.expect("steps").is_empty());
+}
+
+async fn a_transcript_round_trips_in_order(store: &dyn Ledger) {
+    let mut errored = step("fetch", 7);
+    errored.status = crate::execute::StepOutcome::Error;
+    errored.null_bindings = vec![tinyflows::expr::NullResolution {
+        location: "args.to".to_string(),
+        expression: "=nodes.x.item.email".to_string(),
+    }];
+    store
+        .save_steps("ldg_a", &[step("start", 1), errored])
+        .await
+        .expect("save");
+
+    let back = store.steps("ldg_a").await.expect("steps");
+    assert_eq!(back.len(), 2);
+    assert_eq!(back[0].node_id, "start", "execution order is the record");
+    assert_eq!(back[1].status, crate::execute::StepOutcome::Error);
+    assert_eq!(back[1].duration_ms, 7);
+    assert_eq!(
+        back[1].null_bindings.len(),
+        1,
+        "the nested list survives both a JSON column and a native array"
+    );
+    assert_eq!(back[1].output, serde_json::json!({ "i": 7 }));
+}
+
+async fn a_looped_node_keeps_every_iteration(store: &dyn Ledger) {
+    // The reason this is a record per step rather than one blob per attempt.
+    let steps: Vec<_> = (0..12).map(|n| step("body", n)).collect();
+    store.save_steps("ldg_loop", &steps).await.expect("save");
+
+    let back = store.steps("ldg_loop").await.expect("steps");
+    assert_eq!(back.len(), 12);
+    assert_eq!(
+        back.iter().map(|s| s.duration_ms).collect::<Vec<_>>(),
+        (0..12).collect::<Vec<_>>(),
+        "iterations in order, not deduplicated by node id"
+    );
+}
+
+async fn saving_a_transcript_twice_replaces_rather_than_appends(store: &dyn Ledger) {
+    // A retried write must not double the record.
+    store
+        .save_steps("ldg_twice", &[step("a", 1), step("b", 2)])
+        .await
+        .expect("save");
+    store
+        .save_steps("ldg_twice", &[step("a", 1), step("b", 2)])
+        .await
+        .expect("save");
+    assert_eq!(store.steps("ldg_twice").await.expect("steps").len(), 2);
+}
+
+async fn a_page_windows_the_episode_list(store: &dyn Ledger) {
+    for n in 0..5 {
+        store
+            .save_episode(&episode(
+                &format!("ep-page-{n}"),
+                EpisodeStatus::Running,
+                1,
+                0,
+            ))
+            .await
+            .expect("save");
+    }
+    let all = store
+        .episodes(false, super::Page::ALL)
+        .await
+        .expect("episodes");
+    assert!(all.len() >= 5);
+
+    let first_two = store
+        .episodes(false, super::Page::first(2))
+        .await
+        .expect("episodes");
+    assert_eq!(first_two.len(), 2);
+    assert_eq!(
+        first_two.iter().map(|e| &e.id).collect::<Vec<_>>(),
+        all[..2].iter().map(|e| &e.id).collect::<Vec<_>>(),
+        "the same order, windowed"
+    );
+
+    let past_the_end = store
+        .episodes(
+            false,
+            super::Page {
+                limit: 10,
+                offset: all.len() + 5,
+            },
+        )
+        .await
+        .expect("episodes");
+    assert!(
+        past_the_end.is_empty(),
+        "an offset past the end is empty, not a panic"
+    );
 }

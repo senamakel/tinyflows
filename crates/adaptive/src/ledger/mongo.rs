@@ -39,6 +39,7 @@ const EVIDENCE: &str = "lesson_evidence";
 const SCORES: &str = "workflow_scores";
 const VARIANTS: &str = "variants";
 const EPISODES: &str = "episodes";
+const STEPS: &str = "attempt_steps";
 const COUNTERS: &str = "counters";
 
 /// A ledger backed by a MongoDB database.
@@ -134,6 +135,9 @@ impl MongoLedger {
     }
     fn episodes_c(&self) -> Collection<Document> {
         self.db.collection(EPISODES)
+    }
+    fn steps_c(&self) -> Collection<Document> {
+        self.db.collection(STEPS)
     }
 
     /// The next value in a named sequence.
@@ -431,7 +435,59 @@ impl Ledger for MongoLedger {
         found.as_ref().map(read_episode).transpose()
     }
 
-    async fn episodes(&self, running_only: bool) -> Result<Vec<Episode>> {
+    async fn save_steps(&self, row_id: &str, steps: &[crate::execute::StepRecord]) -> Result<()> {
+        // A document per step. One per attempt would exceed the 16 MB cap on a
+        // looped graph, and would do it only in production.
+        for (seq, step) in steps.iter().enumerate() {
+            let seq = i64::try_from(seq).unwrap_or(i64::MAX);
+            self.steps_c()
+                .update_one(
+                    doc! { "scope_key": self.bucket(), "row_id": row_id, "seq": seq },
+                    doc! { "$set": {
+                        "node_id": &step.node_id,
+                        "status": serde_json::to_string(&step.status)
+                            .map_err(|e| LedgerError::Corrupt(e.to_string()))?
+                            .trim_matches('"'),
+                        "output": serde_json::to_string(&step.output)
+                            .map_err(|e| LedgerError::Corrupt(e.to_string()))?,
+                        "duration_ms": i64::try_from(step.duration_ms).unwrap_or(i64::MAX),
+                        "null_bindings": serde_json::to_string(&step.null_bindings)
+                            .map_err(|e| LedgerError::Corrupt(e.to_string()))?,
+                    } },
+                )
+                .upsert(true)
+                .await?;
+        }
+        Ok(())
+    }
+
+    async fn steps(&self, row_id: &str) -> Result<Vec<crate::execute::StepRecord>> {
+        let mut cursor = self
+            .steps_c()
+            .find(doc! { "scope_key": self.bucket(), "row_id": row_id })
+            .sort(doc! { "seq": 1 })
+            .await?;
+        let mut out = Vec::new();
+        while cursor.advance().await? {
+            let d = cursor.deserialize_current()?;
+            out.push(crate::execute::StepRecord {
+                node_id: text(&d, "node_id"),
+                status: if text(&d, "status") == "error" {
+                    crate::execute::StepOutcome::Error
+                } else {
+                    crate::execute::StepOutcome::Success
+                },
+                output: serde_json::from_str(&text(&d, "output"))
+                    .map_err(|e| LedgerError::Corrupt(e.to_string()))?,
+                duration_ms: u64::from(as_u32(&d, "duration_ms")),
+                null_bindings: serde_json::from_str(&text(&d, "null_bindings"))
+                    .map_err(|e| LedgerError::Corrupt(e.to_string()))?,
+            });
+        }
+        Ok(out)
+    }
+
+    async fn episodes(&self, running_only: bool, page: super::Page) -> Result<Vec<Episode>> {
         let mut cursor = self
             .episodes_c()
             .find(doc! { "scope_key": self.bucket() })
@@ -444,7 +500,7 @@ impl Ledger for MongoLedger {
                 out.push(episode);
             }
         }
-        Ok(out)
+        Ok(page.apply(out))
     }
 
     async fn children_of(&self, id: &str) -> Result<Vec<String>> {

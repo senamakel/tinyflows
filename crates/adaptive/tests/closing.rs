@@ -15,8 +15,9 @@ use tinyflows::caps::{Capabilities, LlmProvider};
 use tinyflows::diagnostics::{Diagnosis, NeverRan};
 use tinyflows::engine::RunOutcome;
 use tinyflows::error::Result as EngineResult;
-use tinyflows_adaptive::closing::{Evidence, Next, close, consolidate};
+use tinyflows_adaptive::closing::{Next, close, consolidate};
 use tinyflows_adaptive::contracts::{Approach, Blocker, Budget, Goal};
+use tinyflows_adaptive::execute::Ran;
 use tinyflows_adaptive::ledger::{Ledger, LessonKind, memory::MemoryLedger};
 
 /// A provider that answers from a script and counts what it was asked.
@@ -84,6 +85,19 @@ fn completed(output: Value) -> RunOutcome {
     }
 }
 
+/// A finished run, as `close` now takes it. The judge still reads only the
+/// evidence; the cost and the transcript ride along because they are recorded.
+fn ran(outcome: &RunOutcome, diagnosis: &Diagnosis, changed: &str) -> Ran {
+    Ran {
+        outcome: outcome.clone(),
+        diagnosis: diagnosis.clone(),
+        changed: changed.to_string(),
+        failed: None,
+        steps: Vec::new(),
+        cost_usd: 0.0,
+    }
+}
+
 fn selected(id: &str) -> Approach {
     Approach::Selected {
         workflow_id: id.to_string(),
@@ -110,11 +124,7 @@ async fn a_failed_attempt_is_still_recorded_and_still_scored() {
         "ep-1",
         1,
         &selected("weekly"),
-        &Evidence {
-            outcome: &outcome,
-            diagnosis: &diagnosis,
-            changed: "wrote report.md".into(),
-        },
+        &ran(&outcome, &diagnosis, "wrote report.md"),
         &Budget::default(),
         &ledger,
         &caps_with(llm),
@@ -155,11 +165,7 @@ async fn a_satisfied_attempt_moves_both_halves_of_the_score() {
         "ep-2",
         1,
         &selected("weekly"),
-        &Evidence {
-            outcome: &outcome,
-            diagnosis: &diagnosis,
-            changed: "wrote report.md".into(),
-        },
+        &ran(&outcome, &diagnosis, "wrote report.md"),
         &Budget::default(),
         &ledger,
         &caps_with(llm),
@@ -196,11 +202,7 @@ async fn a_run_where_nothing_happened_never_reaches_the_model() {
         "ep-3",
         1,
         &selected("weekly"),
-        &Evidence {
-            outcome: &outcome,
-            diagnosis: &diagnosis,
-            changed: String::new(),
-        },
+        &ran(&outcome, &diagnosis, ""),
         &Budget::default(),
         &ledger,
         &caps,
@@ -239,11 +241,7 @@ async fn a_parked_approval_is_not_a_failure() {
         "ep-4",
         1,
         &selected("blog"),
-        &Evidence {
-            outcome: &outcome,
-            diagnosis: &diagnosis,
-            changed: String::new(),
-        },
+        &ran(&outcome, &diagnosis, ""),
         &Budget::default(),
         &ledger,
         &caps,
@@ -284,11 +282,7 @@ async fn two_flat_attempts_in_a_row_stand_down_on_the_stall_rule() {
                 why: format!("attempt {attempt}"),
                 fingerprint: "0000000".into(),
             },
-            &Evidence {
-                outcome: &outcome,
-                diagnosis: &diagnosis,
-                changed: String::new(),
-            },
+            &ran(&outcome, &diagnosis, ""),
             &budget,
             &ledger,
             &caps,

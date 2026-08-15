@@ -95,6 +95,20 @@ const DDL: &[&str] = &[
         updated_at TEXT NOT NULL
     )",
     "CREATE INDEX IF NOT EXISTS ix_episodes_scope ON episodes(scope_key, updated_at)",
+    // One row per step, never one blob per attempt: a looped node produces a
+    // step per iteration, and at RECORD_BUDGET that reaches past what a Mongo
+    // document may hold. Uniform across backends beats convenient on one.
+    "CREATE TABLE IF NOT EXISTS attempt_steps (
+        scope_key     TEXT NOT NULL DEFAULT '',
+        row_id        TEXT NOT NULL,
+        seq           INTEGER NOT NULL,
+        node_id       TEXT NOT NULL,
+        status        TEXT NOT NULL,
+        output        TEXT NOT NULL,
+        duration_ms   INTEGER NOT NULL DEFAULT 0,
+        null_bindings TEXT NOT NULL DEFAULT '[]',
+        PRIMARY KEY (scope_key, row_id, seq)
+    )",
 ];
 
 /// Applied after [`DDL`], failures ignored.
@@ -623,18 +637,84 @@ impl Ledger for SqliteLedger {
         found.transpose()
     }
 
-    async fn episodes(&self, running_only: bool) -> Result<Vec<Episode>> {
+    async fn save_steps(&self, row_id: &str, steps: &[crate::execute::StepRecord]) -> Result<()> {
+        let conn = self.guard()?;
+        for (seq, step) in steps.iter().enumerate() {
+            conn.execute(
+                "INSERT OR REPLACE INTO attempt_steps(scope_key, row_id, seq, node_id, status,
+                                                      output, duration_ms, null_bindings)
+                 VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",
+                params![
+                    self.bucket(),
+                    row_id,
+                    i64::try_from(seq).unwrap_or(i64::MAX),
+                    step.node_id,
+                    serde_json::to_string(&step.status)
+                        .map_err(|e| LedgerError::Corrupt(e.to_string()))?
+                        .trim_matches('"'),
+                    serde_json::to_string(&step.output)
+                        .map_err(|e| LedgerError::Corrupt(e.to_string()))?,
+                    i64::try_from(step.duration_ms).unwrap_or(i64::MAX),
+                    serde_json::to_string(&step.null_bindings)
+                        .map_err(|e| LedgerError::Corrupt(e.to_string()))?,
+                ],
+            )?;
+        }
+        Ok(())
+    }
+
+    async fn steps(&self, row_id: &str) -> Result<Vec<crate::execute::StepRecord>> {
+        let conn = self.guard()?;
+        let mut stmt = conn.prepare(
+            "SELECT node_id, status, output, duration_ms, null_bindings FROM attempt_steps
+             WHERE scope_key = ?1 AND row_id = ?2 ORDER BY seq",
+        )?;
+        let found = stmt
+            .query_map(params![self.bucket(), row_id], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, i64>(3)?,
+                    r.get::<_, String>(4)?,
+                ))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+
+        found
+            .into_iter()
+            .map(|(node_id, status, output, duration_ms, bindings)| {
+                Ok(crate::execute::StepRecord {
+                    node_id,
+                    status: if status == "error" {
+                        crate::execute::StepOutcome::Error
+                    } else {
+                        crate::execute::StepOutcome::Success
+                    },
+                    output: serde_json::from_str(&output)
+                        .map_err(|e| LedgerError::Corrupt(e.to_string()))?,
+                    duration_ms: u64::try_from(duration_ms).unwrap_or(0),
+                    null_bindings: serde_json::from_str(&bindings)
+                        .map_err(|e| LedgerError::Corrupt(e.to_string()))?,
+                })
+            })
+            .collect()
+    }
+
+    async fn episodes(&self, running_only: bool, page: super::Page) -> Result<Vec<Episode>> {
         let conn = self.guard()?;
         let mut stmt = conn
             .prepare("SELECT * FROM episodes WHERE scope_key = ?1 ORDER BY updated_at DESC, id")?;
         let all = stmt
             .query_map([self.bucket()], read_episode)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
-        all.into_iter()
+        let kept: Result<Vec<Episode>> = all
+            .into_iter()
             .filter(|e| {
                 !running_only || e.as_ref().is_ok_and(|e| e.status == EpisodeStatus::Running)
             })
-            .collect()
+            .collect();
+        Ok(page.apply(kept?))
     }
 
     async fn children_of(&self, id: &str) -> Result<Vec<String>> {

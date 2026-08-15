@@ -54,6 +54,8 @@ struct Inner {
     /// `(bucket, variant) -> parent`.
     variants: HashMap<(String, String), String>,
     episodes: Vec<Episode>,
+    /// `(bucket, row_id)` to that attempt's steps, in execution order.
+    steps: HashMap<(String, String), Vec<crate::execute::StepRecord>>,
 }
 
 /// A ledger held in memory, which learns nothing across restarts.
@@ -268,15 +270,32 @@ impl Ledger for MemoryLedger {
             .cloned())
     }
 
-    async fn episodes(&self, running_only: bool) -> Result<Vec<Episode>> {
-        Ok(self
+    async fn episodes(&self, running_only: bool, page: super::Page) -> Result<Vec<Episode>> {
+        let found: Vec<Episode> = self
             .guard()
             .episodes
             .iter()
             .filter(|e| e.scope_key.as_deref() == self.scope.as_deref())
             .filter(|e| !running_only || e.status == super::EpisodeStatus::Running)
             .cloned()
-            .collect())
+            .collect();
+        Ok(page.apply(found))
+    }
+
+    async fn save_steps(&self, row_id: &str, steps: &[crate::execute::StepRecord]) -> Result<()> {
+        self.guard()
+            .steps
+            .insert((self.bucket(), row_id.to_string()), steps.to_vec());
+        Ok(())
+    }
+
+    async fn steps(&self, row_id: &str) -> Result<Vec<crate::execute::StepRecord>> {
+        Ok(self
+            .guard()
+            .steps
+            .get(&(self.bucket(), row_id.to_string()))
+            .cloned()
+            .unwrap_or_default())
     }
 }
 

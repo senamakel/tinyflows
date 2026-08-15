@@ -20,6 +20,7 @@ pub mod driver;
 pub mod execute;
 pub mod host;
 pub mod intake;
+pub mod inventory;
 pub mod ledger;
 pub mod promotion;
 pub mod recall;

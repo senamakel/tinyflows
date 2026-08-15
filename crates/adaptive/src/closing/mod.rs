@@ -54,6 +54,11 @@ pub struct Closed {
 
 /// Judge a finished run, record it, score it, and say what to do next.
 ///
+/// Takes the whole [`crate::execute::Ran`] rather than just its
+/// [`Evidence`]: the cost and the per-node transcript are on it, both were
+/// being measured and then dropped here, and a signature that cannot see them
+/// is a signature that will drop them again.
+///
 /// The stall count is **read from and written back to the episode record**,
 /// not threaded by the caller. It used to be a parameter, on the reasoning that
 /// two episodes sharing one closing layer must not share a counter — true, but
@@ -73,14 +78,14 @@ pub async fn close(
     episode: &str,
     attempt: u32,
     approach: &Approach,
-    evidence: &Evidence<'_>,
+    ran: &crate::execute::Ran,
     budget: &Budget,
     ledger: &dyn Ledger,
     caps: &Capabilities,
     conn: Option<&str>,
     now: &str,
 ) -> Result<Closed> {
-    let verdict = judge(goal, evidence, caps, conn).await?;
+    let verdict = judge(goal, &ran.evidence(), caps, conn).await?;
     let mut record = ledger.episode(episode).await?.unwrap_or(Episode {
         id: episode.to_string(),
         goal: goal.clone(),
@@ -112,12 +117,20 @@ pub async fn close(
             workflow_id: workflow_id.clone(),
             outcome: outcome_line(&verdict),
             cause: verdict.gap.clone(),
-            cost_usd: 0.0,
+            // What the runner measured. It was on the wire and on `Ran` all
+            // along; writing zero here made every row claim the attempt was
+            // free, which is indistinguishable from a host that does not meter.
+            cost_usd: ran.cost_usd,
             at: now.to_string(),
             satisfied: verdict.satisfied,
             advanced: verdict.advanced,
         })
         .await?;
+
+    // The per-node record behind the row. Best-effort: the attempt is judged
+    // and scored either way, and losing the transcript costs a reader detail
+    // rather than costing the loop its result.
+    let _ = ledger.save_steps(&row_id, &ran.steps).await;
 
     // The rung medulla-v2 never had: without this nothing distinguishes a
     // procedure that has worked forty times from one that has never run, and

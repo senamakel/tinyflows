@@ -236,6 +236,52 @@ pub fn signatures(rows: &[LedgerRow]) -> Vec<String> {
     seen
 }
 
+/// A window onto a list that grows without bound.
+///
+/// Only [`Ledger::episodes`] takes one. An episode's *rows* are bounded by
+/// [`crate::contracts::Budget::attempts`] — a dozen — so paging them would be
+/// ceremony around a list that cannot get long. A tenant's episodes accumulate
+/// forever, which is a different thing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Page {
+    /// How many at most.
+    pub limit: usize,
+    /// How many to skip, newest first.
+    pub offset: usize,
+}
+
+impl Page {
+    /// Everything. What the loop's own recovery pass wants.
+    pub const ALL: Self = Self {
+        limit: usize::MAX,
+        offset: 0,
+    };
+
+    /// The first `n`, from the top.
+    #[must_use]
+    pub fn first(n: usize) -> Self {
+        Self {
+            limit: n,
+            offset: 0,
+        }
+    }
+
+    /// Apply to an already-ordered list.
+    ///
+    /// Applied in the backend after ordering rather than pushed into each
+    /// query, because two of the three have no query language and the third
+    /// would then be the only one whose paging could disagree.
+    #[must_use]
+    pub fn apply<T>(self, mut items: Vec<T>) -> Vec<T> {
+        if self.offset >= items.len() {
+            return Vec::new();
+        }
+        items.drain(..self.offset);
+        items.truncate(self.limit);
+        items
+    }
+}
+
 /// How an episode ended, or that it has not.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "state", content = "reason")]
@@ -396,7 +442,26 @@ pub trait Ledger: Send + Sync {
     /// `Running` on boot is the recovery list. Without it a deploy silently
     /// abandons every episode that was in flight — the rows stay, nothing ever
     /// looks at them again, and the goal is never answered.
-    async fn episodes(&self, running_only: bool) -> Result<Vec<Episode>>;
+    async fn episodes(&self, running_only: bool, page: Page) -> Result<Vec<Episode>>;
+
+    /// Keep an attempt's per-node record, addressed by its ledger row.
+    ///
+    /// The transcript: what each node emitted, whether it errored, how long it
+    /// took, and which of its bindings resolved to null. The judge is shown a
+    /// bounded projection of it and the ledger row holds a sentence; this is
+    /// the detail behind both, and without it "show me what that attempt did"
+    /// has nothing to answer with.
+    ///
+    /// **One record per step, never one blob per attempt.** A `loop` node
+    /// produces a step per iteration, and at
+    /// [`RECORD_BUDGET`](crate::execute::RECORD_BUDGET) that reaches megabytes
+    /// — past what a Mongo document may hold. A blob would work on sqlite, work
+    /// in testing, and fail in production on exactly the runs most worth
+    /// reading.
+    async fn save_steps(&self, row_id: &str, steps: &[crate::execute::StepRecord]) -> Result<()>;
+
+    /// One attempt's per-node record, in execution order.
+    async fn steps(&self, row_id: &str) -> Result<Vec<crate::execute::StepRecord>>;
 
     /// Every workflow in `id`'s family, **root first**, including `id`.
     ///

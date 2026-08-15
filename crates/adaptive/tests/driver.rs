@@ -18,7 +18,7 @@ use tinyflows_adaptive::contracts::Goal;
 use tinyflows_adaptive::driver::{Clock, Loop};
 use tinyflows_adaptive::execute::{Local, Unobserved};
 use tinyflows_adaptive::host::HostFacts;
-use tinyflows_adaptive::ledger::{EpisodeStatus, Ledger, memory::MemoryLedger};
+use tinyflows_adaptive::ledger::{EpisodeStatus, Ledger, Page, memory::MemoryLedger};
 
 struct Frozen;
 impl Clock for Frozen {
@@ -197,7 +197,7 @@ async fn a_second_instance_picks_up_an_episode_the_first_one_started() {
         first.attempt("ep-resume", &goal).await.expect("2");
     } // the instance goes away, as a deploy would take it
 
-    let unfinished = ledger.episodes(true).await.expect("episodes");
+    let unfinished = ledger.episodes(true, Page::ALL).await.expect("episodes");
     assert_eq!(unfinished.len(), 1, "the recovery list a boot reads");
     let recovered = &unfinished[0];
     assert_eq!(recovered.id, "ep-resume");

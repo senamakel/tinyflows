@@ -38,7 +38,7 @@ use crate::contracts::{Approach, Budget, Goal, Verdict};
 use crate::execute::Runner;
 use crate::host::HostFacts;
 use crate::intake::{Result, decide};
-use crate::ledger::{Episode, EpisodeStatus, Ledger, Lesson};
+use crate::ledger::{Episode, EpisodeStatus, Ledger, Lesson, Page};
 
 /// Where timestamps come from.
 ///
@@ -144,7 +144,7 @@ impl Loop<'_> {
             episode,
             attempt,
             &planned.approach,
-            &ran.evidence(),
+            &ran,
             &self.budget,
             self.ledger,
             self.caps,
@@ -215,7 +215,7 @@ impl Loop<'_> {
     /// # Errors
     /// When the ledger cannot be read.
     pub async fn unfinished(&self) -> Result<Vec<Episode>> {
-        Ok(self.ledger.episodes(true).await?)
+        Ok(self.ledger.episodes(true, Page::ALL).await?)
     }
 
     /// Keep a graph that was authored for this goal and achieved it.
@@ -370,10 +370,17 @@ mod tests {
                 .expect("save");
         }
 
-        let running = ledger.episodes(true).await.expect("episodes");
+        let running = ledger.episodes(true, Page::ALL).await.expect("episodes");
         assert_eq!(running.len(), 1);
         assert_eq!(running[0].id, "ep-live");
-        assert_eq!(ledger.episodes(false).await.expect("episodes").len(), 3);
+        assert_eq!(
+            ledger
+                .episodes(false, Page::ALL)
+                .await
+                .expect("episodes")
+                .len(),
+            3
+        );
     }
 
     #[tokio::test]
@@ -431,6 +438,11 @@ mod tests {
             b.episode("ep-private").await.expect("read").is_none(),
             "an episode carries a goal in the user's own words"
         );
-        assert!(b.episodes(false).await.expect("episodes").is_empty());
+        assert!(
+            b.episodes(false, Page::ALL)
+                .await
+                .expect("episodes")
+                .is_empty()
+        );
     }
 }
