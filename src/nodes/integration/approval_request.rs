@@ -17,32 +17,28 @@ use crate::nodes::NodeContext;
 /// The default rendering hint when the graph does not say what the subject is.
 const DEFAULT_SUBJECT_KIND: &str = "json";
 
-/// The run's host id, when the state carries one under any of the spellings a
-/// host might seed (`run.id`, `run.run_id`, `run.trigger.run_id`).
+/// The run's host id, read **only** from the run-level slots a host seeds
+/// (`run.id`, `run.run_id`) — never from the trigger payload.
 ///
-/// **Security note for hosts:** whichever of these is populated becomes part
-/// of `request_id`, the provider's create-or-fetch key. `run.trigger.run_id`
-/// in particular is read out of the same trigger payload a caller supplies to
-/// `engine::run` — for a webhook- or user-facing trigger, that payload can be
-/// attacker-influenced. A host that lets untrusted input reach this field
-/// lets an attacker choose a `request_id` that collides with an earlier run's
-/// and inherit its cached decision, approving or rejecting a new, unreviewed
-/// subject without a human ever seeing it. Seed a **server-generated** run id
-/// here (or set `config.request_id` explicitly from one) — never forward a
-/// caller-supplied field into it unvalidated. This crate is host-agnostic and
-/// cannot tell trusted trigger data from untrusted; enforcing that boundary is
-/// the host's responsibility, the same as it is for any other identity used as
-/// a de-duplication or idempotency key.
+/// Whichever of these is populated becomes part of `request_id`, the provider's
+/// create-or-fetch key, so this lookup is a trust boundary rather than a
+/// convenience. `run.trigger.*` is the payload a caller hands to
+/// `engine::run`; for a webhook or any user-facing trigger that payload is
+/// attacker-influenced, and reading a run id out of it would let an attacker
+/// pick a `request_id` colliding with an earlier run and inherit its cached
+/// decision — approving a new, unreviewed subject without a human ever seeing
+/// it. `run.id` / `run.run_id` sit outside the trigger, so a host puts a
+/// server-generated value there deliberately.
+///
+/// A host must still seed a **server-generated** id (or set
+/// `config.request_id` from one) and never copy a caller-supplied field into
+/// these slots: the crate is host-agnostic and cannot tell trusted run
+/// metadata from untrusted, so enforcing that is the host's job, as it is for
+/// any identity used as a de-duplication or idempotency key.
 fn run_id(ctx: &NodeContext<'_>) -> Option<String> {
     ["id", "run_id"]
         .iter()
         .find_map(|key| ctx.run.get(*key).and_then(Value::as_str))
-        .or_else(|| {
-            ctx.run
-                .get("trigger")
-                .and_then(|t| t.get("run_id"))
-                .and_then(Value::as_str)
-        })
         .map(str::to_string)
 }
 
