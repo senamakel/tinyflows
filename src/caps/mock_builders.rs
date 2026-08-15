@@ -7,9 +7,7 @@
 
 use std::sync::Arc;
 
-use crate::caps::{
-    AgentRunner, ApprovalProvider, Capabilities, MemoryProvider, WorkflowResolver,
-};
+use crate::caps::{AgentRunner, ApprovalProvider, Capabilities, MemoryProvider, WorkflowResolver};
 
 use super::{
     MockApprovals, MockCode, MockHttp, MockLlm, MockMemory, MockShell, MockStateStore, MockTools,
