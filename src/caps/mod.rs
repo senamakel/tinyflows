@@ -201,8 +201,8 @@ pub trait StateStore: Send + Sync {
 /// Construct one per run from the host's concrete implementations. It carries
 /// every host-injected capability: the always-present [`LlmProvider`],
 /// [`ToolInvoker`], [`HttpClient`], [`CodeRunner`], [`StateStore`], and
-/// [`WorkflowResolver`], plus the optional [`AgentRunner`] and
-/// [`MemoryProvider`]. Nodes reach each one through `ctx.caps` during
+/// [`WorkflowResolver`], plus the optional [`AgentRunner`], [`MemoryProvider`],
+/// and [`ApprovalProvider`]. Nodes reach each one through `ctx.caps` during
 /// execution.
 #[derive(Clone)]
 pub struct Capabilities {
