@@ -53,6 +53,7 @@ use crate::data::Item;
 use crate::error::{EngineError, Result};
 use crate::nodes::{NodeContext, NodeExecutor, NodeOutput, resolve_config_traced};
 
+#[path = "approval_request.rs"]
 mod approval_request;
 use approval_request::{build_request, decided_item, decision_meta, delivered};
 
