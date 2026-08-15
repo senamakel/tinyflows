@@ -10,9 +10,9 @@ use async_trait::async_trait;
 use serde_json::{Value, json};
 
 use crate::caps::{
-    AgentRunner, Capabilities, CodeLanguage, CodeRunner, HttpClient, LlmProvider, MemoryProvider,
-    ShellOutcome, ShellRequest, ShellRunner, ShellScript, StateStore, ToolInvoker,
-    WorkflowResolver,
+    AgentRunner, ApprovalProvider, Capabilities, CodeLanguage, CodeRunner, HttpClient,
+    LlmProvider, MemoryProvider, ShellOutcome, ShellRequest, ShellRunner, ShellScript, StateStore,
+    ToolInvoker, WorkflowResolver,
 };
 use crate::error::{EngineError, Result};
 use crate::model::WorkflowGraph;
