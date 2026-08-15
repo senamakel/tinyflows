@@ -21,6 +21,7 @@ examples without any real backend.
 | `CodeRunner` | `code` | Executes sandboxed user code (`CodeLanguage::JavaScript` / `Python`) with a JSON input. |
 | `ShellRunner` | `shell` | Runs a shell script (inline or by path) with a working directory and environment, returning its exit code, stdout, and stderr. Optional: `None` refuses `shell` nodes. |
 | `StateStore` | resumable / stateful workflows | Durable key/value state (`load` / `store`) for a run. |
+| `ApprovalProvider` | `approval` | Puts a subject (a URL, a draft, a payload) in front of a human and reports their approve/reject. Optional: with `None`, an `approval` node pauses the run instead and the host settles it via `engine::resume`. |
 
 ## Connection references
 
@@ -46,6 +47,13 @@ implementations. It bundles all five host capabilities: `llm`, `tools`, `http`,
 `code`, and `state` (each an `Arc<dyn Trait>`). Nodes reach each one through
 `ctx.caps` during execution — for example, durable key/value state via
 `ctx.caps.state`.
+
+`ApprovalProvider::decide` is **create-or-fetch**, keyed on
+`ApprovalRequest::request_id`: the first call with an id creates the review, and
+every later call with that id reports where *that* review stands. This matters
+because an interrupt discards the activation's state update, so the node re-asks
+after every resume and on every poll — a provider that created a fresh review per
+call would notify the reviewer once per call.
 
 Durable, cross-process human-in-the-loop resume is available by implementing
 `Checkpointer<serde_json::Value>` and driving the run via

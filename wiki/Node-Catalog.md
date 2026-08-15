@@ -46,6 +46,7 @@ traits](Capability-Traits).
 | `code` | Runs sandboxed user code | Config `language` (`javascript`/`python`), `source` — via `CodeRunner` |
 | `shell` | Runs a shell script, inline or from a file | Config `source` **or** `script_path`, plus `interpreter` (`sh`/`bash`), `cwd`, `env` — via `ShellRunner` |
 | `output_parser` | Parses/validates an agent's output into a structured shape | May use `LlmProvider` for auto-fixing; can nest as a sub-agent |
+| `approval` | Puts a subject in front of a **human** and routes on approve/reject | Out `approved` / `rejected` / `timeout`; config `subject`, `subject_kind`, `title`, `prompt`, `assignees`, `wait_mode`, `on_reject` — via `ApprovalProvider` |
 | `sub_workflow` | Runs another workflow as a nested sub-graph | Config: exactly one of `workflow` (inline) / `workflow_id`; optional `inputs` map for the child's declared inputs |
 
 The capability-backed integration nodes (`agent`, `tool_call`, `http_request`)
@@ -58,6 +59,15 @@ All 12 node kinds plus the trigger are implemented and dispatched by the engine.
 Per-node error handling (`on_error` stop/continue/route, `retry`, an `error`
 port) and approval gating (`requires_approval`) are configured through the same
 free-form `config`.
+
+`approval` is not the same thing as the `requires_approval` flag. The flag holds
+a node back until someone says go; it carries nothing and its answer is invisible
+to the graph. The `approval` **kind** is the review itself — it carries what is
+being reviewed, and the verdict (approved, who decided, their comment, any edit
+they made) comes back as an item on the `approved` / `rejected` ports, readable
+anywhere as `=nodes.<id>.decision.approved`. It waits by suspending the run by
+default (`wait_mode: "suspend"`), which costs nothing while a card sits in
+somebody's queue.
 
 ### Per-item fan-out
 

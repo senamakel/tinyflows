@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`approval` node kind + the `ApprovalProvider` capability** — a
+  human-in-the-loop review step that carries what is being reviewed (a URL, a
+  draft, any payload) and routes on the answer: `approved` / `rejected` ports,
+  the verdict (reviewer, comment, any edit they made) emitted as an item and
+  readable anywhere as `=nodes.<id>.decision.approved`. Reaches the human
+  through the new optional `caps::ApprovalProvider`, whose `decide` is
+  create-or-fetch on a stable `request_id` so a resume or a poll never notifies
+  the reviewer twice. Hosts that wire no provider still get a working node: it
+  pauses the run and is settled with `engine::resume`, exactly like a
+  `requires_approval` gate. Waits by suspending by default, with an optional
+  bounded `wait_mode: "poll"`; `on_reject` (`route` / `error` / `drop`) and
+  `on_timeout` (`error` / `reject` / `route`) decide what a "no" does.
+
 ### Changed
 
 - **Breaking: the Chrome companion moved behind the `chrome-extension`
