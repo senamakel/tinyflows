@@ -36,6 +36,9 @@ pub mod data;
 /// empty agent prompts, errors an `on_error` policy swallowed, and nodes a
 /// branch routed past.
 pub mod diagnostics;
+pub(crate) static TF_DEBUG: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var("TF_GATE_DEBUG").is_ok());
+
 pub mod engine;
 pub mod error;
 /// Bounding what a run hands back — durable records and tool replies alike —

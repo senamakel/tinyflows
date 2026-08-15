@@ -238,7 +238,7 @@ impl NodeExecutor for GateNode {
         let budget_spent = polls >= max_polls;
         let decision = policy.evaluate(results.len(), expected, budget_spent);
 
-        if *crate::engine::build::outcome::TF_DEBUG {
+        if *crate::TF_DEBUG {
             let mut states = Vec::new();
             if let Some(runner) = ctx.caps.tasks.as_ref() {
                 for item in &awaiting {

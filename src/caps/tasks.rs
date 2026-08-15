@@ -176,7 +176,7 @@ impl TaskRunner for TokioTaskRunner {
         // for, and a host that wants real execution implements `TaskRunner`
         // against its own stack. Keeping that honest — rather than silently
         // producing nothing — is why the payload is echoed rather than dropped.
-        if *crate::engine::build::outcome::TF_DEBUG {
+        if *crate::TF_DEBUG {
             eprintln!(
                 "SPAWN ticket={ticket} thread={:?} t_us={} rt_id={:?}",
                 std::thread::current().id(),
@@ -189,7 +189,7 @@ impl TaskRunner for TokioTaskRunner {
         }
         let debug_ticket = ticket.clone();
         let handle = tokio::spawn(async move {
-            if *crate::engine::build::outcome::TF_DEBUG {
+            if *crate::TF_DEBUG {
                 eprintln!(
                     "TASKRUN ticket={debug_ticket} thread={:?} t_us={}",
                     std::thread::current().id(),

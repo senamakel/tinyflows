@@ -2,9 +2,6 @@ use super::super::*;
 
 const BACKOFF_POLL_MS: u64 = 25;
 
-pub(crate) static TF_DEBUG: std::sync::LazyLock<bool> =
-    std::sync::LazyLock::new(|| std::env::var("TF_GATE_DEBUG").is_ok());
-
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn finish_execution<F>(
     output: Option<crate::nodes::NodeOutput>,
@@ -99,7 +96,7 @@ where
                                 std::pin::Pin::new(&mut delay).poll(cx)
                             })
                             .await;
-                            if polls == 1 && *TF_DEBUG {
+                            if polls == 1 && *crate::TF_DEBUG {
                                 eprintln!(
                                     "DELAY-NO-YIELD node={} thread={:?} t_us={}",
                                     node.id,
