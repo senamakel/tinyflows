@@ -450,3 +450,24 @@ async fn a_programmed_review_can_reject_or_stay_pending() {
         .expect("cancelling a review is answered too");
     assert_eq!(mocks.log().count(capability::APPROVALS, None), 3);
 }
+
+/// The bare string `"pending"` is documented shorthand for "nobody has got to
+/// this review yet" — the same flexibility `on_shell` accepts a bare stdout
+/// string for. A rule answering with it must not be read as an (approving)
+/// verdict object with no recognized fields.
+#[tokio::test]
+async fn on_approval_accepts_a_bare_pending_string() {
+    let mocks = mocks(|m| m.on_approval("run-1:bare*", Respond::value(json!("pending"))));
+    let caps = mocks.capabilities();
+    let approvals = caps.approvals.clone().expect("the doubles wire approvals");
+
+    let outcome = approvals
+        .decide(&approval_request("run-1:bare-review"))
+        .await
+        .expect("call");
+    assert_eq!(
+        outcome,
+        ApprovalOutcome::Pending,
+        "a bare \"pending\" string must not be read as an approving verdict"
+    );
+}
