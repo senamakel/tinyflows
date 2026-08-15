@@ -383,7 +383,7 @@ fn succeeding(graph: WorkflowGraph, reusable: bool) -> Arc<Succeeds> {
 }
 
 fn engine_over<'a>(
-    ledger: &'a MemoryLedger,
+    ledger: &'a dyn Ledger,
     store: &'a Arc<dyn WorkflowStore>,
     caps: &'a Capabilities,
     runner: &'a Local<'a>,
@@ -547,4 +547,58 @@ async fn the_next_episode_selects_what_the_last_one_learned() {
         offered.contains("run 1×, satisfied 1×"),
         "carrying what it earned: {offered}"
     );
+}
+
+// ---------------------------------------------------------------------------
+// The two stores are independent: any backend beside any other.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn a_ledger_and_a_vault_of_different_kinds_drive_the_same_loop() {
+    // `Ledger` and `Vault` are separate traits with separate handles, so the
+    // host mixes them freely — sqlite ledger beside a Mongo vault, or either
+    // beside memory. Nothing in the loop knows which it got.
+    use tinyflows_adaptive::ledger::sqlite::SqliteLedger;
+    use tinyflows_adaptive::workflows::{Snapshot, Vault, memory::MemoryVault};
+
+    let dir = std::env::temp_dir().join(format!("adaptive-mixed-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+
+    // Durable ledger, ephemeral vault. A deliberately silly pairing, chosen
+    // because if this compiles and runs then every sensible one does.
+    let ledger = SqliteLedger::open(dir.join("ledger.db")).expect("ledger");
+    let vault = MemoryVault::new();
+
+    let llm = succeeding(parameterised(), true);
+    let caps = Capabilities {
+        llm: llm.clone(),
+        ..mock_capabilities()
+    };
+    let policy: Arc<dyn tinyflows::store::HostPolicy> = {
+        #[derive(Debug, Default)]
+        struct Permissive;
+        impl tinyflows::store::HostPolicy for Permissive {}
+        Arc::new(Permissive)
+    };
+    let snapshot = Snapshot::load(&vault, policy).await.expect("snapshot");
+    let store: Arc<dyn WorkflowStore> = Arc::new(snapshot.clone());
+    let runner = Local {
+        caps: &caps,
+        workspace: &Unobserved,
+    };
+
+    let finished = engine_over(&ledger, &store, &caps, &runner, &HostFacts::unknown())
+        .run("ep-mixed", &Goal::new("review the PRs on acme/thing"))
+        .await
+        .expect("run");
+    assert_eq!(finished.status, EpisodeStatus::Satisfied);
+
+    // The episode landed in sqlite; the learned procedure is waiting in the
+    // snapshot for a flush into the vault.
+    assert!(ledger.episode("ep-mixed").await.expect("read").is_some());
+    assert_eq!(snapshot.pending(), 1, "the procedure it learned");
+    snapshot.flush(&vault).await.expect("flush");
+    assert_eq!(vault.load().await.expect("load").len(), 1);
+
+    let _ = std::fs::remove_dir_all(&dir);
 }
