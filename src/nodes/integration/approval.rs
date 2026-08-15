@@ -468,12 +468,34 @@ impl ApprovalNode {
             }
         }
 
+        // The `=nodes.<id>.decision.approved` contract other settled reviews
+        // give the graph applies here too: a downstream guard reading it after
+        // a timeout must see `false`, not an absent value, and a `rejected`
+        // recovery branch reading `=item.comment` / `=item.input` must not get
+        // `null` back just because the review timed out rather than being
+        // actively declined.
+        let comment = format!("no decision after {max_polls} polls");
         let timed_out = json!({
             "approved": false,
             "timed_out": true,
             "request_id": request.request_id,
             "subject": request.subject.value,
             "subject_kind": request.subject.kind,
+            "edited": false,
+            "decided_by": Value::Null,
+            "comment": comment,
+            "input": ctx.input.first().map(|item| item.json.clone()).unwrap_or(Value::Null),
+        });
+        let meta = json!({
+            POLLS_KEY: polls + 1,
+            "request_id": request.request_id,
+            "decision": {
+                "approved": false,
+                "timed_out": true,
+                "decided_by": Value::Null,
+                "comment": comment,
+                "request_id": request.request_id,
+            }
         });
 
         match OnTimeout::from_config(config) {
