@@ -89,25 +89,41 @@ fn shape() -> Shape {
 
 #[test]
 fn repro_resume_determinism() {
-    let shape = shape();
-    let mut polls_seen: Vec<u64> = Vec::new();
-    let mut baseline: Option<Value> = None;
-    let mut diverged = 0usize;
-    const ITERS: usize = 60;
-    for i in 0..ITERS {
-        let (_, resumed) = run_both_ways(&shape).expect("shape should compile");
-        let polls = resumed["nodes"]["n21"]["polls"].as_u64().unwrap_or(0);
-        polls_seen.push(polls);
-        match &baseline {
-            None => baseline = Some(resumed),
-            Some(first) => {
-                if first != &resumed {
-                    diverged += 1;
-                    println!("iteration {i}: DIVERGED (n21.polls = {polls})");
+    let threads: usize = std::env::var("REPRO_THREADS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1);
+    let iters: usize = std::env::var("REPRO_ITERS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(60);
+
+    let handles: Vec<_> = (0..threads)
+        .map(|t| {
+            std::thread::spawn(move || {
+                let shape = shape();
+                let mut counts: std::collections::BTreeMap<u64, usize> =
+                    std::collections::BTreeMap::new();
+                let mut baseline: Option<Value> = None;
+                let mut diverged = 0usize;
+                for _ in 0..iters {
+                    let (_, resumed) = run_both_ways(&shape).expect("shape should compile");
+                    let polls = resumed["nodes"]["n21"]["polls"].as_u64().unwrap_or(0);
+                    *counts.entry(polls).or_default() += 1;
+                    match &baseline {
+                        None => baseline = Some(resumed),
+                        Some(first) => {
+                            if first != &resumed {
+                                diverged += 1;
+                            }
+                        }
+                    }
                 }
-            }
-        }
-    }
-    println!("polls per iteration: {polls_seen:?}");
-    assert_eq!(diverged, 0, "{diverged}/{ITERS} runs diverged");
+                println!("thread {t}: poll histogram {counts:?}, diverged {diverged}/{iters}");
+                diverged
+            })
+        })
+        .collect();
+    let total: usize = handles.into_iter().map(|h| h.join().unwrap()).sum();
+    assert_eq!(total, 0, "{total} runs diverged");
 }
