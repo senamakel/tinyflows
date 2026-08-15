@@ -208,6 +208,7 @@ pub(super) fn contract_approval() -> NodeKindContract {
         example: json!({
             "id": "review", "kind": "approval", "name": "Approve the post",
             "config": {
+                "request_id": "=run.id",
                 "title": "Publish this post?",
                 "prompt": "Approving publishes it to the public feed.",
                 "subject_kind": "url",
