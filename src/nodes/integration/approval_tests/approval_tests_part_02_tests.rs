@@ -30,25 +30,50 @@ async fn assignees_resolving_to_no_strings_at_runtime_is_a_configuration_error()
     assert!(message.contains("assignees"), "got {message}");
 }
 
-/// With a run-scoped id available (`trigger.run_id`, in the shape
-/// `run.trigger.run_id` a host's trigger payload takes), the node derives a
-/// stable `"<run id>:<node id>"` request id without needing an explicit
-/// `config.request_id`.
+/// A `run_id` in the **trigger payload** must NOT become the review's identity.
+///
+/// The trigger is caller-supplied — for a webhook or any user-facing trigger it
+/// is attacker-influenced — and `request_id` is the provider's create-or-fetch
+/// key. Honouring it would let an attacker name a review that collides with an
+/// earlier run's and inherit its cached decision, approving an unreviewed
+/// subject with no human involved. So the node refuses rather than deriving an
+/// id it cannot trust.
 #[tokio::test]
-async fn a_run_id_in_the_trigger_derives_a_stable_request_id() {
+async fn a_run_id_in_the_trigger_payload_is_not_trusted_as_the_review_identity() {
     let graph = wf_raw(json!({ "title": "Publish this?" }));
     let compiled = compile(&graph).expect("compile");
-    let out = run(
+    let err = run(
         &compiled,
         json!({ "run_id": "run-42" }),
         &mock_capabilities(),
     )
     .await
-    .expect("a run id makes the request_id derivable");
+    .expect_err("a trigger-supplied run id must not be accepted as a review identity");
+
+    let message = err.to_string();
+    assert!(
+        message.contains("run-scoped identity"),
+        "the error must say what is missing, got {message}"
+    );
+    assert!(
+        !message.contains("run-42"),
+        "the untrusted value must not be echoed as though it were usable, got {message}"
+    );
+}
+
+/// The supported way to identify a review when the host seeds no run id:
+/// an explicit `config.request_id`, which the author controls.
+#[tokio::test]
+async fn an_explicit_request_id_identifies_the_review() {
+    let graph = wf_raw(json!({ "title": "Publish this?", "request_id": "review-of-post-42" }));
+    let compiled = compile(&graph).expect("compile");
+    let out = run(&compiled, json!({ "url": "https://example.com" }), &mock_capabilities())
+        .await
+        .expect("an explicit request_id makes the review identifiable");
 
     assert_eq!(
         out.output["nodes"]["review"]["items"][0]["json"]["request_id"],
-        "run-42:review"
+        "review-of-post-42"
     );
 }
 
