@@ -11,6 +11,7 @@ pub(super) fn register_handlers(
     token: &CancellationToken,
     node_timeout: Option<std::time::Duration>,
     loop_edges: &std::collections::HashSet<(String, String)>,
+    interceptor: Option<&Arc<dyn StepInterceptor>>,
 ) -> GraphBuilder<Value, Value> {
     let is_back_edge = |edge: &crate::model::Edge| {
         loop_edges.contains(&(edge.from_node.clone(), edge.to_node.clone()))
@@ -51,6 +52,7 @@ pub(super) fn register_handlers(
         let caps = capabilities.clone();
         let agents = agents.clone();
         let observer = observer.clone();
+        let interceptor = interceptor.cloned();
         let steps = steps.clone();
         let terminal_error = terminal_error.clone();
         let token = token.clone();
@@ -99,6 +101,7 @@ pub(super) fn register_handlers(
             has_error_edge,
             is_trigger,
             node_timeout,
+            interceptor,
         };
         let node_id = handler.node.id.clone();
         builder = builder.add_node(node_id, move |state: Value, ctx| {

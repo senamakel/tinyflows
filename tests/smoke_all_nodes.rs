@@ -7,6 +7,9 @@
 //! asserts the run succeeds and the node produced a well-formed slot (an `items`
 //! array). A final big test chains many kinds together end to end.
 //!
+//! `void` is the one exception to the non-empty-slot rule: it exists to emit
+//! nothing, so it gets its own assertions rather than `smoke_single_node`'s.
+//!
 //! Gated behind the `mock` feature, so plain `cargo test` skips it while
 //! `cargo test --all-features` runs it.
 
@@ -385,4 +388,30 @@ async fn smoke_approval() {
         json!({ "url": "https://example.com/preview" }),
     )
     .await;
+}
+
+#[tokio::test]
+async fn smoke_void() {
+    // `smoke_single_node` asserts a non-empty `items` slot, which a void can
+    // never satisfy — emitting nothing is the whole contract. What must hold
+    // instead is that it ran at all (a slot exists), that the slot is empty,
+    // and that it counted what it dropped.
+    let graph = WorkflowGraph {
+        name: "smoke".to_string(),
+        nodes: vec![
+            trigger("t", TriggerKind::Manual),
+            node("n", NodeKind::Void, Value::Null),
+        ],
+        edges: vec![edge("t", "main", "n")],
+        ..Default::default()
+    };
+    let compiled = compile(&graph).expect("compile");
+    let outcome = run(&compiled, json!({ "x": 1 }), &mock_capabilities())
+        .await
+        .expect("run should succeed");
+
+    assert_eq!(outcome.output["nodes"]["n"]["items"], json!([]));
+    assert_eq!(outcome.output["nodes"]["n"]["discarded"], 1);
+    assert!(outcome.output["nodes"]["n"]["port"].is_null());
+    assert!(outcome.pending_approvals.is_empty());
 }

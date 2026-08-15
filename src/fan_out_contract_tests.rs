@@ -24,6 +24,7 @@ fn kinds_that_cannot_map_do_not_advertise_them() {
         "merge",
         "transform",
         "code",
+        "void",
     ] {
         let c = contract_for(kind).expect("contract");
         assert!(

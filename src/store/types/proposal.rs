@@ -15,7 +15,7 @@ use serde_json::Value;
 use super::note::NoteId;
 use super::run::RunId;
 use super::workflow::WorkflowId;
-use crate::store::types::diagnosis::Diagnosis;
+use crate::diagnostics::Diagnosis;
 
 /// A proposal's identifier.
 pub type ProposalId = String;

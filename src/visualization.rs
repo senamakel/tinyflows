@@ -336,6 +336,7 @@ fn kind_name(kind: &NodeKind) -> &'static str {
         NodeKind::Gather => "gather",
         NodeKind::Gate => "gate",
         NodeKind::Approval => "approval",
+        NodeKind::Void => "void",
     }
 }
 

@@ -113,6 +113,23 @@ pub enum NodeKind {
     /// and leave the stragglers, or settle for whatever arrived before its
     /// deadline. See [`crate::nodes::release`].
     Gate,
+    /// Terminal sink: accepts items on `main`, discards them, and activates no
+    /// successors. The branch ends here, on purpose.
+    ///
+    /// Purely declarative. A branch could always dead-end — a node with no
+    /// outgoing edges is lowered straight to the engine's `END` sentinel — but
+    /// an unwired port reads exactly like a forgotten one, so there was no way
+    /// to *say* "this is a side effect and nothing waits on it". This kind is
+    /// that sentence. It adds no concurrency: the work upstream of it still
+    /// runs inline in its own super-step, and only the result is dropped.
+    ///
+    /// Abandon semantics, identical to an ungathered [`NodeKind::Spawn`]
+    /// ticket — nothing is drained or cancelled at run end. `spawn` → `void` is
+    /// the explicit spelling of a ticket no [`NodeKind::Gate`] will collect.
+    ///
+    /// [`crate::validate`] refuses a `void` that has any outgoing edge, or that
+    /// has no incoming edge at all.
+    Void,
 }
 
 /// How a [`NodeKind::Trigger`] node is fired.

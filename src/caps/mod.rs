@@ -11,6 +11,7 @@ pub mod approval;
 pub mod host;
 #[cfg(any(test, feature = "mock"))]
 pub mod mock;
+pub mod schema;
 pub mod shell;
 pub mod tasks;
 
@@ -28,6 +29,7 @@ pub use self::agent::{
 pub use self::approval::{
     ApprovalDecision, ApprovalOutcome, ApprovalProvider, ApprovalRequest, ApprovalSubject,
 };
+pub use self::schema::sample_for_schema;
 pub use self::shell::{ShellInterpreter, ShellOutcome, ShellRequest, ShellRunner, ShellScript};
 pub use self::tasks::{TaskRunner, TaskSpec, TaskState, TokioTaskRunner};
 

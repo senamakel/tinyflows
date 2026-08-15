@@ -32,6 +32,36 @@ Native routing logic — no host capabilities required.
 | `merge` | Fan-in barrier combining multiple inputs | Waits for all wired inputs; config `mode` (e.g. `append`) |
 | `split_out` | Fan-out: one item per element of a list | Downstream runs per item; config `path` |
 | `transform` | Pure, expression-based field mapping | Config `set` (field → `=`-expression map) |
+| `void` | Terminal sink: discards its input, runs nothing downstream | In `main`, no out ports; no config |
+
+### Fire-and-forget with `void`
+
+A branch could always dead-end — a node with no outgoing edges terminates — but
+an unwired port reads exactly like a forgotten one. `void` is how you *say* that
+a branch is a side effect nothing waits on, so validation and the next reader
+can both tell intent from an accident.
+
+It adds no concurrency: work upstream of a `void` still runs inline in its own
+super-step, and only the result is dropped. For work that should genuinely
+overlap, use `spawn` and a `TaskRunner`.
+
+Three places it earns its keep:
+
+- **`spawn → void`** — the explicit spelling of a ticket no `gate` will collect.
+  Same abandon semantics as leaving the spawn unwired, said out loud.
+- **A loop-body side branch** — the void arm never joins the back-edge, so it
+  cannot gate an iteration.
+- **Inside a scatter lane** — it is the *one* dead end a lane may have. Every
+  other lane branch must reach the `gather`, because a stranded lane's output is
+  invisible rather than merely uncollected; a `void` makes that invisibility the
+  contract instead of the accident.
+
+Validation refuses a `void` with any outgoing edge (including an `error` edge
+from `on_error: "route"`), and one with no incoming edge. Its slot is
+`{items: [], port: null, discarded: N}` — a node that never ran has no slot at
+all, so "never activated", "activated with nothing to drop" and "dropped N" stay
+distinguishable. `discarded` counts *that* activation, so in a loop the last
+iteration's value survives, and in a lane it lands under `lanes.<lane>`.
 
 ## Capability-backed nodes
 

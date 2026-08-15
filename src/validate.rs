@@ -22,8 +22,9 @@ fn kind_name(kind: &NodeKind) -> String {
 /// Currently checks: unique node ids, exactly one trigger node, that every edge
 /// references existing nodes, no duplicate edges, per-node `on_error` policy
 /// sanity (a known value, and an `error` edge when the policy is `route`),
-/// declared-input sanity (addressable, unique names; defaults that match their
-/// declared type), and loop legality (see [`validate_loops`] — cycles are
+/// `void` topology (a terminal sink may have no outgoing edge, and must have an
+/// incoming one), declared-input sanity (addressable, unique names; defaults
+/// that match their declared type), and loop legality (see [`validate_loops`] — cycles are
 /// permitted; only the ones that cannot iterate are refused).
 ///
 /// # Errors
@@ -43,7 +44,8 @@ pub fn validate(graph: &WorkflowGraph) -> Result<(), ValidationError> {
 ///
 /// Returns an empty `Vec` for a valid graph. The checks are ordered
 /// deterministically (duplicate ids → trigger count → edge integrity →
-/// `on_error` policy → per-kind config → condition routing → declared inputs),
+/// `on_error` policy → per-kind config → `void` topology → condition routing →
+/// declared inputs),
 /// and every error is self-contained (no check can panic on a graph that failed
 /// an earlier one), so accumulating is safe. The first element is identical to what
 /// [`validate`] returns, preserving the historical single-error contract.
@@ -108,12 +110,27 @@ pub fn validate_all(graph: &WorkflowGraph) -> Vec<ValidationError> {
         match on_error {
             "stop" | "continue" => {}
             "route" => {
-                let has_error_edge = graph
-                    .edges
-                    .iter()
-                    .any(|e| e.from_node == node.id && e.from_port == "error");
-                if !has_error_edge {
-                    errors.push(ValidationError::MissingErrorRoute(node.id.clone()));
+                if node.kind == NodeKind::Void {
+                    // An `error` edge is still an outgoing edge, which the
+                    // `void` check below forbids. Caught here instead of
+                    // letting `MissingErrorRoute` fire, or the author would be
+                    // told to add an edge that the next rule then rejects —
+                    // advice with no fixed point.
+                    errors.push(ValidationError::InvalidNodeConfig {
+                        node: node.id.clone(),
+                        reason: "`void` is a terminal sink, so on_error \"route\" has nowhere to \
+                                 route to (an `error` edge is an outgoing edge); use \"stop\" or \
+                                 \"continue\""
+                            .to_string(),
+                    });
+                } else {
+                    let has_error_edge = graph
+                        .edges
+                        .iter()
+                        .any(|e| e.from_node == node.id && e.from_port == "error");
+                    if !has_error_edge {
+                        errors.push(ValidationError::MissingErrorRoute(node.id.clone()));
+                    }
                 }
             }
             other => {
@@ -444,6 +461,47 @@ pub fn validate_all(graph: &WorkflowGraph) -> Vec<ValidationError> {
                 node: node.id.clone(),
                 reason: "approval node `assignees` must be an array of strings (a single \
                          reviewer is a one-element array)"
+                    .to_string(),
+            });
+        }
+    }
+
+    // `void` node topology checks. The kind asserts exactly one thing — "the
+    // branch ends here, deliberately" — so the two ways to contradict it are
+    // refused rather than absorbed. An outgoing edge would be dead (a leaf
+    // lowers to the engine's `END` sentinel) or would make the node not a void;
+    // and a void nothing routes into declares nothing at all, since a node with
+    // no effect and no input is the one orphan that cannot be work in progress.
+    // There is no general orphan check in this crate, and adding one is out of
+    // scope; this rule is safe precisely because the kind is new, so no
+    // existing graph can trip it.
+    for node in &graph.nodes {
+        if node.kind != NodeKind::Void {
+            continue;
+        }
+        let mut outgoing: Vec<&str> = graph
+            .edges
+            .iter()
+            .filter(|e| e.from_node == node.id)
+            .map(|e| e.to_node.as_str())
+            .collect();
+        outgoing.sort_unstable();
+        outgoing.dedup();
+        if !outgoing.is_empty() {
+            errors.push(ValidationError::InvalidNodeConfig {
+                node: node.id.clone(),
+                reason: format!(
+                    "`void` is a terminal sink and may not have outgoing edges (found \
+                     {outgoing:?}); remove the edge, or use a different kind if the branch is \
+                     meant to continue"
+                ),
+            });
+        }
+        if !graph.edges.iter().any(|e| e.to_node == node.id) {
+            errors.push(ValidationError::InvalidNodeConfig {
+                node: node.id.clone(),
+                reason: "`void` has no incoming edge, so it can never run and declares nothing; \
+                         wire the branch it is meant to terminate, or delete it"
                     .to_string(),
             });
         }
