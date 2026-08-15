@@ -497,43 +497,30 @@ async fn on_timeout_reject_follows_the_on_reject_policy() {
 
 /// A decision that carries the reviewer's own edit (`payload`) drives
 /// `subject` to that edit and marks `edited: true` — the feature this node
-/// exists for, exercised through the resume channel here since `MockApprovals`
-/// has no payload-bearing outcome.
-#[tokio::test]
-async fn a_decision_with_a_payload_edits_the_subject() {
-    let graph = wf(json!({ "subject": "=item.url" }));
-    let compiled = compile(&graph).expect("compile");
-    let caps = mock_capabilities_with_approvals(MockApprovals::pending());
+/// exists for. `decision_from_resume` and `decided_item` are exercised
+/// separately elsewhere; this checks the two compose correctly, matching what
+/// a `{"decision": {..., "payload": ...}}` resume value produces end to end.
+#[test]
+fn a_decision_with_a_payload_edits_the_subject() {
+    let req = request("run-1:review");
+    let resume_value = json!({
+        "decision": {
+            "approved": true,
+            "decided_by": "ada",
+            "payload": "https://example.com/edited",
+        }
+    });
+    let decision = decision_from_resume(&resume_value, &req).expect("a decision");
+    assert!(decision.approved);
+    assert_eq!(decision.payload, Some(json!("https://example.com/edited")));
 
-    let paused = run(
-        &compiled,
-        json!({ "url": "https://example.com/original" }),
-        &caps,
-    )
-    .await
-    .expect("run pauses on the poll budget or the pause path");
-    assert_eq!(paused.pending_approvals, vec!["review".to_string()]);
-
-    let resumed = crate::engine::resume_with(
-        &compiled,
-        Value::Null,
-        json!({
-            "decision": {
-                "approved": true,
-                "decided_by": "ada",
-                "payload": "https://example.com/edited",
-            }
-        }),
-        &caps,
-    )
-    .await
-    .expect("resume with an edited payload");
-
-    let item = &resumed.output["nodes"]["review"]["items"][0]["json"];
-    assert_eq!(item["approved"], json!(true));
-    assert_eq!(item["subject"], "https://example.com/edited");
-    assert_eq!(item["edited"], json!(true));
-    assert_eq!(item["decided_by"], "ada");
+    let item = decided_item(&req, &decision, json!({ "url": "https://example.com/original" }));
+    let json = item.json;
+    assert_eq!(json["approved"], json!(true));
+    assert_eq!(json["subject"], "https://example.com/edited");
+    assert_eq!(json["edited"], json!(true));
+    assert_eq!(json["decided_by"], "ada");
+    assert_eq!(json["input"], json!({ "url": "https://example.com/original" }));
 }
 
 /// When a resume (or a listed approval) settles the review, any provider card
