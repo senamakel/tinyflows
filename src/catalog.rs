@@ -33,7 +33,7 @@ use group_03::*;
 
 /// The node kinds, in the canonical order used wherever the DSL is enumerated
 /// (matches [`NodeKind`](crate::model::NodeKind)'s serde discriminators).
-pub const NODE_KINDS: [&str; 20] = [
+pub const NODE_KINDS: [&str; 21] = [
     "trigger",
     "agent",
     "tool_call",
@@ -54,6 +54,7 @@ pub const NODE_KINDS: [&str; 20] = [
     "gate",
     "scatter",
     "gather",
+    "approval",
 ];
 
 /// One config field a node of a given kind reads at run time.
@@ -204,6 +205,7 @@ pub fn contract_for(kind: &str) -> Option<NodeKindContract> {
         "gate" => contract_gate(),
         "scatter" => contract_scatter(),
         "gather" => contract_gather(),
+        "approval" => contract_approval(),
         _ => return None,
     };
     Some(with_fan_out_fields(c))

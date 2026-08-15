@@ -115,3 +115,119 @@ pub(super) fn contract_gather() -> NodeKindContract {
         ],
     }
 }
+
+pub(super) fn contract_approval() -> NodeKindContract {
+    NodeKindContract {
+        kind: "approval".to_string(),
+        summary: "Puts a subject — a URL, a draft, a payload — in front of a HUMAN and routes \
+                  on their approve/reject."
+            .to_string(),
+        description: "Not the same thing as the `requires_approval` flag. That flag holds a \
+                      node back until someone says go, carries nothing, and its answer is \
+                      invisible to the graph. This kind IS the review: it carries what is being \
+                      reviewed, and the verdict (who decided, their comment, any edit they made) \
+                      comes back as data on the `approved` / `rejected` ports. Reaches the human \
+                      through the host's ApprovalProvider capability; with none injected it \
+                      pauses the run instead, and the host settles it with engine::resume."
+            .to_string(),
+        config_fields: vec![
+            ConfigField::optional(
+                "subject",
+                "any | \"=expr\"",
+                "What the human looks at. Defaults to the input item that arrived, which is \
+                 usually what you want; set it to project one field (\"=item.url\").",
+            ),
+            ConfigField::optional(
+                "subject_kind",
+                "string",
+                "Rendering hint for the host's review surface — url | text | markdown | json \
+                 (default) by convention, host-defined in general.",
+            ),
+            ConfigField::optional("title", "string", "Short headline for the review card."),
+            ConfigField::optional(
+                "prompt",
+                "string",
+                "What approving actually authorizes — the sentence the reviewer decides on.",
+            ),
+            ConfigField::optional(
+                "assignees",
+                "array",
+                "Opaque host-resolved reviewer handles (user ids, emails, a channel, a role).",
+            ),
+            ConfigField::optional(
+                "metadata",
+                "object",
+                "Anything else the host's review surface wants, passed through untouched.",
+            ),
+            ConfigField::optional(
+                "request_id",
+                "string",
+                "Overrides the review's identity (default \"<run id>:<node id>\"). Must be \
+                 stable across resumes: it is the key the host de-duplicates reviews on.",
+            ),
+            ConfigField::optional(
+                "wait_mode",
+                "enum",
+                "suspend (default) interrupts the run until the host resumes it; poll \
+                 re-activates the node on an interval, which is only sane for a decision \
+                 expected within seconds.",
+            )
+            .with_enum(&["suspend", "poll"]),
+            ConfigField::optional(
+                "on_reject",
+                "enum",
+                "route (default: emit the verdict on the `rejected` port) | error (fail the \
+                 node) | drop (emit nothing).",
+            )
+            .with_enum(&["route", "error", "drop"]),
+            ConfigField::optional(
+                "on_timeout",
+                "enum",
+                "When a POLLING review runs out of budget: error (default) | reject (follow \
+                 on_reject) | route (emit on the `timeout` port).",
+            )
+            .with_enum(&["error", "reject", "route"]),
+            ConfigField::optional(
+                "poll_interval_ms",
+                "number",
+                "Gap between polls (default 1000). Ignored when suspending.",
+            ),
+            ConfigField::optional(
+                "max_polls",
+                "number",
+                "Poll budget before the wait is called spent (default 60). Each poll costs a \
+                 super-step. Ignored when suspending — a suspended review waits as long as the \
+                 host lets it.",
+            ),
+        ],
+        ports: PortSpec::new(&["main"], &["approved", "rejected", "timeout", "error"]),
+        example: json!({
+            "id": "review", "kind": "approval", "name": "Approve the post",
+            "config": {
+                "title": "Publish this post?",
+                "prompt": "Approving publishes it to the public feed.",
+                "subject_kind": "url",
+                "subject": "=item.preview_url",
+                "assignees": ["=inputs.owner"]
+            }
+        }),
+        notes: vec![
+            "Wire the `approved` port — an approval whose approve branch is unwired reviews \
+             something and then does nothing with the answer."
+                .to_string(),
+            "A rejection is DATA, not an error, by default: it routes to `rejected` with the \
+             reviewer's comment so a recovery branch can revise and ask again. Use \
+             on_reject: \"error\" only when a rejection should abort."
+                .to_string(),
+            "The emitted item carries `subject` as the human left it — their edit when the \
+             host's surface allowed one, otherwise exactly what was sent — plus `approved`, \
+             `comment`, `decided_by`, and the original `input`. The verdict is also readable \
+             anywhere as \"=nodes.<id>.decision.approved\"."
+                .to_string(),
+            "`request_id` is what stops a human being notified once per poll and once per \
+             resume: the host is asked create-or-fetch on that id. Override it only with \
+             something equally stable."
+                .to_string(),
+        ],
+    }
+}
