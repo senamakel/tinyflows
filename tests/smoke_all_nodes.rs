@@ -372,3 +372,17 @@ async fn smoke_scatter_gather() {
         .expect("the gather should produce an items array");
     assert_eq!(items.len(), 2, "two lanes, two collected results");
 }
+
+/// The default mock approvals provider approves, so an `approval` node
+/// dry-runs end to end the way a `memory` node does — the point being that a
+/// graph containing a review is runnable without the host standing up a review
+/// surface first.
+#[tokio::test]
+async fn smoke_approval() {
+    smoke_single_node(
+        NodeKind::Approval,
+        json!({ "title": "Ship it?", "subject_kind": "url", "subject": "=item.url" }),
+        json!({ "url": "https://example.com/preview" }),
+    )
+    .await;
+}
