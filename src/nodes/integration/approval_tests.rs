@@ -410,7 +410,8 @@ async fn on_reject_drop_emits_nothing_but_still_records_the_decision() {
 
     let slot = &out.output["nodes"]["review"];
     assert_eq!(
-        slot["items"], json!([]),
+        slot["items"],
+        json!([]),
         "on_reject: drop must not emit an item"
     );
     assert_eq!(
@@ -514,13 +515,20 @@ fn a_decision_with_a_payload_edits_the_subject() {
     assert!(decision.approved);
     assert_eq!(decision.payload, Some(json!("https://example.com/edited")));
 
-    let item = decided_item(&req, &decision, json!({ "url": "https://example.com/original" }));
+    let item = decided_item(
+        &req,
+        &decision,
+        json!({ "url": "https://example.com/original" }),
+    );
     let json = item.json;
     assert_eq!(json["approved"], json!(true));
     assert_eq!(json["subject"], "https://example.com/edited");
     assert_eq!(json["edited"], json!(true));
     assert_eq!(json["decided_by"], "ada");
-    assert_eq!(json["input"], json!({ "url": "https://example.com/original" }));
+    assert_eq!(
+        json["input"],
+        json!({ "url": "https://example.com/original" })
+    );
 }
 
 /// When a resume (or a listed approval) settles the review, any provider card
