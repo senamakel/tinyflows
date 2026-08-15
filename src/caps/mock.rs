@@ -4,15 +4,12 @@
 //! `mock` cargo feature. The mocks are deterministic echoes — enough to exercise
 //! the engine and the reference workflows without any external services.
 
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use serde_json::{Value, json};
 
 use crate::caps::{
-    AgentRunner, ApprovalProvider, Capabilities, CodeLanguage, CodeRunner, HttpClient, LlmProvider,
-    MemoryProvider, ShellOutcome, ShellRequest, ShellRunner, ShellScript, StateStore, ToolInvoker,
-    WorkflowResolver,
+    AgentRunner, CodeLanguage, CodeRunner, HttpClient, LlmProvider, MemoryProvider, ShellOutcome,
+    ShellRequest, ShellRunner, ShellScript, StateStore, ToolInvoker, WorkflowResolver,
 };
 use crate::error::{EngineError, Result};
 use crate::model::WorkflowGraph;
