@@ -238,6 +238,37 @@ impl NodeExecutor for GateNode {
         let budget_spent = polls >= max_polls;
         let decision = policy.evaluate(results.len(), expected, budget_spent);
 
+        if std::env::var("TF_GATE_DEBUG").is_ok() {
+            eprintln!(
+                "GATE {:?} thread={:?} step={} polls_in={} expected={} arrived={} decision={:?} \
+                 tickets={:?} from_slots={:?}",
+                ctx.node.id,
+                std::thread::current().id(),
+                ctx.step,
+                polls,
+                expected,
+                results.len(),
+                decision,
+                awaiting.iter().map(|a| a.ticket.clone()).collect::<Vec<_>>(),
+                ctx.node
+                    .config
+                    .get("from")
+                    .and_then(Value::as_array)
+                    .map(|from| from
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .map(|s| (
+                            s.to_string(),
+                            ctx.nodes
+                                .get(s)
+                                .and_then(|slot| slot.get("items"))
+                                .and_then(Value::as_array)
+                                .map(Vec::len)
+                        ))
+                        .collect::<Vec<_>>())
+            );
+        }
+
         let meta = json!({
             POLLS_KEY: polls + 1,
             "arrived": results.len(),
