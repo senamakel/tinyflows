@@ -279,7 +279,12 @@ impl ApprovalNode {
         let max_polls = positive_u64(config, "max_polls", DEFAULT_MAX_POLLS);
         let meta = json!({ POLLS_KEY: polls + 1, "request_id": request.request_id });
 
-        if polls < max_polls {
+        // `polls` counts activations that have already asked the provider
+        // once (this one included), so re-entering when `polls + 1 <
+        // max_polls` — rather than `polls < max_polls` — is what makes
+        // `max_polls` the number of `decide` calls actually charged, not
+        // `max_polls + 1`: this activation's call is the `polls + 1`-th.
+        if polls + 1 < max_polls {
             let interval = positive_u64(config, "poll_interval_ms", DEFAULT_POLL_INTERVAL_MS);
             return Ok(NodeOutput::reenter_after(interval, meta));
         }
