@@ -12,10 +12,12 @@
 
 mod consolidate;
 mod judge;
+mod keep;
 mod repair;
 
 pub use consolidate::consolidate;
 pub use judge::{Evidence, judge};
+pub use keep::{Kept, keep};
 pub use repair::{Variant, graph_is_suspect, repair};
 
 use crate::contracts::{Approach, Budget, Goal, Verdict};

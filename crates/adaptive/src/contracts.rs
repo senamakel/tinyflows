@@ -189,6 +189,9 @@ pub enum Tier {
     Consolidate,
     /// Repair a graph that fell short. Structured editing against a diagnosis.
     Repair,
+    /// Name a graph that worked, so a later goal can find it. Prose only — the
+    /// graph is already fixed.
+    Generalise,
 }
 
 impl Tier {
@@ -201,6 +204,7 @@ impl Tier {
             Self::Judge => "judge",
             Self::Consolidate => "consolidate",
             Self::Repair => "repair",
+            Self::Generalise => "generalise",
         }
     }
 }

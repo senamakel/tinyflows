@@ -328,3 +328,223 @@ async fn a_run_drives_to_a_stand_down_and_consolidates_once() {
         "a finished episode must leave the recovery list"
     );
 }
+
+// ---------------------------------------------------------------------------
+// The loop acquires a skill: authored, worked, kept, then selected.
+// ---------------------------------------------------------------------------
+
+/// A graph parameterised by a declared input, which is what the authoring
+/// prompt asks for and what makes a procedure worth keeping.
+fn parameterised() -> WorkflowGraph {
+    let mut g = tiny("review");
+    g.inputs = vec![
+        tinyflows::model::WorkflowInput::new("repo", tinyflows::model::InputType::String)
+            .required(),
+    ];
+    g.nodes[1].config = json!({ "set": { "target": "=run.inputs.repo" } });
+    g
+}
+
+/// Authors `graph`, judges every run satisfied, and answers the naming call.
+struct Succeeds {
+    graph: WorkflowGraph,
+    reusable: bool,
+    seen: Mutex<Vec<Value>>,
+}
+
+#[async_trait]
+impl LlmProvider for Succeeds {
+    async fn complete(&self, request: Value, _conn: Option<&str>) -> EngineResult<Value> {
+        self.seen.lock().expect("lock").push(request.clone());
+        Ok(match request["tier"].as_str().unwrap_or_default() {
+            "judge" => json!({ "satisfied": true, "gap": "" }),
+            "consolidate" => json!({ "lessons": [], "corroborate": [] }),
+            "select" => json!({ "workflow_id": null, "why": "nothing fits yet" }),
+            "generalise" => json!({
+                "name": "Review a repository's pull requests",
+                "description": "Reviews the open pull requests on a repository. Takes the repository as an input.",
+                "reusable": self.reusable,
+            }),
+            _ => json!({
+                "graph": self.graph,
+                "why": "nothing stored fits",
+                "inputs": { "repo": "acme/thing" },
+            }),
+        })
+    }
+}
+
+fn succeeding(graph: WorkflowGraph, reusable: bool) -> Arc<Succeeds> {
+    Arc::new(Succeeds {
+        graph,
+        reusable,
+        seen: Mutex::new(Vec::new()),
+    })
+}
+
+fn engine_over<'a>(
+    ledger: &'a MemoryLedger,
+    store: &'a Arc<dyn WorkflowStore>,
+    caps: &'a Capabilities,
+    runner: &'a Local<'a>,
+    facts: &'a HostFacts,
+) -> Loop<'a> {
+    Loop {
+        ledger,
+        store,
+        caps,
+        facts,
+        runner,
+        clock: &Frozen,
+        budget: Default::default(),
+        conn: None,
+    }
+}
+
+#[tokio::test]
+async fn a_graph_that_was_authored_and_worked_becomes_a_stored_procedure() {
+    // The headline claim: "selects a stored workflow or authors one" is only
+    // half true if authoring never becomes stored, because then the catalogue
+    // holds exactly what a person put there and the loop never acquires a skill.
+    let llm = succeeding(parameterised(), true);
+    let caps = Capabilities {
+        llm: llm.clone(),
+        ..mock_capabilities()
+    };
+    let ledger = MemoryLedger::new();
+    let store = store("keep");
+    let runner = Local {
+        caps: &caps,
+        workspace: &Unobserved,
+    };
+
+    assert!(store.list().expect("list").is_empty(), "a cold store");
+
+    let finished = engine_over(&ledger, &store, &caps, &runner, &HostFacts::unknown())
+        .run("ep-learn", &Goal::new("review the PRs on acme/thing"))
+        .await
+        .expect("run");
+    assert_eq!(finished.status, EpisodeStatus::Satisfied);
+
+    let listed = store.list().expect("list");
+    assert_eq!(listed.len(), 1, "the procedure was filed: {listed:?}");
+    assert!(listed[0].id.starts_with("learned-"), "{}", listed[0].id);
+    assert!(
+        listed[0].description.contains("a repository"),
+        "described as a class, not as the goal: {}",
+        listed[0].description
+    );
+
+    // Scored from the run that earned it — entering at 0/0 would be
+    // indistinguishable from a procedure nobody has ever run.
+    let score = ledger.workflow_score(&listed[0].id).await.expect("score");
+    assert_eq!((score.applied, score.helped), (1, 1));
+}
+
+#[tokio::test]
+async fn a_graph_that_pasted_its_inputs_is_not_kept() {
+    // Same run, same success — but the goal's specifics are welded into a node,
+    // so it matches one task and never another. No model is asked.
+    let mut baked = parameterised();
+    baked.nodes[1].config = json!({ "set": { "target": "acme/thing" } });
+
+    let llm = succeeding(baked, true);
+    let caps = Capabilities {
+        llm: llm.clone(),
+        ..mock_capabilities()
+    };
+    let ledger = MemoryLedger::new();
+    let store = store("baked");
+    let runner = Local {
+        caps: &caps,
+        workspace: &Unobserved,
+    };
+
+    let finished = engine_over(&ledger, &store, &caps, &runner, &HostFacts::unknown())
+        .run("ep-baked", &Goal::new("review the PRs on acme/thing"))
+        .await
+        .expect("run");
+
+    assert_eq!(finished.status, EpisodeStatus::Satisfied, "it still worked");
+    assert!(
+        store.list().expect("list").is_empty(),
+        "but it is a one-off"
+    );
+
+    let tiers: Vec<String> = llm
+        .seen
+        .lock()
+        .expect("lock")
+        .iter()
+        .map(|r| r["tier"].as_str().unwrap_or_default().to_string())
+        .collect();
+    assert!(
+        !tiers.iter().any(|t| t == "generalise"),
+        "the mechanical gate settled it without paying for an opinion: {tiers:?}"
+    );
+}
+
+#[tokio::test]
+async fn the_model_can_still_refuse_a_graph_the_gate_let_through() {
+    // Parameterised and reusable-looking, but only meaningful for the one goal
+    // it was written for. The gate cannot see that; a reader can.
+    let llm = succeeding(parameterised(), false);
+    let caps = Capabilities {
+        llm: llm.clone(),
+        ..mock_capabilities()
+    };
+    let ledger = MemoryLedger::new();
+    let store = store("refused");
+    let runner = Local {
+        caps: &caps,
+        workspace: &Unobserved,
+    };
+
+    engine_over(&ledger, &store, &caps, &runner, &HostFacts::unknown())
+        .run("ep-refused", &Goal::new("review the PRs on acme/thing"))
+        .await
+        .expect("run");
+
+    assert!(store.list().expect("list").is_empty());
+}
+
+#[tokio::test]
+async fn the_next_episode_selects_what_the_last_one_learned() {
+    // The whole point, end to end. Episode one finds a cold store and authors;
+    // episode two finds the procedure episode one filed.
+    let llm = succeeding(parameterised(), true);
+    let caps = Capabilities {
+        llm: llm.clone(),
+        ..mock_capabilities()
+    };
+    let ledger = MemoryLedger::new();
+    let store = store("acquire");
+    let runner = Local {
+        caps: &caps,
+        workspace: &Unobserved,
+    };
+
+    engine_over(&ledger, &store, &caps, &runner, &HostFacts::unknown())
+        .run("ep-first", &Goal::new("review the PRs on acme/thing"))
+        .await
+        .expect("first");
+
+    let learned = store.list().expect("list")[0].id.clone();
+    llm.seen.lock().expect("lock").clear();
+
+    engine_over(&ledger, &store, &caps, &runner, &HostFacts::unknown())
+        .run("ep-second", &Goal::new("review the PRs on other/repo"))
+        .await
+        .expect("second");
+
+    // The selector was offered it, with the evidence from episode one.
+    let offered = llm.seen.lock().expect("lock")[0]["messages"][1]["content"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string();
+    assert!(offered.contains(&learned), "{offered}");
+    assert!(
+        offered.contains("run 1×, satisfied 1×"),
+        "carrying what it earned: {offered}"
+    );
+}

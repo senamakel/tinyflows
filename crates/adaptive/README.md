@@ -98,6 +98,12 @@ What survives is exactly the loop.
       write-only until now. Authored attempts are fingerprinted by graph shape,
       so two of them no longer fold into one exclusion-list entry.
 
+- [x] **7 · acquire** — a graph that was **authored and worked** becomes a
+      stored procedure, so the catalogue holds more than what a person put there
+      and `select` can choose something the loop worked out. Gated: exact
+      reusability check first (`reuse::baked_in`), a model asked only for the
+      name and description, and it can still refuse.
+
 ## An instance is not a goal run
 
 Two lifetimes, and putting them in one object is the mistake worth naming.

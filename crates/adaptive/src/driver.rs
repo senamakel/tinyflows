@@ -153,8 +153,12 @@ impl Loop<'_> {
         )
         .await?;
 
-        self.repair_if_the_graph_is_at_fault(goal, &closed, &planned.approach, &ran)
-            .await;
+        if closed.verdict.satisfied {
+            self.keep_if_it_generalises(goal, &planned).await;
+        } else {
+            self.repair_if_the_graph_is_at_fault(goal, &closed, &planned.approach, &ran)
+                .await;
+        }
         Ok(closed)
     }
 
@@ -212,6 +216,37 @@ impl Loop<'_> {
     /// When the ledger cannot be read.
     pub async fn unfinished(&self) -> Result<Vec<Episode>> {
         Ok(self.ledger.episodes(true).await?)
+    }
+
+    /// Keep a graph that was authored for this goal and achieved it.
+    ///
+    /// Only an authored one: a selected workflow is already stored, and a
+    /// repaired variant was stored when it was proposed.
+    ///
+    /// Best-effort and silent on failure, like the other two post-outcome
+    /// passes. The goal is met either way; failing to file the procedure costs
+    /// the next episode an authoring call, not this one its result.
+    async fn keep_if_it_generalises(&self, goal: &Goal, planned: &crate::intake::Attempt) {
+        if !matches!(planned.approach, Approach::Authored { .. }) {
+            return;
+        }
+        let kept = closing::keep(
+            goal,
+            &planned.graph,
+            &planned.inputs,
+            self.store,
+            self.caps,
+            self.conn,
+        )
+        .await;
+
+        // Scored on the way in, from the run that earned it. A procedure
+        // entering the catalogue at 0/0 is indistinguishable from one nobody
+        // has ever run, and the evidence that it works is the episode that just
+        // finished.
+        if let Ok(Some(kept)) = kept {
+            let _ = self.ledger.score_workflow(&kept.record.id, true).await;
+        }
     }
 
     /// Propose a variant when the diagnosis says the graph was the problem.

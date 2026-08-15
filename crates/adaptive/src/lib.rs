@@ -23,3 +23,4 @@ pub mod intake;
 pub mod ledger;
 pub mod promotion;
 pub mod recall;
+pub mod reuse;
