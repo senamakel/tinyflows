@@ -7,7 +7,22 @@ use crate::engine::{RunInput, resume, run};
 use crate::model::{Edge, Node, NodeKind, WorkflowGraph};
 
 /// A trigger wired into one `approval` node, with `config` on the approval.
-fn wf(config: Value) -> WorkflowGraph {
+///
+/// Fills in a stable `request_id` when the caller's config does not already
+/// name one, since without a run-scoped identity `build_request` now refuses
+/// to guess one (see `a_missing_request_id_and_run_id_is_a_configuration_error`
+/// below for the case that tests the refusal itself).
+fn wf(mut config: Value) -> WorkflowGraph {
+    if let Some(obj) = config.as_object_mut() {
+        obj.entry("request_id".to_string())
+            .or_insert_with(|| json!("review-request"));
+    }
+    wf_raw(config)
+}
+
+/// [`wf`] without the `request_id` auto-fill, for tests that need to control
+/// exactly what identity information the node config and run carry.
+fn wf_raw(config: Value) -> WorkflowGraph {
     WorkflowGraph {
         nodes: vec![
             Node {
