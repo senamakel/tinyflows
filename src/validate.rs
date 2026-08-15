@@ -452,17 +452,18 @@ pub fn validate_all(graph: &WorkflowGraph) -> Vec<ValidationError> {
         // a bare string here (the natural mistake for a single reviewer) would
         // be read as "nobody", and the review would go to an empty audience
         // with no error anywhere.
-        if let Some(assignees) = node.config.get("assignees")
-            && !assignees
+        if let Some(assignees) = node.config.get("assignees") {
+            if !assignees
                 .as_array()
                 .is_some_and(|values| values.iter().all(Value::is_string))
-        {
-            errors.push(ValidationError::InvalidNodeConfig {
-                node: node.id.clone(),
-                reason: "approval node `assignees` must be an array of strings (a single \
-                         reviewer is a one-element array)"
-                    .to_string(),
-            });
+            {
+                errors.push(ValidationError::InvalidNodeConfig {
+                    node: node.id.clone(),
+                    reason: "approval node `assignees` must be an array of strings (a single \
+                             reviewer is a one-element array)"
+                        .to_string(),
+                });
+            }
         }
     }
 
