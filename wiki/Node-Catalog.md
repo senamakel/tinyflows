@@ -76,7 +76,7 @@ traits](Capability-Traits).
 | `code` | Runs sandboxed user code | Config `language` (`javascript`/`python`), `source` — via `CodeRunner` |
 | `shell` | Runs a shell script, inline or from a file | Config `source` **or** `script_path`, plus `interpreter` (`sh`/`bash`), `cwd`, `env` — via `ShellRunner` |
 | `output_parser` | Parses/validates an agent's output into a structured shape | May use `LlmProvider` for auto-fixing; can nest as a sub-agent |
-| `approval` | Puts a subject in front of a **human** and routes on approve/reject | Out `approved` / `rejected` / `timeout`; config `subject`, `subject_kind`, `title`, `prompt`, `assignees`, `wait_mode`, `on_reject` — via `ApprovalProvider` |
+| `approval` | Puts a subject in front of a **human** and routes on approve/reject | Out `approved` / `rejected` / `timeout`; config `subject`, `subject_kind`, `title`, `prompt`, `assignees`, `wait_mode`, `on_reject`, `on_timeout` (`error` default / `reject` / `route` — `route` is required to reach the `timeout` port) — via `ApprovalProvider` |
 | `sub_workflow` | Runs another workflow as a nested sub-graph | Config: exactly one of `workflow` (inline) / `workflow_id`; optional `inputs` map for the child's declared inputs |
 
 The capability-backed integration nodes (`agent`, `tool_call`, `http_request`)
