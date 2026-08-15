@@ -162,8 +162,12 @@ pub(super) fn contract_approval() -> NodeKindContract {
             ConfigField::optional(
                 "request_id",
                 "string",
-                "Overrides the review's identity (default \"<run id>:<node id>\"). Must be \
-                 stable across resumes: it is the key the host de-duplicates reviews on.",
+                "Overrides the review's identity (default \"<run id>:<node id>\", derived from \
+                 whichever of `run.id` / `run.run_id` / `run.trigger.run_id` the host seeds). \
+                 Must be stable across resumes: it is the key the host de-duplicates reviews on. \
+                 Required when no run-scoped id is available — falling back to the bare node id \
+                 would let a later run of the same graph reuse an earlier run's decision, so the \
+                 node refuses to guess and fails instead.",
             ),
             ConfigField::optional(
                 "wait_mode",
