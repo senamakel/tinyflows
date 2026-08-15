@@ -74,30 +74,42 @@ pub(super) fn build_request(ctx: &NodeContext<'_>, config: &Value) -> Result<App
         .or_else(|| ctx.input.first().map(|item| item.json.clone()))
         .unwrap_or(Value::Null);
 
-    // `validate::validate_all` already refuses a *literal* empty array, but an
-    // `=`-bound `assignees` (e.g. `"=item.reviewers"`) resolves only here, at
-    // execution time — after any binding has run. An explicitly-provided but
-    // empty list reaches the same nobody-reviews-this audience the literal
-    // case does, so it gets the same refusal rather than silently producing a
-    // review nobody can ever resolve.
-    let assignees: Vec<String> = config
-        .get("assignees")
-        .and_then(Value::as_array)
-        .map(|values| {
-            values
-                .iter()
-                .filter_map(Value::as_str)
-                .map(str::to_string)
-                .collect()
-        })
-        .unwrap_or_default();
-    if config.get("assignees").is_some_and(Value::is_array) && assignees.is_empty() {
-        return Err(EngineError::Capability(format!(
-            "approval node {:?}: `assignees` resolved to an empty array; a review with nobody \
-             assigned can never be resolved",
-            ctx.node.id
-        )));
-    }
+    // `validate::validate_all` only sees `assignees` as authored: a literal
+    // non-array (a bare string, the natural single-reviewer mistake) or a
+    // literal empty array are both refused there. An `=`-bound `assignees`
+    // (e.g. `"=item.reviewers"`) is a string at author time — it passes that
+    // check by looking like *some* other field entirely — and resolves to
+    // its real shape only here, at execution time. So the same two refusals
+    // apply again to the resolved value: present and not an array, or
+    // present, an array, and empty (or empty of strings) once resolved. Both
+    // reach the same nobody-reviews-this audience a validated graph should
+    // never produce.
+    let assignees = match config.get("assignees") {
+        None => Vec::new(),
+        Some(value) => match value.as_array() {
+            None => {
+                return Err(EngineError::Capability(format!(
+                    "approval node {:?}: `assignees` resolved to {value}, not an array of strings",
+                    ctx.node.id
+                )));
+            }
+            Some(values) => {
+                let assignees: Vec<String> = values
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_string)
+                    .collect();
+                if assignees.is_empty() {
+                    return Err(EngineError::Capability(format!(
+                        "approval node {:?}: `assignees` resolved to an empty array; a review \
+                         with nobody assigned can never be resolved",
+                        ctx.node.id
+                    )));
+                }
+                assignees
+            }
+        },
+    };
 
     Ok(ApprovalRequest {
         request_id,
