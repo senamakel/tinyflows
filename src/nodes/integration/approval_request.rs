@@ -19,6 +19,20 @@ const DEFAULT_SUBJECT_KIND: &str = "json";
 
 /// The run's host id, when the state carries one under any of the spellings a
 /// host might seed (`run.id`, `run.run_id`, `run.trigger.run_id`).
+///
+/// **Security note for hosts:** whichever of these is populated becomes part
+/// of `request_id`, the provider's create-or-fetch key. `run.trigger.run_id`
+/// in particular is read out of the same trigger payload a caller supplies to
+/// `engine::run` — for a webhook- or user-facing trigger, that payload can be
+/// attacker-influenced. A host that lets untrusted input reach this field
+/// lets an attacker choose a `request_id` that collides with an earlier run's
+/// and inherit its cached decision, approving or rejecting a new, unreviewed
+/// subject without a human ever seeing it. Seed a **server-generated** run id
+/// here (or set `config.request_id` explicitly from one) — never forward a
+/// caller-supplied field into it unvalidated. This crate is host-agnostic and
+/// cannot tell trusted trigger data from untrusted; enforcing that boundary is
+/// the host's responsibility, the same as it is for any other identity used as
+/// a de-duplication or idempotency key.
 fn run_id(ctx: &NodeContext<'_>) -> Option<String> {
     ["id", "run_id"]
         .iter()
