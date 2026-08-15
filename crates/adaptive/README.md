@@ -336,6 +336,42 @@ process.
 Workflow scores live here, not on `WorkflowRecord`: a score is a fact that spans
 runs, and the engine's record is a fact about one document.
 
+## Workflows in the configured store too
+
+The ledger had three backends; workflows had a directory of JSON files. A
+deployment picking Mongo for one half of its durable state and getting a
+filesystem for the other is wrong, so `workflows::Vault` mirrors `Ledger` —
+`memory`, `sqlite`, `mongo`, one conformance suite.
+
+```rust
+let vault = MongoVault::connect(&uri, "adaptive").await?.for_tenant(&user);
+let snapshot = Snapshot::load(&vault, policy).await?;
+let store: Arc<dyn WorkflowStore> = Arc::new(snapshot.clone());
+// … the loop runs, repair and keep call store.save() …
+snapshot.flush(&vault).await?;
+```
+
+**Why a snapshot rather than a store.** `WorkflowStore` is synchronous — ten
+required methods, none `async`. A Mongo driver is not. `block_on` inside a sync
+method deadlocks a current-thread runtime, and async-ifying the trait upstream
+means rewriting the file store and the authoring module and contending with that
+rewrite on every merge. So the async half is ours and the sync half reads from
+memory: load once, buffer writes, flush after. That also suits how the loop uses
+a store — several reads while deciding, one or two writes when closing.
+
+**Only what changed is flushed.** A workflow the loop read and did not touch is
+never rewritten, so a human editing one in the meantime is not clobbered. And
+every id this crate writes is content-derived, so two episodes arriving at the
+same procedure write the same id with identical content — last-write-wins is not
+a lost update.
+
+**Workflows are now tenant-scoped**, which closes the gap the tenancy section
+used to name: a `Vault` scopes exactly as a `Ledger` does.
+
+The engine's authoring surface — run records, revisions, notes, proposals —
+**refuses** rather than pretending. A run record accepted and then lost on the
+next load is worse than an error, because nothing tells the caller it vanished.
+
 ## Tenancy
 
 The scope lives on the **handle**, not on every method, because the failure it

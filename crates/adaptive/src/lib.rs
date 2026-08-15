@@ -25,3 +25,4 @@ pub mod ledger;
 pub mod promotion;
 pub mod recall;
 pub mod reuse;
+pub mod workflows;
