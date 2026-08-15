@@ -15,10 +15,22 @@
 //!
 //! # The rule
 //!
-//! A member is **proven** once it has [`MIN_TRIALS`] runs behind it. Among the
-//! proven, the champion is the best help rate, ties broken by more trials —
-//! 40/40 beats 1/1 at the same rate, because they are not the same evidence.
-//! When nothing is proven yet, the root holds the position.
+//! Three bands, in order, and the first non-empty one wins:
+//!
+//! 1. **Proven and has helped** — [`MIN_TRIALS`] runs behind it and at least one
+//!    success. Best help rate, ties broken by more trials: 40/40 beats 1/1 at
+//!    the same rate, because they are not the same evidence.
+//! 2. **Unproven** — too few runs to say. Ordered by what thin evidence there
+//!    is, then by lineage, so a family where *nothing* has been tried keeps the
+//!    graph a person wrote.
+//! 3. **Proven and never helped** — enough runs to be sure it does not work.
+//!
+//! The bands exist because "not yet tried" and "tried and never worked" are
+//! both a help rate of `0.0`, and a single number cannot tell them apart. With
+//! one number the filter ran first, so if the *only* proven member had never
+//! helped it won by default — a root that failed three times out of three
+//! holding the slot against a variant that had succeeded twice out of two. The
+//! same shape as the bug in [`crate::recall`], arrived at independently.
 //!
 //! # Why there is no exploration policy
 //!
@@ -58,26 +70,35 @@ pub enum Standing {
     Beaten,
 }
 
+/// Which band a member sits in. Lower is better; see the module note.
+fn band(score: Score) -> u8 {
+    match (score.applied >= MIN_TRIALS, score.helped > 0) {
+        (true, true) => 0,
+        (false, _) => 1,
+        (true, false) => 2,
+    }
+}
+
 /// Pick the member to offer.
 ///
 /// `family` is `(id, score)` in [`crate::ledger::Ledger::lineage`] order —
-/// **root first**, which is what the fallback depends on when nothing is
-/// proven. Returns `None` only for an empty family.
+/// **root first**, which is what decides an unproven family: nothing has
+/// established anything, so the graph a person wrote keeps the position.
+/// Returns `None` only for an empty family.
 #[must_use]
 pub fn champion(family: &[(String, Score)]) -> Option<&str> {
-    let best = family
+    family
         .iter()
-        .filter(|(_, score)| score.applied >= MIN_TRIALS)
-        .max_by(|(_, a), (_, b)| {
-            a.help_rate()
-                .total_cmp(&b.help_rate())
-                .then_with(|| a.applied.cmp(&b.applied))
-        });
-    match best {
-        Some((id, _)) => Some(id),
-        // Nothing has earned the position, so the root keeps it.
-        None => family.first().map(|(id, _)| id.as_str()),
-    }
+        .enumerate()
+        .min_by(|(i, (_, a)), (j, (_, b))| {
+            band(*a)
+                .cmp(&band(*b))
+                .then_with(|| b.help_rate().total_cmp(&a.help_rate()))
+                .then_with(|| b.applied.cmp(&a.applied))
+                // Lineage order last, so a tie inside a band keeps the root.
+                .then_with(|| i.cmp(j))
+        })
+        .map(|(_, (id, _))| id.as_str())
 }
 
 /// Where `id` stands within its family.
@@ -86,7 +107,7 @@ pub fn standing(id: &str, family: &[(String, Score)]) -> Standing {
     let Some((_, score)) = family.iter().find(|(member, _)| member == id) else {
         return Standing::Unproven;
     };
-    if score.applied < MIN_TRIALS {
+    if band(*score) == 1 {
         return Standing::Unproven;
     }
     if champion(family) == Some(id) {
@@ -152,10 +173,28 @@ mod tests {
     }
 
     #[test]
-    fn an_unproven_root_still_holds_the_position() {
-        // Nothing in the family has earned it, so nothing takes it.
-        let f = family(&[("weekly", 1, 0), ("weekly-fix-abc", 2, 2)]);
+    fn an_untried_family_keeps_the_graph_a_person_wrote() {
+        // The principle the lineage tie-break exists for: with no evidence at
+        // all, nothing displaces the root.
+        let f = family(&[("weekly", 0, 0), ("weekly-fix-abc", 0, 0)]);
         assert_eq!(champion(&f), Some("weekly"));
+    }
+
+    #[test]
+    fn a_fresh_variant_does_not_displace_an_only_slightly_tried_root() {
+        let f = family(&[("weekly", 1, 1), ("weekly-fix-abc", 0, 0)]);
+        assert_eq!(champion(&f), Some("weekly"));
+    }
+
+    #[test]
+    fn thin_evidence_still_decides_between_two_unproven_members() {
+        // This case used to assert the root wins, on the reading that neither
+        // is proven so neither takes it. But the root here has been tried once
+        // and failed, and the variant twice and worked twice — "unproven" is
+        // not "untested", and offering the one that has only ever failed wastes
+        // the attempt that would have told us either way.
+        let f = family(&[("weekly", 1, 0), ("weekly-fix-abc", 2, 2)]);
+        assert_eq!(champion(&f), Some("weekly-fix-abc"));
     }
 
     #[test]
@@ -168,6 +207,27 @@ mod tests {
     fn a_workflow_outside_the_family_reads_as_unproven_rather_than_panicking() {
         let f = family(&[("weekly", 40, 40)]);
         assert_eq!(standing("something-else", &f), Standing::Unproven);
+    }
+
+    #[test]
+    fn a_workflow_proven_useless_does_not_outrank_an_untested_variant() {
+        // The mirror of the recall bug. There, an untried lesson sorted level
+        // with useless ones and was cut. Here, the proven filter runs first, so
+        // if the ONLY proven member has never helped it wins by default — a
+        // root that failed three times out of three keeping the slot against a
+        // variant that has succeeded twice out of two.
+        let f = family(&[("weekly", 3, 0), ("weekly-fix-1", 2, 2)]);
+        assert_eq!(champion(&f), Some("weekly-fix-1"));
+        assert_eq!(standing("weekly", &f), Standing::Beaten);
+    }
+
+    #[test]
+    fn one_success_still_beats_an_untested_variant() {
+        // The other direction: a member that has actually worked keeps the slot
+        // against something with no record, which is the whole point of the
+        // trial threshold.
+        let f = family(&[("weekly", 4, 1), ("weekly-fix-1", 2, 2)]);
+        assert_eq!(champion(&f), Some("weekly"));
     }
 
     #[test]
