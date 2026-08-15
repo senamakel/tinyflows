@@ -47,9 +47,12 @@ use crate::caps::{Capabilities, sample_for_schema};
 use crate::error::{EngineError, Result};
 use crate::model::WorkflowGraph;
 
+#[path = "mocks_log.rs"]
+mod log;
+pub use log::{CallLog, CallOutcome, CapCall};
+
 #[path = "mocks_double.rs"]
 mod double;
-pub use double::{CallLog, CallOutcome, CapCall};
 use double::Double;
 
 /// Which capability a call went to.
