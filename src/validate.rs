@@ -397,6 +397,58 @@ pub fn validate_all(graph: &WorkflowGraph) -> Vec<ValidationError> {
         }
     }
 
+    // `approval` node config. These are all closed enums that SELECT BEHAVIOUR,
+    // so a typo cannot be caught at run time without silently changing what the
+    // node does: a misspelled `on_reject` would quietly route a rejection that
+    // was meant to fail the run, and a misspelled `wait_mode` would quietly
+    // suspend a review the author wanted polled. Refuse them at the door, where
+    // the message can name the node and the alternatives.
+    for node in &graph.nodes {
+        if node.kind != NodeKind::Approval {
+            continue;
+        }
+
+        for (key, allowed) in [
+            ("wait_mode", &["suspend", "poll"][..]),
+            ("on_reject", &["route", "error", "drop"][..]),
+            ("on_timeout", &["error", "reject", "route"][..]),
+        ] {
+            let Some(value) = node.config.get(key) else {
+                continue;
+            };
+            if !value.as_str().is_some_and(|v| allowed.contains(&v)) {
+                errors.push(ValidationError::InvalidNodeConfig {
+                    node: node.id.clone(),
+                    reason: format!(
+                        "approval node has unknown `{key}` {value} (expected one of {})",
+                        allowed
+                            .iter()
+                            .map(|v| format!("{v:?}"))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
+                });
+            }
+        }
+
+        // Reviewer handles are opaque to the crate, but their *shape* is not:
+        // a bare string here (the natural mistake for a single reviewer) would
+        // be read as "nobody", and the review would go to an empty audience
+        // with no error anywhere.
+        if let Some(assignees) = node.config.get("assignees")
+            && !assignees
+                .as_array()
+                .is_some_and(|values| values.iter().all(Value::is_string))
+        {
+            errors.push(ValidationError::InvalidNodeConfig {
+                node: node.id.clone(),
+                reason: "approval node `assignees` must be an array of strings (a single \
+                         reviewer is a one-element array)"
+                    .to_string(),
+            });
+        }
+    }
+
     // A `condition` node's outgoing edges must emit on `from_port` "true" or
     // "false" — routing is keyed EXCLUSIVELY on `from_port` (see
     // `engine::outgoing_by_port` / `handler_routing`), so any other value
