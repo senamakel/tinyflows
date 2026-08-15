@@ -74,6 +74,31 @@ pub(super) fn build_request(ctx: &NodeContext<'_>, config: &Value) -> Result<App
         .or_else(|| ctx.input.first().map(|item| item.json.clone()))
         .unwrap_or(Value::Null);
 
+    // `validate::validate_all` already refuses a *literal* empty array, but an
+    // `=`-bound `assignees` (e.g. `"=item.reviewers"`) resolves only here, at
+    // execution time — after any binding has run. An explicitly-provided but
+    // empty list reaches the same nobody-reviews-this audience the literal
+    // case does, so it gets the same refusal rather than silently producing a
+    // review nobody can ever resolve.
+    let assignees: Vec<String> = config
+        .get("assignees")
+        .and_then(Value::as_array)
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+    if config.get("assignees").is_some_and(Value::is_array) && assignees.is_empty() {
+        return Err(EngineError::Capability(format!(
+            "approval node {:?}: `assignees` resolved to an empty array; a review with nobody \
+             assigned can never be resolved",
+            ctx.node.id
+        )));
+    }
+
     Ok(ApprovalRequest {
         request_id,
         node_id: ctx.node.id.clone(),
@@ -88,17 +113,7 @@ pub(super) fn build_request(ctx: &NodeContext<'_>, config: &Value) -> Result<App
                 .to_string(),
             value,
         },
-        assignees: config
-            .get("assignees")
-            .and_then(Value::as_array)
-            .map(|values| {
-                values
-                    .iter()
-                    .filter_map(Value::as_str)
-                    .map(str::to_string)
-                    .collect()
-            })
-            .unwrap_or_default(),
+        assignees,
         metadata: config.get("metadata").cloned().unwrap_or(Value::Null),
     })
 }
