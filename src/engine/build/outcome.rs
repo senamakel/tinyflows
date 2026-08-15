@@ -90,6 +90,16 @@ where
                             let slice = remaining.min(BACKOFF_POLL_MS);
                             let mut delay =
                                 futures_timer::Delay::new(std::time::Duration::from_millis(slice));
+                            let mut yielded = false;
+                            std::future::poll_fn(|cx| {
+                                if yielded {
+                                    return std::task::Poll::Ready(());
+                                }
+                                yielded = true;
+                                cx.waker().wake_by_ref();
+                                std::task::Poll::Pending
+                            })
+                            .await;
                             let mut polls = 0usize;
                             std::future::poll_fn(|cx| {
                                 polls += 1;
