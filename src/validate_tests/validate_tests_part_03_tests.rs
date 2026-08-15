@@ -169,7 +169,7 @@ fn approval_behaviour_selectors_must_be_known_values() {
         ("on_reject", "reroute"),
         ("on_timeout", "partial"),
     ] {
-        let graph = approval_graph(serde_json::json!({ key: bad }));
+        let graph = approval_graph(serde_json::json!({ (key): bad }));
         let errors = validate_all(&graph);
         assert!(
             errors.iter().any(|e| matches!(
