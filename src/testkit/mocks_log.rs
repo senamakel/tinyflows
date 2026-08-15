@@ -32,7 +32,7 @@ pub struct CapCall {
     /// One counter across *all* capabilities, so the log says what order things
     /// happened in — which per-capability counters cannot.
     pub seq: u64,
-    /// Which capability — see the [`capability`] constants.
+    /// Which capability — see the [`capability`](super::capability) constants.
     pub capability: String,
     /// The trait method (`invoke`, `complete`, `request`, …).
     pub method: String,
@@ -103,7 +103,7 @@ impl CallLog {
 
     /// The calls matching a capability and an optional target glob.
     ///
-    /// `capability` is one of the [`capability`] constants; `target` accepts the
+    /// `capability` is one of the [`capability`](super::capability) constants; `target` accepts the
     /// same `*` globbing the rules do, and `None` matches every target.
     #[must_use]
     pub fn matching(&self, capability: &str, target: Option<&str>) -> Vec<CapCall> {
