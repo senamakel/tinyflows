@@ -38,20 +38,19 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::Value;
 
-use crate::caps::{
-    AgentRunner, ApprovalDecision, ApprovalOutcome, ApprovalProvider, ApprovalRequest,
-    Capabilities, CodeLanguage, CodeRunner, HttpClient, LlmProvider, MemoryProvider, ShellOutcome,
-    ShellRequest, ShellRunner, StateStore, ToolInvoker, WorkflowResolver, sample_for_schema,
-};
-use crate::error::{EngineError, Result};
+use crate::caps::Capabilities;
+use crate::error::Result;
 use crate::model::WorkflowGraph;
+
+#[path = "mocks_double.rs"]
+mod double;
+pub use double::{CallLog, CallOutcome, CapCall};
+use double::Double;
 
 /// Which capability a call went to.
 ///
