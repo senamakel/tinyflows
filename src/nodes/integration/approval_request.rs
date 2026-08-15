@@ -124,6 +124,16 @@ pub(super) fn names(list: Option<&Value>, request: &ApprovalRequest) -> bool {
 /// first, so a denial always beats an approval delivered in the same value),
 /// the mirror `{"approved": [<id>…]}`, and a full verdict object — either
 /// inline or nested under `decision`.
+///
+/// The array forms above are always scoped to this request via [`names`], the
+/// same way [`super::gate`](crate::nodes::integration::gate) scopes its own
+/// `approved` array — required, because several nodes can be interrupted at
+/// once and a resume value is not addressed to just one of them. The inline
+/// verdict-object form carries no such array to check, so it is accepted
+/// unscoped **only** when it does not itself name a different request —
+/// matching the same "single-interrupt convenience" precedent
+/// `engine::build::activation`'s bare `Value::Bool(true)` case documents, but
+/// without silently absorbing a verdict a host explicitly addressed elsewhere.
 pub(super) fn decision_from_resume(
     resume: &Value,
     request: &ApprovalRequest,
@@ -141,6 +151,16 @@ pub(super) fn decision_from_resume(
     }
 
     let verdict = resume.get("decision").unwrap_or(resume);
+    if let Some(named) = verdict
+        .get("node_id")
+        .or_else(|| verdict.get("request_id"))
+        .and_then(Value::as_str)
+        && named != request.node_id
+        && named != request.request_id
+    {
+        // Explicitly addressed to a different node's review; not ours to take.
+        return None;
+    }
     let approved = verdict.get("approved").and_then(Value::as_bool)?;
     Some(ApprovalDecision {
         approved,
