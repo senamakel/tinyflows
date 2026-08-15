@@ -167,7 +167,10 @@ pub(super) fn contract_approval() -> NodeKindContract {
                  Must be stable across resumes: it is the key the host de-duplicates reviews on. \
                  Required when no run-scoped id is available — falling back to the bare node id \
                  would let a later run of the same graph reuse an earlier run's decision, so the \
-                 node refuses to guess and fails instead.",
+                 node refuses to guess and fails instead. SECURITY: whichever run id feeds this \
+                 must be server-generated, never a caller-supplied trigger field forwarded \
+                 unvalidated — an attacker who can choose it can collide with an earlier run's \
+                 request_id and inherit its cached decision, skipping review entirely.",
             ),
             ConfigField::optional(
                 "wait_mode",
