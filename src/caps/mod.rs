@@ -7,7 +7,6 @@
 
 pub mod agent;
 pub mod approval;
-pub mod approval;
 #[cfg(any(test, feature = "host-caps"))]
 pub mod host;
 #[cfg(any(test, feature = "mock"))]
@@ -25,9 +24,6 @@ use crate::error::Result;
 pub use self::agent::{
     AgentInput, AgentModelSelection, AgentRunIdentity, AgentRunOutcome, AgentRunRequest,
     AgentRunner, AgentUsage, ContextBlock, StopReason, ToolDescriptor,
-};
-pub use self::approval::{
-    ApprovalDecision, ApprovalOutcome, ApprovalProvider, ApprovalRequest, ApprovalSubject,
 };
 pub use self::approval::{
     ApprovalDecision, ApprovalOutcome, ApprovalProvider, ApprovalRequest, ApprovalSubject,
