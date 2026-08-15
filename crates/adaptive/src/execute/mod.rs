@@ -35,10 +35,12 @@
 //! `run_with_checkpointer_journaled_observed`, which also demands a journal.
 //!
 //! And what a checkpointer buys is durable *resume*, which this crate does not
-//! do. `StopReason::Paused` is not routed into the engine's checkpoint/resume
-//! machinery upstream, and our retry is a new run of a new graph — never
-//! `engine::resume`, which replays every node before the gate. So the cost is
-//! immediate and the benefit is for a path we have declared out of scope.
+//! use. Note *use*, not *lack*: `resume_with_checkpointer` genuinely continues
+//! from an interrupt boundary rather than replaying — it is `engine::resume`,
+//! the HITL convenience, that re-runs every node before the gate. Our retry is
+//! a new run of a new graph by choice, because a retry is a different idea and
+//! not a continuation of the last one. So the cost is immediate and the benefit
+//! is for a path we do not take.
 //!
 //! When HITL parking is wired upstream this becomes a one-line swap to the
 //! journaled variant. Until then, taking a durability guarantee we cannot use

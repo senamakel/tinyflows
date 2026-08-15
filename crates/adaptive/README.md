@@ -187,6 +187,30 @@ there is no safe blocker to pick. Saying the result is unknown routes it to the
 judge, which can reach a continuable verdict, so a socket blip cannot end an
 episode.
 
+## Node-level remote execution, and what it needs
+
+`StepAction::Interrupt` raises a real graph interrupt at a node and checkpoints
+the run there; `resume_with_checkpointer` reloads that checkpoint and continues
+from the boundary. So "reach a node, emit a call, park the graph durably, resume
+when the reply lands" is a thing the engine does — the pieces are
+`interception.rs` plus the checkpointed run.
+
+Two properties make it work at `StepPhase::Before` and only there. The interrupt
+discards the activation's state update and re-runs the node from the top on
+resume, which is **free before the node has run and doubles its side effects
+after**. And an interceptor keyed by node id can answer `Replace { items }` on
+the second pass, so the reply becomes the node's output without the executor
+ever running.
+
+**The one gap**: no public entry point takes an interceptor *and* a host
+checkpointer. `RunConfig` has `with_interceptor` and `with_checkpointer` and
+they compose; nothing exposes the pair. That is one function in
+`engine/resumable.rs`, mirroring `run_with_checkpointer_journaled_observed`.
+
+Worth knowing because it is the alternative to whole-graph dispatch: under it
+the graph never leaves the server, only one node's call crosses, and a process
+restart mid-wait costs nothing.
+
 ## The contracts an external process touches
 
 Two kinds, and they fail differently. A **wire type** breaks when a derive is
@@ -342,9 +366,10 @@ own business.
 
 ## Deliberately out of scope
 
-- **Human-in-the-loop parking.** `StopReason::Paused` is not routed into the
-  engine's checkpoint/resume machinery; an `agent` node that receives one fails.
-  Wiring it is an upstream contribution, not a workaround here.
+- **Human-in-the-loop parking**, in the loop. `StopReason::Paused` from an
+  `agent` node is not routed into checkpoint/resume, so the loop treats a parked
+  approval as a terminal `NeedsInput` verdict rather than waiting.
+  *Node-level parking itself is not the gap* — see below.
 - **Scheduling.** Nine trigger kinds are accepted and stored; whether one
   dispatches unattended is a host concern, and on the hosts we run today only
   `manual` fires.
@@ -353,9 +378,14 @@ own business.
 
 Things that cost a day each if met in production instead.
 
-- **`resume` replays.** It re-executes the workflow with the merged approval
-  set. Every node before the gate runs again. Our retry is a new run of a new
-  graph, never the engine's resume.
+- **There are two resumes and they behave differently.** `engine::resume` is the
+  HITL convenience: it re-executes the workflow with the merged approval set, so
+  every node before the gate runs again. `engine::resume_with_checkpointer` is
+  not that — it reloads the state persisted under `thread_id` and continues from
+  the interrupt boundary, running only what had not run. Conflating them is easy
+  and expensive: it is the difference between "durable node-level parking is
+  impossible here" and "it is one missing entry point away". Our retry is still
+  a new run of a new graph, but that is a choice, not a limit.
 - **There is no wait node.** A workflow cannot sleep. Long waits end the run and
   are re-triggered.
 - **`RenameNode` does not rewrite bindings.** Edges are rewired;
