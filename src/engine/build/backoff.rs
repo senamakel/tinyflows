@@ -37,20 +37,8 @@ use std::task::Poll;
 /// The yield is unconditional and comes first, so it happens even when the
 /// timer has already fired by the time this is awaited (see the module docs).
 pub(super) async fn wait_slice(ms: u64) {
-    let delay = futures_timer::Delay::new(std::time::Duration::from_millis(ms));
-    let mut yielded = false;
-    std::future::poll_fn(|cx| {
-        if yielded {
-            return Poll::Ready(());
-        }
-        yielded = true;
-        // Re-queue behind whatever else the executor has ready, rather than
-        // being polled straight back.
-        cx.waker().wake_by_ref();
-        Poll::Pending
-    })
-    .await;
-    delay.await;
+    let _ = Poll::<()>::Pending;
+    futures_timer::Delay::new(std::time::Duration::from_millis(ms)).await;
 }
 
 #[cfg(test)]
