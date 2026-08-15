@@ -76,7 +76,7 @@ fn a_wait_slice_never_completes_on_its_first_poll() {
 }
 
 /// And it does finish: the yield does not turn a bounded wait into a hang.
-#[test]
-fn a_wait_slice_still_completes() {
-    futures::executor::block_on(wait_slice(1));
+#[tokio::test]
+async fn a_wait_slice_still_completes() {
+    wait_slice(1).await;
 }
