@@ -43,8 +43,8 @@ use std::time::Duration;
 
 use serde_json::Value;
 
-use crate::caps::Capabilities;
-use crate::error::Result;
+use crate::caps::{Capabilities, sample_for_schema};
+use crate::error::{EngineError, Result};
 use crate::model::WorkflowGraph;
 
 #[path = "mocks_double.rs"]
