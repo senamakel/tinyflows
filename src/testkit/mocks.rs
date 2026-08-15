@@ -77,16 +77,6 @@ pub mod capability {
     pub const APPROVALS: &str = "approvals";
 }
 
-/// How one capability call ended.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum CallOutcome {
-    /// The call returned a value.
-    Ok(Value),
-    /// The call failed, with this message.
-    Err(String),
-}
-
 /// What a matched rule answers with.
 ///
 /// Construct these through the helpers ([`Respond::value`], [`Respond::error`],
