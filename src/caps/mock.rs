@@ -10,12 +10,15 @@ use async_trait::async_trait;
 use serde_json::{Value, json};
 
 use crate::caps::{
-    AgentRunner, ApprovalDecision, ApprovalOutcome, ApprovalProvider, ApprovalRequest,
-    Capabilities, CodeLanguage, CodeRunner, HttpClient, LlmProvider, MemoryProvider, ShellOutcome,
-    ShellRequest, ShellRunner, ShellScript, StateStore, ToolInvoker, WorkflowResolver,
+    AgentRunner, Capabilities, CodeLanguage, CodeRunner, HttpClient, LlmProvider, MemoryProvider,
+    ShellOutcome, ShellRequest, ShellRunner, ShellScript, StateStore, ToolInvoker,
+    WorkflowResolver,
 };
 use crate::error::{EngineError, Result};
 use crate::model::WorkflowGraph;
+
+mod mock_approvals;
+pub use mock_approvals::MockApprovals;
 
 /// An [`LlmProvider`] that echoes the request back under a `completion` key.
 #[derive(Debug, Default, Clone)]
