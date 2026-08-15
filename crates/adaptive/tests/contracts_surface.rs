@@ -114,3 +114,27 @@ fn the_envelope_is_camel_case_and_the_graph_inside_it_is_not() {
         .expect("serializes")
     );
 }
+
+const fn shareable<T: Send + Sync>() {}
+
+#[test]
+fn a_loop_can_be_shared_across_tasks_and_replicas() {
+    // The operational half of statelessness. `Loop` holds only borrows of
+    // `Send + Sync` adapters and no state of its own, so one instance serves
+    // many concurrent episodes and any replica can serve any request. If this
+    // stops compiling, something acquired state that has to be owned — and the
+    // microservice story goes with it.
+    shareable::<tinyflows_adaptive::driver::Loop<'_>>();
+
+    // The adapters a host injects, for the same reason.
+    shareable::<&dyn tinyflows_adaptive::ledger::Ledger>();
+    shareable::<&dyn tinyflows_adaptive::execute::Runner>();
+    shareable::<&dyn tinyflows_adaptive::execute::Relay>();
+    shareable::<&dyn tinyflows_adaptive::execute::Workspace>();
+    shareable::<&dyn tinyflows_adaptive::driver::Clock>();
+
+    // And the values that cross between them.
+    shareable::<tinyflows_adaptive::ledger::Episode>();
+    shareable::<tinyflows_adaptive::execute::Ran>();
+    shareable::<tinyflows_adaptive::closing::Closed>();
+}
