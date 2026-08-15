@@ -1,57 +1,82 @@
 //! Unit tests for the backoff slice primitive.
+//!
+//! These pin the contract of [`yield_once`], which is what makes a backoff
+//! hand the executor a turn whatever the timer did. The bug that contract
+//! exists to prevent is an engine-level one and is covered end to end by
+//! `a_gate_takes_the_same_number_of_polls_every_run` in `tests/fuzz_resume.rs`;
+//! what is asserted here is the piece that can be checked deterministically.
 
-use super::wait_slice;
+use std::future::Future;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::task::{Context, Poll, Wake, Waker};
 
-/// The guarantee the whole module exists for: a slice always returns `Pending`
-/// at least once, so the executor gets a turn.
-///
-/// Asserted by driving the future by hand with a no-op waker rather than on a
-/// runtime, because "did it yield" is a statement about `poll` and nothing
-/// else can observe it directly.
-#[test]
-fn a_slice_yields_at_least_once() {
-    use std::future::Future;
-    use std::task::{Context, Poll, Wake, Waker};
+use super::{wait_slice, yield_once};
 
-    struct Noop;
-    impl Wake for Noop {
-        fn wake(self: std::sync::Arc<Self>) {}
+/// A waker that counts how many times it was woken.
+struct Counting(AtomicUsize);
+
+impl Wake for Counting {
+    fn wake(self: Arc<Self>) {
+        self.wake_by_ref();
     }
 
-    let waker = Waker::from(std::sync::Arc::new(Noop));
+    fn wake_by_ref(self: &Arc<Self>) {
+        self.0.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
+/// A yield is `Pending` once, then `Ready` — and it wakes itself, so an
+/// executor re-queues it rather than dropping the task.
+///
+/// The self-wake is half the contract: a `Pending` that never wakes is a hang,
+/// not a yield.
+#[test]
+fn a_yield_is_pending_once_then_ready() {
+    let counter = Arc::new(Counting(AtomicUsize::new(0)));
+    let waker = Waker::from(counter.clone());
     let mut cx = Context::from_waker(&waker);
-    let future = wait_slice(0);
-    let mut future = std::pin::pin!(future);
+    let mut future = std::pin::pin!(yield_once());
+
     assert_eq!(
         future.as_mut().poll(&mut cx),
         Poll::Pending,
-        "a zero-length slice still has to hand the executor a turn"
+        "the first poll of a yield must hand the executor its turn"
+    );
+    assert_eq!(
+        counter.0.load(Ordering::SeqCst),
+        1,
+        "a yield must wake itself, or the turn it hands over is never taken back"
+    );
+    assert_eq!(
+        future.as_mut().poll(&mut cx),
+        Poll::Ready(()),
+        "a yield hands over exactly one turn, not a stream of them"
     );
 }
 
-/// A slice whose timer has *already* fired before the future is first polled —
-/// the load-induced case that made a gate's poll count nondeterministic — must
-/// still yield rather than completing on its first poll.
+/// A wait slice never completes on its first poll, however the timer resolved.
+///
+/// This is the property the whole module exists for: a slice whose timer had
+/// already fired must still yield. Asserted against a zero-length slice, whose
+/// deadline is already in the past the moment it is armed — the case most
+/// likely to short-circuit.
 #[test]
-fn a_slice_yields_even_when_its_timer_already_fired() {
-    use std::future::Future;
-    use std::task::{Context, Poll, Wake, Waker};
-
-    struct Noop;
-    impl Wake for Noop {
-        fn wake(self: std::sync::Arc<Self>) {}
-    }
-
-    let waker = Waker::from(std::sync::Arc::new(Noop));
+fn a_wait_slice_never_completes_on_its_first_poll() {
+    let counter = Arc::new(Counting(AtomicUsize::new(0)));
+    let waker = Waker::from(counter);
     let mut cx = Context::from_waker(&waker);
-    let future = wait_slice(1);
-    let mut future = std::pin::pin!(future);
-    // Stand in for the thread being descheduled between constructing the
-    // timer and reaching the await point.
-    std::thread::sleep(std::time::Duration::from_millis(20));
+    let mut future = std::pin::pin!(wait_slice(0));
+
     assert_eq!(
         future.as_mut().poll(&mut cx),
         Poll::Pending,
         "an already-elapsed slice must still yield, or concurrent work never runs"
     );
+}
+
+/// And it does finish: the yield does not turn a bounded wait into a hang.
+#[test]
+fn a_wait_slice_still_completes() {
+    futures::executor::block_on(wait_slice(1));
 }
