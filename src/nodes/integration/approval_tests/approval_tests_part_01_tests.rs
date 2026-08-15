@@ -290,7 +290,11 @@ async fn polling_spends_a_bounded_budget_then_follows_on_timeout() {
     // Every activation asked about the SAME review: the create-or-fetch
     // contract is what stops a poll loop notifying a human once per poll.
     let ids = provider.requested();
-    assert!(ids.len() > 1, "expected repeated polls, got {ids:?}");
+    assert_eq!(
+        ids.len(),
+        2,
+        "max_polls: 2 must charge exactly 2 decide calls, not max_polls + 1, got {ids:?}"
+    );
     assert!(
         ids.iter().all(|id| id == &ids[0]),
         "every poll must reuse one request id, got {ids:?}"
