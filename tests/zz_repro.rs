@@ -106,7 +106,8 @@ fn repro_resume_determinism() {
                     std::collections::BTreeMap::new();
                 let mut baseline: Option<Value> = None;
                 let mut diverged = 0usize;
-                for _ in 0..iters {
+                for i in 0..iters {
+                    eprintln!("ITER thread={:?} i={i}", std::thread::current().id());
                     let (_, resumed) = run_both_ways(&shape).expect("shape should compile");
                     let polls = resumed["nodes"]["n21"]["polls"].as_u64().unwrap_or(0);
                     *counts.entry(polls).or_default() += 1;
