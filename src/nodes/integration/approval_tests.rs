@@ -256,14 +256,9 @@ async fn with_no_provider_the_node_reduces_to_a_pause_the_host_resumes() {
     let paused = run(&compiled, Value::Null, &caps).await.expect("run");
     assert_eq!(paused.pending_approvals, vec!["review".to_string()]);
 
-    let resumed = resume(
-        &compiled,
-        Value::Null,
-        vec!["review".to_string()],
-        &caps,
-    )
-    .await
-    .expect("resume");
+    let resumed = resume(&compiled, Value::Null, vec!["review".to_string()], &caps)
+        .await
+        .expect("resume");
     assert!(resumed.pending_approvals.is_empty());
     assert_eq!(resumed.output["nodes"]["review"]["port"], "approved");
 }

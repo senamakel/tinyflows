@@ -588,7 +588,9 @@ pub fn mock_capabilities_with_memory(memory: impl MemoryProvider + 'static) -> C
 /// in place of the default approve-everything [`MockApprovals`] — for tests
 /// that need a rejection, a pending review, or a host-shaped decision.
 #[must_use]
-pub fn mock_capabilities_with_approvals(approvals: impl ApprovalProvider + 'static) -> Capabilities {
+pub fn mock_capabilities_with_approvals(
+    approvals: impl ApprovalProvider + 'static,
+) -> Capabilities {
     Capabilities {
         approvals: Some(Arc::new(approvals)),
         ..mock_capabilities()

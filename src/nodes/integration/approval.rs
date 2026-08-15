@@ -368,12 +368,11 @@ impl NodeExecutor for ApprovalNode {
         }
 
         Ok(match OnReject::from_config(&config) {
-            OnReject::Route => NodeOutput::routed(
-                vec![decided_item(&request, &decision, input)],
-                "rejected",
-            )
-            .with_meta(meta)
-            .with_diagnostics(diagnostics),
+            OnReject::Route => {
+                NodeOutput::routed(vec![decided_item(&request, &decision, input)], "rejected")
+                    .with_meta(meta)
+                    .with_diagnostics(diagnostics)
+            }
             OnReject::Drop => NodeOutput::empty()
                 .with_meta(meta)
                 .with_diagnostics(diagnostics),

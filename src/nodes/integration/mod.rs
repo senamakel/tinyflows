@@ -5,8 +5,8 @@
 //! One module per node kind so parallel work can edit them without conflicts.
 
 pub mod agent;
-pub mod approval;
 pub(crate) mod agent_request;
+pub mod approval;
 pub mod code;
 pub(crate) mod envelope;
 pub mod gate;
