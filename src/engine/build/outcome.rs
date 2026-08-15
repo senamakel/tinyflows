@@ -88,8 +88,25 @@ where
                                 return Ok(NodeResult::Update(items_update(&node.id, &[], None)?));
                             }
                             let slice = remaining.min(BACKOFF_POLL_MS);
-                            futures_timer::Delay::new(std::time::Duration::from_millis(slice))
-                                .await;
+                            let mut delay =
+                                futures_timer::Delay::new(std::time::Duration::from_millis(slice));
+                            let mut polls = 0usize;
+                            std::future::poll_fn(|cx| {
+                                polls += 1;
+                                std::pin::Pin::new(&mut delay).poll(cx)
+                            })
+                            .await;
+                            if std::env::var("TF_GATE_DEBUG").is_ok() && polls == 1 {
+                                eprintln!(
+                                    "DELAY-NO-YIELD node={} thread={:?} t_us={}",
+                                    node.id,
+                                    std::thread::current().id(),
+                                    std::time::SystemTime::now()
+                                        .duration_since(std::time::UNIX_EPOCH)
+                                        .map(|d| d.as_micros())
+                                        .unwrap_or(0),
+                                );
+                            }
                             remaining -= slice;
                         }
                     }
