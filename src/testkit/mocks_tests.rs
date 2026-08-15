@@ -284,6 +284,50 @@ async fn the_state_store_really_stores() {
     assert_eq!(mocks.log().count(capability::STATE, None), 3);
 }
 
+/// `capabilities_for_node` builds a fresh `Capabilities` bundle — and so a
+/// fresh `Double` — on every node activation, so it can attribute calls to
+/// the right node. State must not live on that per-activation `Double`, or
+/// nothing written by one activation would be visible to the next: not a
+/// later activation of the SAME node (a loop reading what an earlier
+/// iteration stored), and not a different node reading what an upstream one
+/// wrote.
+#[tokio::test]
+async fn state_persists_across_node_scoped_bundles() {
+    let mocks = mocks(|m| m);
+
+    // Node "writer"'s first activation stores a value...
+    mocks
+        .capabilities_for_node("writer")
+        .state
+        .store("k", json!("from writer"))
+        .await
+        .expect("store");
+
+    // ...a later activation of the SAME node must still see it...
+    assert_eq!(
+        mocks
+            .capabilities_for_node("writer")
+            .state
+            .load("k")
+            .await
+            .expect("load"),
+        Some(json!("from writer")),
+        "a node's own later activation must see what an earlier one stored"
+    );
+
+    // ...and so must a DIFFERENT node's bundle, entirely.
+    assert_eq!(
+        mocks
+            .capabilities_for_node("reader")
+            .state
+            .load("k")
+            .await
+            .expect("load"),
+        Some(json!("from writer")),
+        "state is one store shared across the whole run, not one per node"
+    );
+}
+
 #[tokio::test]
 async fn a_delayed_response_still_answers() {
     let mocks = mocks(|m| {
