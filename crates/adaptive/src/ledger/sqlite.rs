@@ -42,6 +42,7 @@ const DDL: &[&str] = &[
         at            TEXT NOT NULL,
         satisfied     INTEGER NOT NULL DEFAULT 0,
         advanced      INTEGER NOT NULL DEFAULT 0,
+        scope_key     TEXT NOT NULL DEFAULT '',
         seq           INTEGER NOT NULL
     )",
     // Ordered by `seq`, not by `at`: two attempts finishing in the same second
@@ -107,6 +108,7 @@ const MIGRATIONS: &[&str] = &[
     "ALTER TABLE workflow_scores ADD COLUMN scope_key TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE ledger_rows ADD COLUMN satisfied INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE ledger_rows ADD COLUMN advanced INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE ledger_rows ADD COLUMN scope_key TEXT NOT NULL DEFAULT ''",
 ];
 
 /// Where the ledger lives, when the environment says.
@@ -414,8 +416,8 @@ impl Ledger for SqliteLedger {
         conn.execute(
             "INSERT INTO ledger_rows(id, episode, attempt, approach_sig, approach_desc,
                                      workflow_id, outcome, cause, cost_usd, at,
-                                     satisfied, advanced, seq)
-             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",
+                                     satisfied, advanced, scope_key, seq)
+             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)",
             params![
                 id,
                 row.episode,
@@ -429,6 +431,7 @@ impl Ledger for SqliteLedger {
                 row.at,
                 i64::from(row.satisfied),
                 i64::from(row.advanced),
+                self.bucket(),
                 seq,
             ],
         )?;
@@ -437,9 +440,14 @@ impl Ledger for SqliteLedger {
 
     async fn rows(&self, episode: &str) -> Result<Vec<LedgerRow>> {
         let conn = self.guard()?;
-        let mut stmt = conn.prepare("SELECT * FROM ledger_rows WHERE episode = ?1 ORDER BY seq")?;
+        // Scoped as well as keyed by episode. An episode id is opaque and a
+        // service may hand one straight through from a request path, so this
+        // must not be the one read where guessing an id is enough.
+        let mut stmt = conn.prepare(
+            "SELECT * FROM ledger_rows WHERE episode = ?1 AND scope_key = ?2 ORDER BY seq",
+        )?;
         let found = stmt
-            .query_map([episode], read_row)?
+            .query_map(params![episode, self.bucket()], read_row)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(found)
     }
@@ -508,10 +516,10 @@ impl Ledger for SqliteLedger {
         let mut stmt = conn.prepare(
             "SELECT r.* FROM ledger_rows r
              JOIN lesson_evidence e ON e.row_id = r.id
-             WHERE e.lesson_id = ?1 ORDER BY r.seq",
+             WHERE e.lesson_id = ?1 AND r.scope_key = ?2 ORDER BY r.seq",
         )?;
         let found = stmt
-            .query_map([lesson_id], read_row)?
+            .query_map(params![lesson_id, self.bucket()], read_row)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(found)
     }
@@ -662,16 +670,20 @@ mod tests {
 
     #[tokio::test]
     async fn a_scoped_handle_shares_the_connection_rather_than_the_file() {
-        // Cheap enough to make per request: a row written through the tenant
-        // handle is visible through the one it came from, so there is no second
-        // database and no reopen.
+        // Two handles for the SAME tenant must see each other's writes — that
+        // is what "shares" means. Probing it across scopes would now fail by
+        // design, because rows carry the bucket that wrote them.
         let store = SqliteLedger::in_memory().expect("open in-memory ledger");
-        let tenant = store.for_tenant("user-a");
-        tenant
-            .append(&conformance::row("ep-shared", 1, "authored"))
+        let one = store.for_tenant("user-a");
+        let two = store.for_tenant("user-a");
+        one.append(&conformance::row("ep-shared", 1, "authored"))
             .await
             .expect("append");
-        assert_eq!(store.rows("ep-shared").await.expect("rows").len(), 1);
+        assert_eq!(two.rows("ep-shared").await.expect("rows").len(), 1);
+        assert!(
+            store.rows("ep-shared").await.expect("rows").is_empty(),
+            "and the global bucket is its own, not a union"
+        );
     }
 
     #[tokio::test]

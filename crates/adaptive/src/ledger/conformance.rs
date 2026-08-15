@@ -217,6 +217,26 @@ pub async fn run_tenants(global: &dyn Ledger, a: &dyn Ledger, b: &dyn Ledger) {
     promote_stamps_the_handle_not_the_argument(a).await;
     workflow_scores_do_not_bleed_between_tenants(a, b).await;
     a_tenant_writing_does_not_move_the_global_score(global, a).await;
+    an_episode_id_alone_does_not_reach_another_tenants_attempts(a, b).await;
+}
+
+async fn an_episode_id_alone_does_not_reach_another_tenants_attempts(
+    a: &dyn Ledger,
+    b: &dyn Ledger,
+) {
+    // An episode id is opaque and a service may hand one straight through from
+    // a request path. Being keyed by episode is not isolation — guessing an id
+    // would be enough — so the rows carry the bucket too.
+    a.append(&row("ep-secret", 1, "authored:aaa"))
+        .await
+        .expect("append");
+    assert_eq!(a.rows("ep-secret").await.expect("rows").len(), 1);
+    assert!(
+        b.rows("ep-secret").await.expect("rows").is_empty(),
+        "tenant {:?} read tenant {:?}'s attempts by knowing the episode id",
+        b.scope(),
+        a.scope()
+    );
 }
 
 async fn a_tenants_lesson_is_invisible_to_another(a: &dyn Ledger, b: &dyn Ledger) {

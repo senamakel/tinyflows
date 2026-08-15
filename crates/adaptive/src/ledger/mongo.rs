@@ -231,6 +231,7 @@ impl Ledger for MongoLedger {
                 "at": &row.at,
                 "satisfied": row.satisfied,
                 "advanced": row.advanced,
+                "scope_key": self.bucket(),
                 "seq": seq,
             })
             .await?;
@@ -240,7 +241,7 @@ impl Ledger for MongoLedger {
     async fn rows(&self, episode: &str) -> Result<Vec<LedgerRow>> {
         let mut cursor = self
             .rows()
-            .find(doc! { "episode": episode })
+            .find(doc! { "episode": episode, "scope_key": self.bucket() })
             .sort(doc! { "seq": 1 })
             .await?;
         let mut out = Vec::new();
@@ -327,7 +328,7 @@ impl Ledger for MongoLedger {
         }
         let mut found = self
             .rows()
-            .find(doc! { "_id": { "$in": ids } })
+            .find(doc! { "_id": { "$in": ids }, "scope_key": self.bucket() })
             .sort(doc! { "seq": 1 })
             .await?;
         let mut out = Vec::new();

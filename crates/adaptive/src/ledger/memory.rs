@@ -41,8 +41,10 @@ use super::{Episode, Ledger, LedgerError, LedgerRow, Lesson, LessonKind, Result,
 #[derive(Default)]
 struct Inner {
     /// Append-only; the index is the sequence, so insertion order survives a
-    /// timestamp tie the way both durable backends guarantee.
-    rows: Vec<LedgerRow>,
+    /// timestamp tie the way both durable backends guarantee. Paired with the
+    /// bucket that wrote it, which is a column on the row in both durable
+    /// backends and has nowhere to live on `LedgerRow` itself.
+    rows: Vec<(String, LedgerRow)>,
     lessons: Vec<Lesson>,
     /// `(lesson_id, row_id)`, deduplicated on insert.
     evidence: Vec<(String, String)>,
@@ -108,20 +110,25 @@ impl Ledger for MemoryLedger {
     async fn append(&self, row: &LedgerRow) -> Result<String> {
         let mut inner = self.guard();
         let id = format!("ldg_{:08}", inner.rows.len() + 1);
-        inner.rows.push(LedgerRow {
-            id: id.clone(),
-            ..row.clone()
-        });
+        let bucket = self.bucket();
+        inner.rows.push((
+            bucket,
+            LedgerRow {
+                id: id.clone(),
+                ..row.clone()
+            },
+        ));
         Ok(id)
     }
 
     async fn rows(&self, episode: &str) -> Result<Vec<LedgerRow>> {
+        let bucket = self.bucket();
         Ok(self
             .guard()
             .rows
             .iter()
-            .filter(|r| r.episode == episode)
-            .cloned()
+            .filter(|(scope, r)| scope == &bucket && r.episode == episode)
+            .map(|(_, r)| r.clone())
             .collect())
     }
 
@@ -162,11 +169,12 @@ impl Ledger for MemoryLedger {
             .filter(|(lesson, _)| lesson == lesson_id)
             .map(|(_, row)| row.as_str())
             .collect();
+        let bucket = self.bucket();
         Ok(inner
             .rows
             .iter()
-            .filter(|r| cited.contains(&r.id.as_str()))
-            .cloned()
+            .filter(|(scope, r)| scope == &bucket && cited.contains(&r.id.as_str()))
+            .map(|(_, r)| r.clone())
             .collect())
     }
 
@@ -299,13 +307,20 @@ mod tests {
 
     #[tokio::test]
     async fn a_scoped_handle_shares_the_store_rather_than_copying_it() {
+        // Two handles for the SAME tenant must see each other's writes — that
+        // is what "shares" means. Probing it across scopes would now fail by
+        // design, because rows carry the bucket that wrote them.
         let store = MemoryLedger::new();
-        let tenant = store.for_tenant("user-a");
-        tenant
-            .append(&conformance::row("ep-shared", 1, "authored"))
+        let one = store.for_tenant("user-a");
+        let two = store.for_tenant("user-a");
+        one.append(&conformance::row("ep-shared", 1, "authored"))
             .await
             .expect("append");
-        assert_eq!(store.rows("ep-shared").await.expect("rows").len(), 1);
+        assert_eq!(two.rows("ep-shared").await.expect("rows").len(), 1);
+        assert!(
+            store.rows("ep-shared").await.expect("rows").is_empty(),
+            "and the global bucket is its own, not a union"
+        );
     }
 
     #[tokio::test]
