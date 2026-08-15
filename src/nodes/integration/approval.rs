@@ -351,7 +351,29 @@ impl NodeExecutor for ApprovalNode {
         // resume or a listed approval is the answer, and re-asking would put a
         // decided review back in front of the provider.
         let outcome = match delivered(&ctx, &request) {
-            Some(decision) => ApprovalOutcome::Decided(decision),
+            Some(decision) => {
+                // A provider may have a card open for this review from an
+                // earlier activation's `decide` call (it went `Pending`, or
+                // this run never asked because the answer already arrived some
+                // other way). Either way nobody is waiting on the provider's
+                // card any more, so withdraw it rather than leave a stale entry
+                // in the host's queue. Best-effort: the run has already decided
+                // what to do, and a failed withdrawal must not change that.
+                if let Some(provider) = ctx.caps.approvals.as_ref() {
+                    if let Err(err) = provider
+                        .cancel(&request.request_id, "resolved via resume")
+                        .await
+                    {
+                        tracing::warn!(
+                            node = %ctx.node.id,
+                            request = %request.request_id,
+                            error = %err,
+                            "withdrawing the provider's review after a resume decision failed"
+                        );
+                    }
+                }
+                ApprovalOutcome::Decided(decision)
+            }
             None => match ctx.caps.approvals.as_ref() {
                 Some(provider) => provider.decide(&request).await?,
                 // No provider: the node is a pause the host settles out of band
