@@ -48,10 +48,13 @@
 use async_trait::async_trait;
 use serde_json::{Value, json};
 
-use crate::caps::{ApprovalDecision, ApprovalOutcome, ApprovalRequest, ApprovalSubject};
+use crate::caps::{ApprovalOutcome, ApprovalRequest};
 use crate::data::Item;
 use crate::error::{EngineError, Result};
 use crate::nodes::{NodeContext, NodeExecutor, NodeOutput, resolve_config_traced};
+
+mod approval_request;
+use approval_request::{build_request, decided_item, decision_meta, delivered};
 
 /// Default gap between polls, in milliseconds. A second, not the `gate`'s 250ms:
 /// nothing a human does resolves faster than that.
