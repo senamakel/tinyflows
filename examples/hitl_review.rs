@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! Human review as a **step in the graph**: an `approval` node hands a URL to a
 //! host-implemented review surface, the run pauses while nobody has answered,
 //! and the branch it takes afterwards depends on what the human said.
