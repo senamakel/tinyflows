@@ -1,5 +1,5 @@
-use super::*;
 use super::approval_request::{decision_from_resume, names};
+use super::*;
 use serde_json::json;
 
 use crate::caps::ApprovalSubject;

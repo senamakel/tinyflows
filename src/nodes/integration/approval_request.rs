@@ -152,7 +152,10 @@ pub(super) fn decision_from_resume(
 
 /// The decision already in hand before the host is asked: a resume value, or
 /// this node's id on the run's approvals list.
-pub(super) fn delivered(ctx: &NodeContext<'_>, request: &ApprovalRequest) -> Option<ApprovalDecision> {
+pub(super) fn delivered(
+    ctx: &NodeContext<'_>,
+    request: &ApprovalRequest,
+) -> Option<ApprovalDecision> {
     if let Some(decision) = ctx
         .resume
         .as_ref()
