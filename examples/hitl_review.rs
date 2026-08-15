@@ -51,7 +51,10 @@ async fn main() {
 
     #[async_trait]
     impl ApprovalProvider for DeskReview {
-        async fn decide(&self, request: &ApprovalRequest) -> tinyflows::error::Result<ApprovalOutcome> {
+        async fn decide(
+            &self,
+            request: &ApprovalRequest,
+        ) -> tinyflows::error::Result<ApprovalOutcome> {
             let mut rows = self.rows.lock().expect("lock");
             // Create-or-fetch: the row is keyed on `request_id`, so the run
             // asking again after a resume finds THIS review rather than opening
@@ -161,7 +164,10 @@ async fn main() {
         .expect("resume");
     println!("--- after the human answers ---");
     println!("pending_approvals: {:?}", done.pending_approvals);
-    println!("review port:       {}", done.output["nodes"]["review"]["port"]);
+    println!(
+        "review port:       {}",
+        done.output["nodes"]["review"]["port"]
+    );
     println!(
         "published:         {}",
         done.output["nodes"]["publish"]["items"][0]["json"]["published"]
@@ -171,5 +177,7 @@ async fn main() {
 
 #[cfg(not(feature = "mock"))]
 fn main() {
-    eprintln!("this example needs the mock capabilities: cargo run --example hitl_review --features mock");
+    eprintln!(
+        "this example needs the mock capabilities: cargo run --example hitl_review --features mock"
+    );
 }

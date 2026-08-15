@@ -21,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `requires_approval` gate. Waits by suspending by default, with an optional
   bounded `wait_mode: "poll"`; `on_reject` (`route` / `error` / `drop`) and
   `on_timeout` (`error` / `reject` / `route`) decide what a "no" does.
+  Note for hosts that build `caps::Capabilities` with a struct literal: it gains
+  an `approvals: Option<Arc<dyn ApprovalProvider>>` field, so add
+  `approvals: None` (or a provider) to keep compiling.
 
 ### Changed
 
