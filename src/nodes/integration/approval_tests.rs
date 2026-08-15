@@ -528,7 +528,7 @@ fn a_decision_with_a_payload_edits_the_subject() {
 /// provider's queue keeps a stale entry for a review the run already closed.
 #[tokio::test]
 async fn a_resume_decision_withdraws_the_provider_card() {
-    let graph = wf(json!({ "wait_mode": "poll", "poll_interval_ms": 1, "max_polls": 5 }));
+    let graph = wf(json!({ "title": "Publish this?" }));
     let compiled = compile(&graph).expect("compile");
     let provider = std::sync::Arc::new(MockApprovals::pending());
     let caps = crate::caps::Capabilities {
