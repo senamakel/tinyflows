@@ -69,6 +69,39 @@ fn resume_reads_a_verdict_inline_or_nested() {
     );
 }
 
+/// An inline verdict object with no `node_id`/`request_id` is the documented
+/// single-interrupt shorthand and is accepted, matching the same tradeoff
+/// `engine::build::activation`'s bare `Value::Bool(true)` makes for `gate`.
+/// But one that names a *different* request must not be silently absorbed —
+/// several approval nodes can be interrupted in the same run, and a verdict
+/// addressed to one of them is not an answer for the others.
+#[test]
+fn an_inline_verdict_addressed_to_another_request_is_not_taken() {
+    let req = request("run-1:review");
+
+    let for_someone_else = decision_from_resume(
+        &json!({ "approved": true, "node_id": "other-review" }),
+        &req,
+    );
+    assert!(
+        for_someone_else.is_none(),
+        "a verdict explicitly naming a different node must not settle this review"
+    );
+
+    let for_someone_elses_request_id = decision_from_resume(
+        &json!({ "decision": { "approved": true, "request_id": "run-1:other" } }),
+        &req,
+    );
+    assert!(
+        for_someone_elses_request_id.is_none(),
+        "a verdict explicitly naming a different request_id must not settle this review"
+    );
+
+    let for_us = decision_from_resume(&json!({ "approved": true, "node_id": "review" }), &req)
+        .expect("a verdict naming this node's id is ours to take");
+    assert!(for_us.approved);
+}
+
 /// A review can be addressed by node id or by its own request id — a host that
 /// tracks reviews by request id must be able to resume with that.
 #[test]
