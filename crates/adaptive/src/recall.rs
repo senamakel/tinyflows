@@ -17,13 +17,25 @@
 
 use crate::ledger::{LedgerRow, Lesson, LessonKind};
 
-/// Lessons put in front of one planner, beyond the ones that always load.
+/// How many lessons a planner sees, beyond the kinds that always load.
 ///
-/// A cap because retrieval is not selection: with tens of lessons, everything
-/// in scope *is* the right answer, and with hundreds the ordering below is a
-/// placeholder for something better. What matters is that the seam exists, so
-/// swapping in real matching is one function body rather than a refactor.
-pub const RECALL_LIMIT: usize = 5;
+/// **Everything, and that is the right answer at this scale.** With tens of
+/// lessons in scope, every one of them is relevant to the planner reading them,
+/// and the ordering below is a placeholder for matching nobody has written yet.
+/// Capping on an unvalidated order does not select the best five, it discards
+/// four-fifths of what was learned on a guess.
+///
+/// It was five, and that was a bug rather than a trade: a lesson written
+/// moments ago has `applied == 0`, so its help rate is `0.0`, so it sorted
+/// level with lessons proven useless and was cut the moment five others had any
+/// success. Never shown, so never applied, so never able to earn a rate — the
+/// trap [`crate::promotion`] avoids by giving a variant its trials, with
+/// nothing here doing the same.
+///
+/// The seam stays because a host with hundreds of lessons has a real prompt-size
+/// problem: pass your own `k` to [`retrieve`], and the ordering below decides
+/// what survives.
+pub const RECALL_LIMIT: usize = usize::MAX;
 
 /// Kinds that load wholesale, exempt from [`RECALL_LIMIT`].
 ///
@@ -32,10 +44,29 @@ pub const RECALL_LIMIT: usize = 5;
 /// outranked it means proposing something already known to be impossible.
 const LOAD_ALL: [LessonKind; 1] = [LessonKind::Constraint];
 
+/// Where a lesson sorts, when only some of them can be shown.
+///
+/// Three bands rather than one number, because a rate cannot tell "has not been
+/// tried" from "has been tried and never helped" — both are `0.0`, and
+/// collapsing them means a cap silently prefers a known failure to an untested
+/// idea.
+fn band(lesson: &Lesson) -> u8 {
+    match (lesson.applied, lesson.helped) {
+        // Demonstrably useful at least once.
+        (a, h) if a > 0 && h > 0 => 0,
+        // Never put in front of a planner. Unjudged, not bad.
+        (0, _) => 1,
+        // Applied, and never once helped.
+        _ => 2,
+    }
+}
+
 /// Choose which lessons a planner sees.
 ///
-/// Ordered by help rate, ties by id so the answer is stable across calls — a
-/// planner that sees a different five each attempt cannot be reasoned about.
+/// Everything in scope by default — see [`RECALL_LIMIT`]. The order matters
+/// only when a host passes a smaller `k`, and then it is by band first (useful,
+/// untried, useless), rate within the first band, and id to break ties so a
+/// planner does not see a different set each attempt.
 #[must_use]
 pub fn retrieve(lessons: Vec<Lesson>, kind: Option<LessonKind>, k: usize) -> Vec<Lesson> {
     let mut pool: Vec<Lesson> = lessons
@@ -43,8 +74,9 @@ pub fn retrieve(lessons: Vec<Lesson>, kind: Option<LessonKind>, k: usize) -> Vec
         .filter(|lesson| kind.is_none_or(|want| lesson.kind == want))
         .collect();
     pool.sort_by(|a, b| {
-        b.help_rate()
-            .total_cmp(&a.help_rate())
+        band(a)
+            .cmp(&band(b))
+            .then_with(|| b.help_rate().total_cmp(&a.help_rate()))
             .then_with(|| a.id.cmp(&b.id))
     });
 
@@ -141,6 +173,41 @@ mod tests {
             satisfied: false,
             advanced: false,
         }
+    }
+
+    #[test]
+    fn everything_in_scope_reaches_the_planner_by_default() {
+        // The default is not a selection. With tens of lessons every one is
+        // relevant, and cutting on an unvalidated order discards what was
+        // learned on a guess.
+        let pool: Vec<Lesson> = (0..20)
+            .map(|n| lesson(&format!("l{n}"), LessonKind::Strategy, 10, 10))
+            .collect();
+        assert_eq!(retrieve(pool, None, RECALL_LIMIT).len(), 20);
+    }
+
+    #[test]
+    fn a_brand_new_lesson_is_not_cut_before_a_useless_one() {
+        // The bug the default hid. A lesson written moments ago has no rate, so
+        // it sorted level with lessons proven useless and was dropped first —
+        // never shown, so never applied, so never able to earn a rate.
+        let pool = vec![
+            lesson("useless", LessonKind::Strategy, 9, 0),
+            lesson("brand-new", LessonKind::Strategy, 0, 0),
+        ];
+        let got = retrieve(pool, None, 1);
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].id, "brand-new", "untried outranks proven useless");
+    }
+
+    #[test]
+    fn a_lesson_that_has_helped_still_outranks_an_untried_one() {
+        let pool = vec![
+            lesson("untried", LessonKind::Strategy, 0, 0),
+            lesson("works", LessonKind::Strategy, 4, 3),
+        ];
+        let got = retrieve(pool, None, 1);
+        assert_eq!(got[0].id, "works");
     }
 
     #[test]
