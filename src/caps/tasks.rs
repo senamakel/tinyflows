@@ -176,29 +176,7 @@ impl TaskRunner for TokioTaskRunner {
         // for, and a host that wants real execution implements `TaskRunner`
         // against its own stack. Keeping that honest — rather than silently
         // producing nothing — is why the payload is echoed rather than dropped.
-        if *crate::TF_DEBUG {
-            eprintln!(
-                "SPAWN ticket={ticket} thread={:?} t_us={} rt_id={:?}",
-                std::thread::current().id(),
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_micros())
-                    .unwrap_or(0),
-                tokio::runtime::Handle::current().id(),
-            );
-        }
-        let debug_ticket = ticket.clone();
         let handle = tokio::spawn(async move {
-            if *crate::TF_DEBUG {
-                eprintln!(
-                    "TASKRUN ticket={debug_ticket} thread={:?} t_us={}",
-                    std::thread::current().id(),
-                    std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map(|d| d.as_micros())
-                        .unwrap_or(0),
-                );
-            }
             *state.lock().expect("task state poisoned") = TaskState::Running;
             let result = match spec {
                 TaskSpec::Workflow { graph, input } => {
