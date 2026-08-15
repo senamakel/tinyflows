@@ -454,9 +454,10 @@ pub fn validate_all(graph: &WorkflowGraph) -> Vec<ValidationError> {
         // with no error anywhere. An empty array reaches the same audience of
         // nobody just as silently, so it is refused for the same reason.
         if let Some(assignees) = node.config.get("assignees") {
-            if !assignees.as_array().is_some_and(|values| {
-                !values.is_empty() && values.iter().all(Value::is_string)
-            }) {
+            if !assignees
+                .as_array()
+                .is_some_and(|values| !values.is_empty() && values.iter().all(Value::is_string))
+            {
                 errors.push(ValidationError::InvalidNodeConfig {
                     node: node.id.clone(),
                     reason: "approval node `assignees` must be a non-empty array of strings (a \
