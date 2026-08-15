@@ -2,6 +2,9 @@ use super::super::*;
 
 const BACKOFF_POLL_MS: u64 = 25;
 
+pub(crate) static TF_DEBUG: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var("TF_GATE_DEBUG").is_ok());
+
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn finish_execution<F>(
     output: Option<crate::nodes::NodeOutput>,
