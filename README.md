@@ -73,6 +73,11 @@ Rust 2024 · MSRV 1.85 · `#![forbid(unsafe_code)]` · GPL-3.0-or-later.
   approves and continues. A host can also drive durable, cross-process resume by
   injecting a `Checkpointer` via `engine::run_with_checkpointer` /
   `resume_with_checkpointer`.
+- Human review as a graph step: an `approval` node carries what is being
+  reviewed (a URL, a draft, any payload), reaches the human through the
+  host-implemented `caps::ApprovalProvider`, and routes the verdict — reviewer,
+  comment, any edit they made — on its `approved` / `rejected` ports. With no
+  provider injected it degrades to the pause-and-resume gate above.
 - Observability via `tracing` plus a `RunObserver` hook and `Run` /
   `ExecutionStep` records.
 
@@ -192,6 +197,7 @@ cargo run --example <name> --features mock
 | `capability_pipeline` | A linear `http_request → code → agent → tool_call` pipeline through the host capability traits (mocked).                              |
 | `error_handling`      | Per-node `retry` plus `on_error: "route"` recovering a failing node via its `error` port.                                             |
 | `hitl_approval`       | A `requires_approval` gate pauses the run (`pending_approvals`), then `run_resumable(...).resume(...)` continues from the checkpoint. |
+| `hitl_review`         | An `approval` node against a host-implemented `ApprovalProvider`: the run suspends, a "human" approves with an edit, and the resume takes the `approved` branch. |
 | `jq_expressions`      | The jaq-backed jq engine in a `transform` node (e.g. `=.item.prices                                                                   | add`). |
 
 Omitting `--features mock` is harmless: the demo body is
@@ -221,7 +227,8 @@ Run all of them in one go:
 
 ```sh
 for ex in hello_workflow conditional_branch parallel_and_merge \
-          capability_pipeline error_handling hitl_approval jq_expressions; do
+          capability_pipeline error_handling hitl_approval hitl_review \
+          jq_expressions; do
   cargo run --example "$ex" --features mock
 done
 ```
