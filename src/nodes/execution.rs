@@ -336,6 +336,7 @@ pub(crate) fn executor_for(kind: &NodeKind) -> Box<dyn NodeExecutor> {
         NodeKind::Gather => Box::new(control_flow::GatherNode),
         NodeKind::Spawn => Box::new(integration::SpawnNode),
         NodeKind::Gate => Box::new(integration::GateNode),
+        NodeKind::Approval => Box::new(integration::ApprovalNode),
         NodeKind::Loop => Box::new(control_flow::LoopNode),
     }
 }

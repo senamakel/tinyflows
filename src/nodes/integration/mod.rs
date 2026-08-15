@@ -5,6 +5,7 @@
 //! One module per node kind so parallel work can edit them without conflicts.
 
 pub mod agent;
+pub(crate) mod approval;
 pub(crate) mod agent_request;
 pub mod code;
 pub(crate) mod envelope;
@@ -19,6 +20,7 @@ pub mod sub_workflow;
 pub mod tool_call;
 
 pub use agent::AgentNode;
+pub use approval::ApprovalNode;
 pub use code::CodeNode;
 pub use gate::GateNode;
 pub use http_request::HttpRequestNode;
