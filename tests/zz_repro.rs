@@ -115,6 +115,22 @@ fn repro_resume_determinism() {
                         Some(first) => {
                             if first != &resumed {
                                 diverged += 1;
+                                let a = first["nodes"].as_object().cloned().unwrap_or_default();
+                                let b = resumed["nodes"].as_object().cloned().unwrap_or_default();
+                                for (id, slot) in &a {
+                                    let other = b.get(id);
+                                    if other != Some(slot) {
+                                        println!(
+                                            "  node {id}:\n    A = {slot}\n    B = {}",
+                                            other.cloned().unwrap_or(Value::Null)
+                                        );
+                                    }
+                                }
+                                for (id, slot) in &b {
+                                    if !a.contains_key(id) {
+                                        println!("  node {id} only in B: {slot}");
+                                    }
+                                }
                             }
                         }
                     }
