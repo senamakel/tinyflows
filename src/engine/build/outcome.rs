@@ -88,35 +88,10 @@ where
                                 return Ok(NodeResult::Update(items_update(&node.id, &[], None)?));
                             }
                             let slice = remaining.min(BACKOFF_POLL_MS);
-                            let mut delay =
-                                futures_timer::Delay::new(std::time::Duration::from_millis(slice));
-                            let mut yielded = false;
-                            std::future::poll_fn(|cx| {
-                                if yielded {
-                                    return std::task::Poll::Ready(());
-                                }
-                                yielded = true;
-                                cx.waker().wake_by_ref();
-                                std::task::Poll::Pending
-                            })
-                            .await;
-                            let mut polls = 0usize;
-                            std::future::poll_fn(|cx| {
-                                polls += 1;
-                                std::pin::Pin::new(&mut delay).poll(cx)
-                            })
-                            .await;
-                            if polls == 1 && *crate::TF_DEBUG {
-                                eprintln!(
-                                    "DELAY-NO-YIELD node={} thread={:?} t_us={}",
-                                    node.id,
-                                    std::thread::current().id(),
-                                    std::time::SystemTime::now()
-                                        .duration_since(std::time::UNIX_EPOCH)
-                                        .map(|d| d.as_micros())
-                                        .unwrap_or(0),
-                                );
-                            }
+                            // Always yields, so the tasks this node is polling
+                            // for get a turn before it looks again — see
+                            // `super::backoff`.
+                            super::backoff::wait_slice(slice).await;
                             remaining -= slice;
                         }
                     }
