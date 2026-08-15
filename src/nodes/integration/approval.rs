@@ -340,7 +340,7 @@ fn decision_meta(decision: &ApprovalDecision, request: &ApprovalRequest) -> Valu
 impl NodeExecutor for ApprovalNode {
     async fn execute(&self, ctx: NodeContext<'_>) -> Result<NodeOutput> {
         let (config, diagnostics) = resolve_config_traced(&ctx);
-        let request = build_request(&ctx, &config);
+        let request = build_request(&ctx, &config)?;
         let input = ctx
             .input
             .first()
