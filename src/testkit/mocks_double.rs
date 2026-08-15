@@ -347,8 +347,12 @@ impl ApprovalProvider for Double {
             )
             .await?;
         // A programmed answer may be the whole verdict or just the bit the test
-        // cares about, as with `ShellRunner` above.
-        if value.get("status").and_then(Value::as_str) == Some("pending") {
+        // cares about, as with `ShellRunner` above — including the bare string
+        // `"pending"` `on_approval`'s own doc comment advertises as shorthand
+        // for "nobody has got to this review yet".
+        let is_pending = value.as_str() == Some("pending")
+            || value.get("status").and_then(Value::as_str) == Some("pending");
+        if is_pending {
             return Ok(ApprovalOutcome::Pending);
         }
         Ok(ApprovalOutcome::Decided(ApprovalDecision {
