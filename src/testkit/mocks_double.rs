@@ -5,8 +5,7 @@
 //! Split out of `mocks.rs` to keep that file under the repository's
 //! line-length limit.
 
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use serde_json::{Value, json};
