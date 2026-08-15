@@ -17,6 +17,7 @@ use crate::caps::{
 use crate::error::{EngineError, Result};
 use crate::model::WorkflowGraph;
 
+#[path = "mock_approvals.rs"]
 mod mock_approvals;
 pub use mock_approvals::MockApprovals;
 
