@@ -2,6 +2,7 @@ use super::*;
 use super::approval_request::{decision_from_resume, names};
 use serde_json::json;
 
+use crate::caps::ApprovalSubject;
 use crate::caps::mock::{MockApprovals, mock_capabilities, mock_capabilities_with_approvals};
 use crate::compiler::compile;
 use crate::engine::{RunInput, resume, run};
