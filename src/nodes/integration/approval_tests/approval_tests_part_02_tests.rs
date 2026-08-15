@@ -14,6 +14,22 @@ async fn a_missing_request_id_and_run_id_is_a_configuration_error() {
     assert!(message.contains("request_id"), "got {message}");
 }
 
+/// `validate::validate_all` only sees the config as authored — a
+/// one-element `assignees` array of `=`-bindings passes it. If every binding
+/// resolves to something that is not a string (here: a field the trigger
+/// input never set, so the binding reads `null`), the array a real review
+/// would be routed to is empty at execution time, and that is refused too.
+#[tokio::test]
+async fn assignees_resolving_to_no_strings_at_runtime_is_a_configuration_error() {
+    let graph = wf(json!({ "assignees": ["=item.missing_reviewer"] }));
+    let compiled = compile(&graph).expect("compile");
+    let err = run(&compiled, json!({}), &mock_capabilities())
+        .await
+        .expect_err("assignees resolving to zero strings must be refused");
+    let message = err.to_string();
+    assert!(message.contains("assignees"), "got {message}");
+}
+
 /// With a run-scoped id available (`trigger.run_id`, in the shape
 /// `run.trigger.run_id` a host's trigger payload takes), the node derives a
 /// stable `"<run id>:<node id>"` request id without needing an explicit
