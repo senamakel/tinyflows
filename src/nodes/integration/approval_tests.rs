@@ -1,4 +1,5 @@
 use super::*;
+use super::approval_request::{decision_from_resume, names};
 use serde_json::json;
 
 use crate::caps::mock::{MockApprovals, mock_capabilities, mock_capabilities_with_approvals};
