@@ -300,7 +300,8 @@ impl StateStore for Double {
     }
 
     async fn store(&self, key: &str, value: Value) -> Result<()> {
-        self.state
+        self.mocks
+            .state
             .lock()
             .expect("mock state poisoned")
             .insert(key.to_string(), value.clone());
