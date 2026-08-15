@@ -67,7 +67,8 @@ pub(super) fn build_request(ctx: &NodeContext<'_>, config: &Value) -> Result<App
             None => {
                 return Err(EngineError::Capability(format!(
                     "approval node {:?}: no `request_id` configured and no run-scoped identity \
-                     available (expected `run.id`, `run.run_id`, or `run.trigger.run_id`); set \
+                     available (expected `run.id` or `run.run_id`, which a host seeds outside the \
+                     caller-supplied trigger payload); set \
                      `config.request_id` explicitly or seed a run id, otherwise later runs could \
                      reuse an earlier run's decision",
                     ctx.node.id
