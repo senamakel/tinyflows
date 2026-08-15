@@ -155,11 +155,11 @@ pub(super) fn decision_from_resume(
         .get("node_id")
         .or_else(|| verdict.get("request_id"))
         .and_then(Value::as_str)
-        && named != request.node_id
-        && named != request.request_id
     {
-        // Explicitly addressed to a different node's review; not ours to take.
-        return None;
+        if named != request.node_id && named != request.request_id {
+            // Explicitly addressed to a different node's review; not ours to take.
+            return None;
+        }
     }
     let approved = verdict.get("approved").and_then(Value::as_bool)?;
     Some(ApprovalDecision {
