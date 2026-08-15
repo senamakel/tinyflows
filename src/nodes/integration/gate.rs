@@ -239,33 +239,35 @@ impl NodeExecutor for GateNode {
         let decision = policy.evaluate(results.len(), expected, budget_spent);
 
         if std::env::var("TF_GATE_DEBUG").is_ok() {
+            let mut states = Vec::new();
+            if let Some(runner) = ctx.caps.tasks.as_ref() {
+                for item in &awaiting {
+                    if let Some(ticket) = item.ticket.as_ref() {
+                        let state = runner.poll(ticket).await?;
+                        states.push(match state {
+                            TaskState::Pending => "pending",
+                            TaskState::Running => "running",
+                            TaskState::Done(_) => "done",
+                            TaskState::Failed(_) => "failed",
+                        });
+                    }
+                }
+            }
             eprintln!(
-                "GATE {:?} thread={:?} step={} polls_in={} expected={} arrived={} decision={:?} \
-                 tickets={:?} from_slots={:?}",
+                "GATE {:?} thread={:?} t_us={} step={} polls_in={} expected={} arrived={} \
+                 decision={:?} states={:?}",
                 ctx.node.id,
                 std::thread::current().id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_micros())
+                    .unwrap_or(0),
                 ctx.step,
                 polls,
                 expected,
                 results.len(),
                 decision,
-                awaiting.iter().map(|a| a.ticket.clone()).collect::<Vec<_>>(),
-                ctx.node
-                    .config
-                    .get("from")
-                    .and_then(Value::as_array)
-                    .map(|from| from
-                        .iter()
-                        .filter_map(Value::as_str)
-                        .map(|s| (
-                            s.to_string(),
-                            ctx.nodes
-                                .get(s)
-                                .and_then(|slot| slot.get("items"))
-                                .and_then(Value::as_array)
-                                .map(Vec::len)
-                        ))
-                        .collect::<Vec<_>>())
+                states,
             );
         }
 
