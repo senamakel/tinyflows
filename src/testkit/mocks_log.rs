@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::{capability, glob_matches};
+use super::glob_matches;
 
 /// How one capability call ended.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
