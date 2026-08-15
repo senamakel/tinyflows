@@ -384,7 +384,14 @@ async fn smoke_scatter_gather() {
 async fn smoke_approval() {
     smoke_single_node(
         NodeKind::Approval,
-        json!({ "title": "Ship it?", "subject_kind": "url", "subject": "=item.url" }),
+        json!({
+            "title": "Ship it?",
+            "subject_kind": "url",
+            "subject": "=item.url",
+            // `request_id` (or a run-scoped id) is required: without one, the
+            // node refuses to guess an identity a later run could collide on.
+            "request_id": "smoke-approval",
+        }),
         json!({ "url": "https://example.com/preview" }),
     )
     .await;
