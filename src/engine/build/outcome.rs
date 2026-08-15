@@ -99,7 +99,7 @@ where
                                 std::pin::Pin::new(&mut delay).poll(cx)
                             })
                             .await;
-                            if std::env::var("TF_GATE_DEBUG").is_ok() && polls == 1 {
+                            if polls == 1 && *TF_DEBUG {
                                 eprintln!(
                                     "DELAY-NO-YIELD node={} thread={:?} t_us={}",
                                     node.id,
