@@ -230,9 +230,11 @@ impl Loop<'_> {
         if closed.verdict.satisfied {
             return;
         }
+        // Whatever ran is the parent of the next repair — including a variant,
+        // which makes a second generation. `Ledger::lineage` walks to the root,
+        // so a grandchild is still compared inside one family.
         let parent = match approach {
             Approach::Selected { workflow_id, .. } => workflow_id,
-            Approach::Variant { parent_id, .. } => parent_id,
             // Nothing to repair: an authored graph was written for this goal
             // and the next attempt writes another, seeing why this one fell
             // short. A variant of a one-off is a stored procedure nobody asked

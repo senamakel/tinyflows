@@ -94,8 +94,10 @@ pub async fn close(
     // Recorded before anything is decided, and whatever the verdict. A failed
     // attempt nobody wrote down is one the next attempt repeats.
     let workflow_id = match approach {
+        // The id that ran, which for a repaired graph is the variant's own —
+        // scoring its parent instead would leave the two indistinguishable and
+        // the promotion gate with nothing to compare.
         Approach::Selected { workflow_id, .. } => Some(workflow_id.clone()),
-        Approach::Variant { parent_id, .. } => Some(parent_id.clone()),
         Approach::Authored { .. } => None,
     };
     let row_id = ledger
@@ -171,9 +173,7 @@ fn decide_next(verdict: &Verdict, attempt: u32, stalled: u32, budget: &Budget) -
 
 fn why(approach: &Approach) -> String {
     match approach {
-        Approach::Selected { why, .. }
-        | Approach::Authored { why, .. }
-        | Approach::Variant { why, .. } => why.clone(),
+        Approach::Selected { why, .. } | Approach::Authored { why, .. } => why.clone(),
     }
 }
 

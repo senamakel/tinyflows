@@ -230,8 +230,16 @@ impl Goal {
 
 /// How the loop decided to attempt a goal this time.
 ///
-/// Exactly three, and the third is what makes this a loop rather than a router:
-/// when no stored procedure fits, one is written.
+/// Two, and the second is what makes this a loop rather than a router: when no
+/// stored procedure fits, one is written.
+///
+/// There is deliberately no `Variant` arm. A repaired graph is saved to the
+/// store as a workflow in its own right, so the attempt that runs it is a
+/// [`Selected`](Self::Selected) of *that* id — which is what the score has to
+/// land on. A third arm naming the parent would score the parent for a run the
+/// variant did, leaving the two indistinguishable and the promotion gate with
+/// nothing to compare. What makes it a variant is the lineage in the ledger,
+/// not the shape of this enum.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum Approach {
@@ -257,15 +265,6 @@ pub enum Approach {
         /// and makes an identical re-author visible as the repeat it is.
         fingerprint: String,
     },
-    /// A stored workflow was the right idea and the wrong graph, so a variant
-    /// of it was proposed. Never an edit in place — the parent is untouched
-    /// and the variant is a draft nothing else can select.
-    Variant {
-        /// The workflow this varies, left untouched.
-        parent_id: String,
-        /// What was wrong with the parent graph.
-        why: String,
-    },
 }
 
 impl Approach {
@@ -279,7 +278,6 @@ impl Approach {
         match self {
             Self::Selected { workflow_id, .. } => format!("selected:{workflow_id}"),
             Self::Authored { fingerprint, .. } => format!("authored:{fingerprint}"),
-            Self::Variant { parent_id, .. } => format!("variant:{parent_id}"),
         }
     }
 }
