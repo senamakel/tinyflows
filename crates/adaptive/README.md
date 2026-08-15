@@ -238,13 +238,27 @@ snapshot before the loop and flush after.
 ## Choosing a ledger backend
 
 ```toml
+tinyflows-adaptive = "0.1"                                        # MemoryLedger only
 tinyflows-adaptive = { version = "0.1", features = ["sqlite"] }   # single process
 tinyflows-adaptive = { version = "0.1", features = ["mongo"] }    # hosted
 ```
 
-Neither is compiled unless asked for. Both pass the same
-[`ledger::conformance`] suite, which is public — a host writing a third backend
-runs the identical cases against it.
+Three implementations, all checked by the same public
+[`ledger::conformance`] suite — so "it works on sqlite" cannot quietly mean "it
+works only on sqlite", and a host writing a fourth runs the identical cases.
+
+`MemoryLedger` is always compiled: no feature, no driver, no C library, so the
+crate is usable the moment it is added. It **forgets everything on restart**,
+and it is deliberately never selected for you.
+
+That last part is the design decision, not an oversight. A ledger silently
+defaulting to memory is the worst failure this crate could have: the loop runs,
+the exclusion list works within an episode, lessons are written and scored, the
+tests pass — and every restart throws all of it away. Nobody notices, because
+the only symptom is that it never gets better. So there is no `Default` impl
+that would hand it to a host that did not ask, it is named for what it does, and
+`sqlite` or `mongo` is the answer the moment learning is supposed to outlive a
+process.
 
 Workflow scores live here, not on `WorkflowRecord`: a score is a fact that spans
 runs, and the engine's record is a fact about one document.

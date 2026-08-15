@@ -273,7 +273,7 @@ mod tests {
         // A service that retries a create must not reset a goal four attempts
         // in — the rows would stay and the counters would not, which reads as
         // progress that never happened.
-        let ledger = crate::ledger::sqlite::SqliteLedger::in_memory().expect("ledger");
+        let ledger = crate::ledger::memory::MemoryLedger::new();
         let goal = Goal::new("write the weekly report");
 
         let mut record = Episode {
@@ -309,7 +309,7 @@ mod tests {
 
     #[tokio::test]
     async fn only_running_episodes_are_offered_for_recovery() {
-        let ledger = crate::ledger::sqlite::SqliteLedger::in_memory().expect("ledger");
+        let ledger = crate::ledger::memory::MemoryLedger::new();
         for (id, status) in [
             ("ep-live", EpisodeStatus::Running),
             ("ep-done", EpisodeStatus::Satisfied),
@@ -343,7 +343,7 @@ mod tests {
     async fn an_episode_round_trips_its_goal_and_its_reason_for_stopping() {
         // Both are unrecoverable from the rows, which is the whole test for
         // what belongs on the record.
-        let ledger = crate::ledger::sqlite::SqliteLedger::in_memory().expect("ledger");
+        let ledger = crate::ledger::memory::MemoryLedger::new();
         let mut goal = Goal::new("write the weekly report");
         goal.success_criteria = "cites the actual figures".into();
 
@@ -373,7 +373,7 @@ mod tests {
 
     #[tokio::test]
     async fn one_tenants_episodes_are_invisible_to_another() {
-        let ledger = crate::ledger::sqlite::SqliteLedger::in_memory().expect("ledger");
+        let ledger = crate::ledger::memory::MemoryLedger::new();
         let a = ledger.for_tenant("user-a");
         let b = ledger.for_tenant("user-b");
         a.save_episode(&Episode {

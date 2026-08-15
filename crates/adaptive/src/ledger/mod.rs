@@ -11,14 +11,21 @@
 //! rests on — *the engine may know about one run, anything that spans runs is
 //! ours* — is worth having in the type system rather than in a document.
 //!
-//! Two backends ship, behind features, because the choice is the host's:
-//! [`sqlite`] for a single-process deployment and [`mongo`] for a hosted one.
-//! Both are checked by the same conformance suite ([`conformance`]), so
-//! "it works on sqlite" cannot quietly mean "it works only on sqlite".
+//! Three implementations ship. [`sqlite`] and [`mongo`] are behind features,
+//! because the choice is the host's and a deployment that wants one should not
+//! build the other's driver. [`memory`] is always compiled, needs no driver,
+//! and **forgets everything on restart** — it exists so the crate is usable the
+//! moment it is added, and it is never selected for you.
+//!
+//! All three are checked by the same conformance suite ([`conformance`]), so
+//! "it works on sqlite" cannot quietly mean "it works only on sqlite" — and so
+//! a host writing a fourth backend has a std-only reference implementation
+//! checked by the cases theirs will be.
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
+pub mod memory;
 #[cfg(feature = "mongo")]
 pub mod mongo;
 #[cfg(feature = "sqlite")]

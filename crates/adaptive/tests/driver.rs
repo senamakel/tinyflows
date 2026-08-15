@@ -18,7 +18,7 @@ use tinyflows_adaptive::contracts::Goal;
 use tinyflows_adaptive::driver::{Clock, Loop};
 use tinyflows_adaptive::execute::{Local, Unobserved};
 use tinyflows_adaptive::host::HostFacts;
-use tinyflows_adaptive::ledger::{EpisodeStatus, Ledger, sqlite::SqliteLedger};
+use tinyflows_adaptive::ledger::{EpisodeStatus, Ledger, memory::MemoryLedger};
 
 struct Frozen;
 impl Clock for Frozen {
@@ -135,7 +135,7 @@ async fn one_instance_drives_two_goal_runs_with_independent_counters() {
     // two episodes interleaved through it cannot contaminate each other.
     let llm = authoring();
     let caps = caps_with(llm);
-    let ledger = SqliteLedger::in_memory().expect("ledger");
+    let ledger = MemoryLedger::new();
     let store = store("two");
     let runner = Local {
         caps: &caps,
@@ -173,7 +173,7 @@ async fn a_second_instance_picks_up_an_episode_the_first_one_started() {
     // Kill the process mid-episode. Everything the loop needs is in the ledger,
     // so a fresh instance continues the numbering rather than starting over
     // with a trail that says it has already tried twice.
-    let ledger = SqliteLedger::in_memory().expect("ledger");
+    let ledger = MemoryLedger::new();
     let store = store("resume");
     let goal = Goal::new("write the weekly report");
 
@@ -246,7 +246,7 @@ async fn every_inference_request_says_which_job_is_asking() {
     // models, which is the whole point of the tier.
     let llm = authoring();
     let caps = caps_with(llm.clone());
-    let ledger = SqliteLedger::in_memory().expect("ledger");
+    let ledger = MemoryLedger::new();
     let store = store("tiers");
     let runner = Local {
         caps: &caps,
@@ -281,7 +281,7 @@ async fn a_run_drives_to_a_stand_down_and_consolidates_once() {
     // own alongside the one `close` already applies.
     let llm = authoring();
     let caps = caps_with(llm.clone());
-    let ledger = SqliteLedger::in_memory().expect("ledger");
+    let ledger = MemoryLedger::new();
     let store = store("drive");
     let runner = Local {
         caps: &caps,

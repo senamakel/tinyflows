@@ -17,7 +17,7 @@ use tinyflows::engine::RunOutcome;
 use tinyflows::error::Result as EngineResult;
 use tinyflows_adaptive::closing::{Evidence, Next, close, consolidate};
 use tinyflows_adaptive::contracts::{Approach, Blocker, Budget, Goal};
-use tinyflows_adaptive::ledger::{Ledger, LessonKind, sqlite::SqliteLedger};
+use tinyflows_adaptive::ledger::{Ledger, LessonKind, memory::MemoryLedger};
 
 /// A provider that answers from a script and counts what it was asked.
 struct Scripted {
@@ -101,7 +101,7 @@ async fn a_failed_attempt_is_still_recorded_and_still_scored() {
         "gap": "the report has no numbers in it",
         "advanced": true
     })]);
-    let ledger = SqliteLedger::in_memory().expect("ledger");
+    let ledger = MemoryLedger::new();
     let diagnosis = Diagnosis::default();
     let outcome = completed(json!({"nodes": {"write": {"ok": true}}}));
 
@@ -146,7 +146,7 @@ async fn a_failed_attempt_is_still_recorded_and_still_scored() {
 #[tokio::test]
 async fn a_satisfied_attempt_moves_both_halves_of_the_score() {
     let llm = Scripted::new(vec![json!({"satisfied": true, "gap": ""})]);
-    let ledger = SqliteLedger::in_memory().expect("ledger");
+    let ledger = MemoryLedger::new();
     let diagnosis = Diagnosis::default();
     let outcome = completed(json!({"nodes": {"write": {"ok": true}}}));
 
@@ -181,7 +181,7 @@ async fn a_run_where_nothing_happened_never_reaches_the_model() {
     // asks anything at all, `Scripted` panics and this test fails.
     let llm = Scripted::new(Vec::new());
     let caps = caps_with(llm.clone());
-    let ledger = SqliteLedger::in_memory().expect("ledger");
+    let ledger = MemoryLedger::new();
     let diagnosis = Diagnosis {
         never_ran: vec![NeverRan {
             node_id: "write".into(),
@@ -226,7 +226,7 @@ async fn a_run_where_nothing_happened_never_reaches_the_model() {
 async fn a_parked_approval_is_not_a_failure() {
     let llm = Scripted::new(Vec::new());
     let caps = caps_with(llm.clone());
-    let ledger = SqliteLedger::in_memory().expect("ledger");
+    let ledger = MemoryLedger::new();
     let diagnosis = Diagnosis::default();
     let outcome = RunOutcome {
         output: json!({"nodes": {"draft": {"ok": true}}}),
@@ -268,7 +268,7 @@ async fn two_flat_attempts_in_a_row_stand_down_on_the_stall_rule() {
         json!({"satisfied": false, "blocker": "goal_not_met", "gap": "same as before", "advanced": false}),
     ]);
     let caps = caps_with(llm);
-    let ledger = SqliteLedger::in_memory().expect("ledger");
+    let ledger = MemoryLedger::new();
     let diagnosis = Diagnosis::default();
     let outcome = completed(json!({"nodes": {"write": {}}}));
     let budget = Budget::default();
@@ -316,7 +316,7 @@ async fn two_flat_attempts_in_a_row_stand_down_on_the_stall_rule() {
 
 #[tokio::test]
 async fn consolidation_keeps_a_lesson_and_cites_the_rows_behind_it() {
-    let ledger = SqliteLedger::in_memory().expect("ledger");
+    let ledger = MemoryLedger::new();
     for (attempt, sig) in [(1u32, "sig-a"), (2, "sig-b")] {
         ledger
             .append(&tinyflows_adaptive::ledger::LedgerRow {
@@ -377,7 +377,7 @@ async fn consolidation_keeps_a_lesson_and_cites_the_rows_behind_it() {
 async fn a_lesson_with_nothing_behind_it_is_not_kept() {
     // A claim with no rows cited is a guess, and a guess in the knowledge store
     // is worse than nothing: it will be retrieved and believed.
-    let ledger = SqliteLedger::in_memory().expect("ledger");
+    let ledger = MemoryLedger::new();
     ledger
         .append(&tinyflows_adaptive::ledger::LedgerRow {
             id: String::new(),
@@ -422,7 +422,7 @@ async fn a_lesson_with_nothing_behind_it_is_not_kept() {
 async fn consolidation_failing_does_not_fail_the_episode() {
     // It runs after the outcome is settled. A provider hiccup keeps nothing and
     // leaves the real result standing — note the signature has no `Result`.
-    let ledger = SqliteLedger::in_memory().expect("ledger");
+    let ledger = MemoryLedger::new();
     ledger
         .append(&tinyflows_adaptive::ledger::LedgerRow {
             id: String::new(),
@@ -459,7 +459,7 @@ async fn consolidation_failing_does_not_fail_the_episode() {
 async fn an_episode_with_no_attempts_asks_nothing() {
     let llm = Scripted::new(Vec::new());
     let caps = caps_with(llm.clone());
-    let ledger = SqliteLedger::in_memory().expect("ledger");
+    let ledger = MemoryLedger::new();
     let kept = consolidate(
         &Goal::new("anything"),
         "ep-none",

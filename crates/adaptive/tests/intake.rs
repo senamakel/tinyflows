@@ -19,7 +19,7 @@ use tinyflows::store::{FileWorkflowStore, WorkflowStore};
 use tinyflows_adaptive::contracts::{Approach, Goal};
 use tinyflows_adaptive::host::HostFacts;
 use tinyflows_adaptive::intake::decide;
-use tinyflows_adaptive::ledger::{Ledger, sqlite::SqliteLedger};
+use tinyflows_adaptive::ledger::{Ledger, memory::MemoryLedger};
 
 /// A provider that answers from a script and records what it was asked.
 struct Scripted {
@@ -142,7 +142,7 @@ async fn an_empty_store_authors_without_asking_whether_to_select() {
     })]));
     let caps = caps_with(llm.clone());
     let (store, _root) = empty_store("1");
-    let ledger = SqliteLedger::in_memory().expect("ledger");
+    let ledger = MemoryLedger::new();
 
     let attempt = decide(
         &Goal::new("do a new thing"),
@@ -180,7 +180,7 @@ async fn a_matching_workflow_is_selected_and_its_graph_is_loaded() {
     store
         .save(&stored("pr-review", "reviews a closed issue", None))
         .expect("save");
-    let ledger = SqliteLedger::in_memory().expect("ledger");
+    let ledger = MemoryLedger::new();
 
     let attempt = decide(
         &Goal::new("review a closed issue"),
@@ -219,7 +219,7 @@ async fn declining_falls_through_to_authoring() {
     store
         .save(&stored("unrelated", "does something else", None))
         .expect("save");
-    let ledger = SqliteLedger::in_memory().expect("ledger");
+    let ledger = MemoryLedger::new();
 
     let attempt = decide(
         &Goal::new("something new"),
@@ -257,7 +257,7 @@ async fn a_workflow_already_tried_this_episode_is_not_offered_again() {
         .save(&stored("pr-review", "reviews a closed issue", None))
         .expect("save");
 
-    let ledger = SqliteLedger::in_memory().expect("ledger");
+    let ledger = MemoryLedger::new();
     let mut spent = tinyflows_adaptive::ledger::conformance::row("ep1", 1, "selected:pr-review");
     spent.workflow_id = Some("pr-review".to_string());
     ledger.append(&spent).await.expect("append");
@@ -299,7 +299,7 @@ async fn a_selection_whose_required_input_is_missing_is_refused_before_it_runs()
     store
         .save(&stored("needs-repo", "reviews PRs in a repo", Some("repo")))
         .expect("save");
-    let ledger = SqliteLedger::in_memory().expect("ledger");
+    let ledger = MemoryLedger::new();
 
     let err = decide(
         &Goal::new("review the PRs"),
@@ -330,7 +330,7 @@ async fn a_hallucinated_workflow_id_reads_as_a_decline() {
     store
         .save(&stored("pr-review", "reviews a closed issue", None))
         .expect("save");
-    let ledger = SqliteLedger::in_memory().expect("ledger");
+    let ledger = MemoryLedger::new();
 
     let attempt = decide(
         &Goal::new("review something"),
@@ -361,7 +361,7 @@ async fn an_authored_graph_that_does_not_validate_is_an_error_not_a_return_value
     })]));
     let caps = caps_with(llm);
     let (store, _root) = empty_store("7");
-    let ledger = SqliteLedger::in_memory().expect("ledger");
+    let ledger = MemoryLedger::new();
 
     let err = decide(
         &Goal::new("anything"),
@@ -389,7 +389,7 @@ async fn a_disabled_workflow_is_never_offered() {
     let mut off = stored("switched-off", "would have matched", None);
     off.enabled = false;
     store.save(&off).expect("save");
-    let ledger = SqliteLedger::in_memory().expect("ledger");
+    let ledger = MemoryLedger::new();
 
     decide(
         &Goal::new("do the thing"),
@@ -432,7 +432,7 @@ async fn a_graph_naming_a_worker_this_host_lacks_is_refused_before_it_runs() {
     })]));
     let caps = caps_with(llm);
     let (store, _root) = empty_store("gated");
-    let ledger = SqliteLedger::in_memory().expect("ledger");
+    let ledger = MemoryLedger::new();
 
     let facts = HostFacts {
         workers: vec!["laptop".into(), "ci".into()],
@@ -469,7 +469,7 @@ async fn the_authoring_prompt_carries_what_the_host_permits() {
     })]));
     let caps = caps_with(llm.clone());
     let (store, _root) = empty_store("facts-rendered");
-    let ledger = SqliteLedger::in_memory().expect("ledger");
+    let ledger = MemoryLedger::new();
 
     let facts = HostFacts {
         workers: vec!["laptop".into()],
@@ -506,7 +506,7 @@ async fn repaired_family(
     tag: &str,
     parent: (u32, u32),
     variant: (u32, u32),
-) -> (FileWorkflowStore, SqliteLedger, std::path::PathBuf) {
+) -> (FileWorkflowStore, MemoryLedger, std::path::PathBuf) {
     let (store, root) = empty_store(tag);
     store
         .save(&stored("weekly", "writes the weekly report", None))
@@ -519,7 +519,7 @@ async fn repaired_family(
         ))
         .expect("save");
 
-    let ledger = SqliteLedger::in_memory().expect("ledger");
+    let ledger = MemoryLedger::new();
     ledger
         .link_variant("weekly", "weekly-fix-1")
         .await
@@ -533,7 +533,7 @@ async fn repaired_family(
 }
 
 /// What the selector was actually shown.
-async fn offered(store: &FileWorkflowStore, ledger: &SqliteLedger) -> String {
+async fn offered(store: &FileWorkflowStore, ledger: &MemoryLedger) -> String {
     let llm = std::sync::Arc::new(Scripted::new(vec![
         json!({"workflow_id": "none"}),
         json!({
@@ -625,9 +625,9 @@ async fn a_family_whose_champion_was_already_tried_still_offers_its_variant() {
 // The retry edge: attempt four must not be attempt two in different words.
 // ---------------------------------------------------------------------------
 
-async fn with_history(tag: &str) -> (FileWorkflowStore, SqliteLedger, std::path::PathBuf) {
+async fn with_history(tag: &str) -> (FileWorkflowStore, MemoryLedger, std::path::PathBuf) {
     let (store, root) = empty_store(tag);
-    let ledger = SqliteLedger::in_memory().expect("ledger");
+    let ledger = MemoryLedger::new();
     for (attempt, sig, desc, cause) in [
         (
             1u32,
@@ -735,7 +735,7 @@ async fn lessons_from_other_episodes_reach_the_planner() {
     // knowledge store that costs money and returns nothing.
     let (store, root) = empty_store("retry-3");
     let _ = root;
-    let ledger = SqliteLedger::in_memory().expect("ledger");
+    let ledger = MemoryLedger::new();
     ledger
         .promote(
             &tinyflows_adaptive::ledger::Lesson {
@@ -782,7 +782,7 @@ async fn a_first_attempt_is_told_nothing_it_would_have_to_ignore() {
     // An empty history section is noise a model has to read past, and an
     // empty "already tried" heading reads as a claim that something was.
     let (store, _root) = empty_store("retry-4");
-    let ledger = SqliteLedger::in_memory().expect("ledger");
+    let ledger = MemoryLedger::new();
     let llm = std::sync::Arc::new(Scripted::new(vec![json!({
         "graph": tiny_graph("first", None),
         "why": "nothing stored",
@@ -812,7 +812,7 @@ async fn two_authored_attempts_leave_two_distinct_signatures() {
     // The fingerprint end to end: a differently-shaped graph must not fold into
     // the same exclusion-list entry as the one before it.
     let (store, _root) = empty_store("retry-5");
-    let ledger = SqliteLedger::in_memory().expect("ledger");
+    let ledger = MemoryLedger::new();
 
     let mut signatures = Vec::new();
     for (n, name) in [(0, "shape-one"), (1, "shape-two")] {
