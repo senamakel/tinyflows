@@ -254,10 +254,37 @@ let ledger = SqliteLedger::from_env_or("./adaptive.db")?;
 
 `from_env_or` reads `TINYFLOWS_ADAPTIVE_DB` and uses the argument when it is
 unset, so ops can move the file without a rebuild while the fallback stays
-visible in your code. The library **does not invent a location on your disk** —
-one that writes to a home directory nobody named surprises an operator once and
-is distrusted afterwards, and the right place differs entirely between a CLI, a
-container and a service with a mounted volume.
+visible in your code.
+
+For a CLI or a desktop agent there is a convention instead:
+
+```rust
+let ledger = SqliteLedger::at_default_location()?;
+```
+
+| Platform | Path |
+|---|---|
+| Linux / XDG | `$XDG_DATA_HOME/tinyflows/adaptive.db`, else `~/.local/share/tinyflows/adaptive.db` |
+| macOS | `~/Library/Application Support/tinyflows/adaptive.db` |
+| Windows | `%LOCALAPPDATA%\tinyflows\adaptive.db` |
+
+Four decisions in that table, each of which could have gone the other way:
+
+- **Data, not cache or config.** A ledger is not regenerable, so a cache sweeper
+  finding it deletes everything the loop has learned; and it is not something a
+  person edits, so a config directory would invite exactly that.
+- **`%LOCALAPPDATA%`, not `%APPDATA%`.** The roaming profile syncs between
+  machines, and a SQLite file copied mid-write between two that both think they
+  own it is a corrupted database.
+- **Namespaced `tinyflows/`, not `tinyflows-adaptive/`**, so a sibling crate
+  shares the folder rather than scattering one per crate across a disk.
+- **No directory is an error, not a guess.** A daemon under a user with no home
+  has nowhere by convention; the error says to set the variable rather than
+  putting a database somewhere nobody looks.
+
+`TINYFLOWS_ADAPTIVE_DB` still wins. And a container or a service should name its
+own path — a volume mount is the point, and a convention that lands the database
+inside an ephemeral layer is worse than no convention at all.
 
 Three implementations, all checked by the same public
 [`ledger::conformance`] suite — so "it works on sqlite" cannot quietly mean "it

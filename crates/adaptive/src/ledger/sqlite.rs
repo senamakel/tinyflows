@@ -112,6 +112,78 @@ const MIGRATIONS: &[&str] = &[
 /// Where the ledger lives, when the environment says.
 pub const DB_PATH_VAR: &str = "TINYFLOWS_ADAPTIVE_DB";
 
+/// Where a platform keeps application **data**.
+///
+/// Data, not cache and not config. A ledger is not regenerable, so a cache
+/// sweeper finding it would delete everything the loop has learned; and it is
+/// not something a person edits, so a config directory would invite exactly
+/// that. Every platform below distinguishes the three, and this picks the one
+/// whose contract is "keep this".
+///
+/// Taken as a parameter rather than read from `cfg!` so all three rules are
+/// tested on whichever machine runs the suite. A rule that only compiles on the
+/// platform it is wrong for is a rule nobody checks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Platform {
+    /// XDG Base Directory Specification.
+    Xdg,
+    /// Apple's File System Programming Guide.
+    MacOs,
+    /// Windows known folders.
+    Windows,
+}
+
+impl Platform {
+    /// What this build is running on.
+    #[must_use]
+    pub fn host() -> Self {
+        if cfg!(target_os = "macos") {
+            Self::MacOs
+        } else if cfg!(windows) {
+            Self::Windows
+        } else {
+            Self::Xdg
+        }
+    }
+}
+
+/// The documented data directory, or `None` when the environment does not say.
+///
+/// * **XDG** — `$XDG_DATA_HOME`, else `$HOME/.local/share`. The spec names that
+///   fallback, so an unset variable is normal rather than a failure.
+/// * **macOS** — `$HOME/Library/Application Support`.
+/// * **Windows** — `%LOCALAPPDATA%`, **not** `%APPDATA%`. The roaming profile
+///   syncs between machines, and a SQLite file copied mid-write between two
+///   machines that both think they own it is a corrupted database. Local is the
+///   right shelf for anything a process holds open.
+///
+/// `None` is a real answer: a daemon under a user with no home has nowhere by
+/// convention, and inventing one would put a database somewhere nobody looks.
+fn data_dir(
+    platform: Platform,
+    env: &dyn Fn(&str) -> Option<String>,
+) -> Option<std::path::PathBuf> {
+    let read = |key: &str| env(key).filter(|v| !v.trim().is_empty());
+    match platform {
+        Platform::Xdg => read("XDG_DATA_HOME")
+            .map(std::path::PathBuf::from)
+            .or_else(|| read("HOME").map(|h| std::path::PathBuf::from(h).join(".local/share"))),
+        Platform::MacOs => {
+            read("HOME").map(|h| std::path::PathBuf::from(h).join("Library/Application Support"))
+        }
+        Platform::Windows => read("LOCALAPPDATA").map(std::path::PathBuf::from),
+    }
+}
+
+/// The directory this project owns inside the platform's data directory.
+///
+/// Named for the project, not this crate, so a sibling shares the folder rather
+/// than scattering one per crate across a user's disk.
+const APP_DIR: &str = "tinyflows";
+
+/// The file, inside that.
+const DB_FILE: &str = "adaptive.db";
+
 /// Which path wins: the environment when it names one, the caller otherwise.
 ///
 /// Pulled out as a pure function so the rule is tested without any test setting
@@ -126,6 +198,23 @@ fn chosen_path(configured: Option<&str>, fallback: &std::path::Path) -> std::pat
         Some(path) => std::path::PathBuf::from(path),
         None => fallback.to_path_buf(),
     }
+}
+
+/// The conventional path, or an error naming the way out.
+fn default_path(
+    platform: Platform,
+    env: &dyn Fn(&str) -> Option<String>,
+) -> Result<std::path::PathBuf> {
+    if let Some(configured) = env(DB_PATH_VAR).filter(|v| !v.trim().is_empty()) {
+        return Ok(std::path::PathBuf::from(configured.trim()));
+    }
+    data_dir(platform, env)
+        .map(|dir| dir.join(APP_DIR).join(DB_FILE))
+        .ok_or_else(|| {
+            LedgerError::Backend(format!(
+                "no data directory on this platform; set {DB_PATH_VAR} to a writable path"
+            ))
+        })
 }
 
 /// A ledger backed by one sqlite file.
@@ -169,6 +258,32 @@ impl SqliteLedger {
     pub fn from_env_or(fallback: impl AsRef<std::path::Path>) -> Result<Self> {
         let configured = std::env::var(DB_PATH_VAR).ok();
         Self::open(chosen_path(configured.as_deref(), fallback.as_ref()))
+    }
+
+    /// Open the ledger where this platform keeps application data.
+    ///
+    /// `TINYFLOWS_ADAPTIVE_DB` still wins when it is set. Otherwise:
+    ///
+    /// | Platform | Path |
+    /// |---|---|
+    /// | Linux and other XDG | `$XDG_DATA_HOME/tinyflows/adaptive.db`, else `~/.local/share/tinyflows/adaptive.db` |
+    /// | macOS | `~/Library/Application Support/tinyflows/adaptive.db` |
+    /// | Windows | `%LOCALAPPDATA%\tinyflows\adaptive.db` |
+    ///
+    /// Right for a CLI or a desktop agent, which is what a convention is for.
+    /// A container or a service should name its own path — a volume mount is
+    /// the whole point, and a convention that lands the database inside an
+    /// ephemeral layer is worse than no convention.
+    ///
+    /// # Errors
+    /// When the platform's data directory cannot be determined — a daemon under
+    /// a user with no home has nowhere by convention, and the error says to set
+    /// the variable rather than guessing somewhere nobody looks. Also as
+    /// [`open`](Self::open).
+    pub fn at_default_location() -> Result<Self> {
+        Self::open(default_path(Platform::host(), &|key| {
+            std::env::var(key).ok()
+        })?)
     }
 
     /// A ledger held entirely in memory. For tests, and for a host that wants
@@ -598,6 +713,76 @@ mod tests {
         let fallback = std::path::Path::new("/srv/app/ledger.db");
         assert_eq!(chosen_path(Some(""), fallback), fallback);
         assert_eq!(chosen_path(Some("   "), fallback), fallback);
+    }
+
+    fn fake_env(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> + use<> {
+        let owned: Vec<(String, String)> = pairs
+            .iter()
+            .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+            .collect();
+        move |key: &str| owned.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone())
+    }
+
+    #[test]
+    fn each_platform_uses_its_own_documented_directory() {
+        let home = fake_env(&[("HOME", "/home/ada")]);
+        assert_eq!(
+            data_dir(Platform::Xdg, &home),
+            Some("/home/ada/.local/share".into())
+        );
+        assert_eq!(
+            data_dir(Platform::MacOs, &fake_env(&[("HOME", "/Users/ada")])),
+            Some("/Users/ada/Library/Application Support".into())
+        );
+        assert_eq!(
+            data_dir(
+                Platform::Windows,
+                &fake_env(&[("LOCALAPPDATA", "C:\\Users\\ada\\AppData\\Local")])
+            ),
+            Some("C:\\Users\\ada\\AppData\\Local".into())
+        );
+    }
+
+    #[test]
+    fn xdg_data_home_wins_over_the_spec_s_own_fallback() {
+        let env = fake_env(&[("XDG_DATA_HOME", "/data"), ("HOME", "/home/ada")]);
+        assert_eq!(data_dir(Platform::Xdg, &env), Some("/data".into()));
+    }
+
+    #[test]
+    fn windows_uses_the_local_profile_not_the_roaming_one() {
+        // A roaming profile syncs between machines, and a SQLite file copied
+        // mid-write between two that both think they own it is a corrupted
+        // database. Setting only APPDATA must therefore find nothing.
+        let roaming = fake_env(&[("APPDATA", "C:\\Users\\ada\\AppData\\Roaming")]);
+        assert_eq!(data_dir(Platform::Windows, &roaming), None);
+    }
+
+    #[test]
+    fn the_conventional_path_is_namespaced_by_project_and_named_for_the_crate() {
+        let env = fake_env(&[("HOME", "/home/ada")]);
+        assert_eq!(
+            default_path(Platform::Xdg, &env).expect("path"),
+            std::path::PathBuf::from("/home/ada/.local/share/tinyflows/adaptive.db")
+        );
+    }
+
+    #[test]
+    fn the_variable_still_wins_over_the_convention() {
+        let env = fake_env(&[(DB_PATH_VAR, "/mnt/data/ledger.db"), ("HOME", "/home/ada")]);
+        assert_eq!(
+            default_path(Platform::Xdg, &env).expect("path"),
+            std::path::PathBuf::from("/mnt/data/ledger.db")
+        );
+    }
+
+    #[test]
+    fn nowhere_conventional_is_an_error_that_says_what_to_set() {
+        // A daemon under a user with no home. Guessing would put a database
+        // somewhere nobody looks, and losing it silently is the failure this
+        // whole crate is written to avoid.
+        let err = default_path(Platform::Xdg, &fake_env(&[])).expect_err("no home");
+        assert!(err.to_string().contains(DB_PATH_VAR), "{err}");
     }
 
     #[test]
