@@ -280,6 +280,7 @@ impl MemoryProvider for Double {
 impl StateStore for Double {
     async fn load(&self, key: &str) -> Result<Option<Value>> {
         let stored = self
+            .mocks
             .state
             .lock()
             .expect("mock state poisoned")
