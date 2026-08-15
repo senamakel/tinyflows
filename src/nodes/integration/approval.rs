@@ -439,17 +439,18 @@ impl ApprovalNode {
         // any more, so withdraw it rather than leaving a dead card in a queue.
         // Best-effort: the run has already decided what to do, and a failed
         // withdrawal must not change that.
-        if let Some(provider) = ctx.caps.approvals.as_ref()
-            && let Err(err) = provider
+        if let Some(provider) = ctx.caps.approvals.as_ref() {
+            if let Err(err) = provider
                 .cancel(&request.request_id, "approval node timed out")
                 .await
-        {
-            tracing::warn!(
-                node = %ctx.node.id,
-                request = %request.request_id,
-                error = %err,
-                "withdrawing the timed-out review failed"
-            );
+            {
+                tracing::warn!(
+                    node = %ctx.node.id,
+                    request = %request.request_id,
+                    error = %err,
+                    "withdrawing the timed-out review failed"
+                );
+            }
         }
 
         let timed_out = json!({
