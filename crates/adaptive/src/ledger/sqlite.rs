@@ -109,6 +109,25 @@ const MIGRATIONS: &[&str] = &[
     "ALTER TABLE ledger_rows ADD COLUMN advanced INTEGER NOT NULL DEFAULT 0",
 ];
 
+/// Where the ledger lives, when the environment says.
+pub const DB_PATH_VAR: &str = "TINYFLOWS_ADAPTIVE_DB";
+
+/// Which path wins: the environment when it names one, the caller otherwise.
+///
+/// Pulled out as a pure function so the rule is tested without any test setting
+/// a process-wide variable — `unsafe_code` is forbidden here, and an env-mutating
+/// test is a test that fails when another one runs beside it.
+///
+/// Blank and whitespace-only are treated as unset: an empty variable is what a
+/// shell leaves behind when a value was meant to be interpolated and was not,
+/// and opening `""` fails in a way that names nothing useful.
+fn chosen_path(configured: Option<&str>, fallback: &std::path::Path) -> std::path::PathBuf {
+    match configured.map(str::trim).filter(|p| !p.is_empty()) {
+        Some(path) => std::path::PathBuf::from(path),
+        None => fallback.to_path_buf(),
+    }
+}
+
 /// A ledger backed by one sqlite file.
 pub struct SqliteLedger {
     conn: std::sync::Arc<Mutex<Connection>>,
@@ -121,7 +140,35 @@ impl SqliteLedger {
     /// # Errors
     /// When the file cannot be opened or the schema cannot be applied.
     pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self> {
+        let path = path.as_ref();
+        // Create the parent, because `Connection::open` creates the file and
+        // not the directory holding it. Every sensible location for a ledger —
+        // `~/.config/something/`, `/var/lib/something/`, a data volume — is a
+        // directory that may not exist on a first run, and failing there reads
+        // as "the database is broken" rather than "make the folder".
+        if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| LedgerError::Backend(format!("{}: {e}", parent.display())))?;
+        }
         Self::from_connection(Connection::open(path)?)
+    }
+
+    /// Open the path in `TINYFLOWS_ADAPTIVE_DB`, or `fallback` when it is unset.
+    ///
+    /// The library does not invent a location on your disk. A crate that writes
+    /// to a home directory nobody named is a crate that surprises an operator
+    /// once and is distrusted afterwards, and the right place differs entirely
+    /// between a CLI, a container and a service with a mounted volume.
+    ///
+    /// So the fallback stays visible in your code and the environment can move
+    /// it without a rebuild — which is what a deployment actually needs. Either
+    /// way the parent directory is created.
+    ///
+    /// # Errors
+    /// As [`open`](Self::open).
+    pub fn from_env_or(fallback: impl AsRef<std::path::Path>) -> Result<Self> {
+        let configured = std::env::var(DB_PATH_VAR).ok();
+        Self::open(chosen_path(configured.as_deref(), fallback.as_ref()))
     }
 
     /// A ledger held entirely in memory. For tests, and for a host that wants
@@ -510,6 +557,56 @@ mod tests {
             .await
             .expect("append");
         assert_eq!(store.rows("ep-shared").await.expect("rows").len(), 1);
+    }
+
+    #[tokio::test]
+    async fn opening_a_path_creates_the_directory_holding_it() {
+        // A first run against `/var/lib/whatever/ledger.db` must not fail
+        // because nobody made the folder.
+        let root = std::env::temp_dir().join(format!("adaptive-mkdir-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let path = root.join("deep").join("nested").join("ledger.db");
+
+        let store = SqliteLedger::open(&path).expect("open");
+        store
+            .append(&conformance::row("ep-mkdir", 1, "authored"))
+            .await
+            .expect("append");
+        assert!(path.exists(), "{}", path.display());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn the_environment_moves_the_ledger_without_a_rebuild() {
+        let fallback = std::path::Path::new("/srv/app/ledger.db");
+        assert_eq!(
+            chosen_path(Some("/mnt/data/ledger.db"), fallback),
+            std::path::PathBuf::from("/mnt/data/ledger.db")
+        );
+    }
+
+    #[test]
+    fn an_unset_environment_falls_back_to_the_path_in_the_code() {
+        let fallback = std::path::Path::new("/srv/app/ledger.db");
+        assert_eq!(chosen_path(None, fallback), fallback);
+    }
+
+    #[test]
+    fn a_blank_variable_reads_as_unset_rather_than_as_an_empty_path() {
+        // What a shell leaves behind when a value was meant to be interpolated
+        // and was not. Opening "" fails in a way that names nothing useful.
+        let fallback = std::path::Path::new("/srv/app/ledger.db");
+        assert_eq!(chosen_path(Some(""), fallback), fallback);
+        assert_eq!(chosen_path(Some("   "), fallback), fallback);
+    }
+
+    #[test]
+    fn a_configured_path_is_trimmed() {
+        let fallback = std::path::Path::new("/srv/app/ledger.db");
+        assert_eq!(
+            chosen_path(Some("  /mnt/data/ledger.db\n"), fallback),
+            std::path::PathBuf::from("/mnt/data/ledger.db")
+        );
     }
 
     #[tokio::test]

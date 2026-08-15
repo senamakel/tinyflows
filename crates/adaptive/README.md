@@ -238,10 +238,26 @@ snapshot before the loop and flush after.
 ## Choosing a ledger backend
 
 ```toml
-tinyflows-adaptive = "0.1"                                        # MemoryLedger only
-tinyflows-adaptive = { version = "0.1", features = ["sqlite"] }   # single process
-tinyflows-adaptive = { version = "0.1", features = ["mongo"] }    # hosted
+tinyflows-adaptive = "0.1"                       # sqlite, on by default
+tinyflows-adaptive = { version = "0.1", default-features = false, features = ["mongo"] }
 ```
+
+**sqlite is a default feature**, so the crate persists out of the box. A crate
+whose whole value is that learning accumulates should not ship unable to
+accumulate it. It costs a bundled SQLite build; a deployment that only wants
+Mongo turns it off with `default-features = false`.
+
+```rust
+// The parent directory is created — `/var/lib/app/` on a first run need not exist.
+let ledger = SqliteLedger::from_env_or("./adaptive.db")?;
+```
+
+`from_env_or` reads `TINYFLOWS_ADAPTIVE_DB` and uses the argument when it is
+unset, so ops can move the file without a rebuild while the fallback stays
+visible in your code. The library **does not invent a location on your disk** —
+one that writes to a home directory nobody named surprises an operator once and
+is distrusted afterwards, and the right place differs entirely between a CLI, a
+container and a service with a mounted volume.
 
 Three implementations, all checked by the same public
 [`ledger::conformance`] suite — so "it works on sqlite" cannot quietly mean "it

@@ -16,9 +16,13 @@ rusqlite = { version = "0.40.2", features = ["bundled"], optional = true }
 mongodb = { version = "3.6.0", optional = true }
 
 [features]
-default = []
-# Two backends, and the choice is the host's. Neither is compiled unless asked
-# for, so a deployment that wants sqlite does not build a Mongo driver.
+# Persistence out of the box. The alternative — no backend unless asked — meant
+# `cargo add tinyflows-adaptive` gave you a crate whose whole value is that
+# learning accumulates, and no way to make it accumulate.
+#
+# It costs a bundled SQLite build. A deployment that only wants Mongo turns it
+# off: `default-features = false, features = ["mongo"]`.
+default = ["sqlite"]
 sqlite = ["dep:rusqlite"]
 mongo = ["dep:mongodb"]
 
