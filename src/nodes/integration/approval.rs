@@ -71,9 +71,6 @@ const DEFAULT_MAX_POLLS: u64 = 60;
 /// the way a `loop` node's iteration does.
 const POLLS_KEY: &str = "polls";
 
-/// The default rendering hint when the graph does not say what the subject is.
-const DEFAULT_SUBJECT_KIND: &str = "json";
-
 /// How the node waits for a human.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum WaitMode {
