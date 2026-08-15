@@ -242,6 +242,15 @@ pub struct MockCaps {
     rules: Vec<Rule>,
     log: Arc<CallLog>,
     workflows: HashMap<String, WorkflowGraph>,
+    /// Backing map for the [`StateStore`](crate::caps::StateStore) impl.
+    ///
+    /// Lives here, not on each [`Double`](double::Double), because
+    /// [`capabilities_for_node`](Self::capabilities_for_node) builds a fresh
+    /// `Double` per node activation (so the call log can attribute calls to
+    /// the right node); a per-`Double` map would make state invisible across
+    /// activations — including a node's own later activation — defeating the
+    /// one job a state store has.
+    state: Mutex<HashMap<String, Value>>,
 }
 
 impl MockCaps {
