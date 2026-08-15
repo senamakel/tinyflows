@@ -182,7 +182,7 @@ cargo run --example hello_workflow --features mock
 
 ## Examples
 
-The crate ships seven runnable examples under [`examples/`](examples/). Each is
+The crate ships eight runnable examples under [`examples/`](examples/). Each is
 gated on the `mock` cargo feature, so run them with:
 
 ```sh
