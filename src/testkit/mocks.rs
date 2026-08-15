@@ -405,7 +405,6 @@ impl MockCaps {
     }
 }
 
-
 #[cfg(test)]
 #[path = "mocks_tests.rs"]
 mod tests;
