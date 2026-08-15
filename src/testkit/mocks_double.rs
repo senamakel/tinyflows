@@ -501,7 +501,9 @@ impl ApprovalProvider for Double {
 impl WorkflowResolver for Double {
     async fn resolve(&self, workflow_id: &str) -> Result<WorkflowGraph> {
         self.mocks
-            .workflow(workflow_id)
+            .workflows
+            .get(workflow_id)
+            .cloned()
             .ok_or_else(|| {
                 EngineError::Capability(format!(
                     "testkit: no workflow registered as {workflow_id:?}"
