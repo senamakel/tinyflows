@@ -96,7 +96,12 @@ pub async fn decide(
     caps: &Capabilities,
     conn: Option<&str>,
 ) -> Result<Attempt> {
-    let tried = ledger.tried(episode).await?;
+    // One read, two uses. The exclusion list and the rendered history are the
+    // same rows seen two ways, and `Ledger::tried` is a fresh query — calling
+    // it here as well would pay for the identical result twice on every
+    // attempt, against whatever database the host brought.
+    let rows = ledger.rows(episode).await?;
+    let tried = crate::ledger::signatures(&rows);
     let candidates = catalogue(store, ledger, &tried).await?;
 
     // Both planners see the same past, in the same words. The exclusion list
@@ -104,7 +109,6 @@ pub async fn decide(
     // author writing attempt two's graph again on attempt four — only being
     // shown attempt two does. And the lessons were being written and never
     // read, which is a knowledge store that costs money and returns nothing.
-    let rows = ledger.rows(episode).await?;
     let lessons = crate::recall::retrieve(
         ledger.lessons(None).await?,
         None,
