@@ -214,3 +214,18 @@ fn approval_assignees_must_be_an_array_of_strings() {
         .is_empty()
     );
 }
+
+/// An empty array reaches the same silent "nobody reviews this" audience a
+/// bare string does, so it is refused for the same reason.
+#[test]
+fn approval_assignees_must_not_be_an_empty_array() {
+    let errors = validate_all(&approval_graph(serde_json::json!({ "assignees": [] })));
+    assert!(
+        errors.iter().any(|e| matches!(
+            e,
+            ValidationError::InvalidNodeConfig { node, reason }
+                if node == "review" && reason.contains("assignees")
+        )),
+        "an empty `assignees` array must be refused, got {errors:?}"
+    );
+}
