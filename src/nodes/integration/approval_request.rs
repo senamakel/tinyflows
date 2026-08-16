@@ -105,11 +105,23 @@ pub(super) fn build_request(ctx: &NodeContext<'_>, config: &Value) -> Result<App
                 )));
             }
             Some(values) => {
-                let assignees: Vec<String> = values
-                    .iter()
-                    .filter_map(Value::as_str)
-                    .map(str::to_string)
-                    .collect();
+                // Every element must be a string. Dropping the ones that are
+                // not would route the review to a *different* audience than the
+                // graph asked for, silently: `["=item.reviewer", 42]` would
+                // quietly become a one-reviewer list. Losing a reviewer is
+                // exactly the kind of quiet change a review must not make.
+                let mut assignees: Vec<String> = Vec::with_capacity(values.len());
+                for value in values {
+                    let Some(handle) = value.as_str() else {
+                        return Err(EngineError::Capability(format!(
+                            "approval node {:?}: `assignees` entry {value} is not a string; a \
+                             reviewer handle that resolved to something else would be dropped \
+                             and the review routed to a smaller audience than authored",
+                            ctx.node.id
+                        )));
+                    };
+                    assignees.push(handle.to_string());
+                }
                 if assignees.is_empty() {
                     return Err(EngineError::Capability(format!(
                         "approval node {:?}: `assignees` resolved to an empty array; a review \
