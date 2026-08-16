@@ -89,6 +89,7 @@ pub(super) async fn build_and_run(
         trigger,
         inputs,
         approvals,
+        run_id: host_run_id,
     } = input.into();
     let resolved_inputs = crate::model::resolve_inputs(&workflow.graph.inputs, &inputs)?;
 
@@ -125,6 +126,15 @@ pub(super) async fn build_and_run(
     // `=inputs.<name>` (and jq programs walking `run` still see it too).
     let mut initial =
         json!({ "run": { "trigger": trigger, "inputs": resolved_inputs, "approvals": approvals } });
+    // The host's durable run identity, seeded OUTSIDE `run.trigger` on purpose:
+    // the trigger is caller-supplied and, on a webhook, attacker-influenced,
+    // while this slot is one a host fills deliberately. Anything keyed on it
+    // (today the `approval` node's `request_id`) therefore rests on an id the
+    // host chose, not one a request could smuggle in. Absent when the caller
+    // named no run, which is every caller predating `RunInput::run_id`.
+    if let Some(host_run_id) = host_run_id {
+        merge(&mut initial, json!({ "run": { "id": host_run_id } }));
+    }
     merge(&mut initial, seed_items);
     // The nesting cap for `sub_workflow` chains, read off the trigger config
     // like every other run-level knob and seeded into the run state so the
@@ -291,6 +301,7 @@ pub(super) fn merge_approvals(input: impl Into<RunInput>, newly_approved: Vec<St
         mut trigger,
         inputs,
         approvals: prior,
+        run_id,
     } = input.into();
 
     let mut approvals: Vec<String> = trigger
