@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 894a0f28fbdf8a5023faccd8064202a426bade45ae73dfe27fbaa44ce75309ba # shrinks to shape = Loop { max_iter: 2, body: Loop { max_iter: 1, body: Spawned { tasks: 3, release: "all", n: 2 } } }
+cc 039cd9bb03516e03e08d0928043e5bad8800d66ce8ad9e3a8e96178973542774 # shrinks to shape = Fanout([Linear(1), Fanout([Linear(1), Linear(2), Spawned { tasks: 1, release: "all", n: 1 }])])
