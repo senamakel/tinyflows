@@ -146,6 +146,31 @@ pub struct RunInput {
     /// array) has nowhere to put them, so smuggling approvals through the
     /// payload cannot work in general.
     pub approvals: Vec<String>,
+    /// A durable, **host-generated** identity for this run, seeded into the run
+    /// state as `run.id`.
+    ///
+    /// The engine keeps its own process-local run id for observability, but
+    /// that one is minted fresh inside every `run` call — and a resume
+    /// re-executes the workflow, so it changes between a run and its own
+    /// resume. Anything that must name *this* run across a pause therefore
+    /// cannot use it, and only the host (which owns run persistence) knows an
+    /// id that survives.
+    ///
+    /// Today's consumer is the [`approval`](crate::nodes::integration::approval)
+    /// node, whose `request_id` defaults to `"<run id>:<node id>"` — the key the
+    /// host's [`ApprovalProvider`](crate::caps::ApprovalProvider) de-duplicates
+    /// reviews on. Unique per run *and* stable across resume is exactly the
+    /// property that makes one human review, rather than a fresh card every
+    /// time the run is looked at.
+    ///
+    /// **Must be server-generated.** It lands in `run.id`, outside the
+    /// caller-supplied trigger payload, precisely so it is not attacker
+    /// influenced; copying a request field into it hands an attacker the
+    /// de-duplication key and, with it, an earlier run's approval.
+    ///
+    /// `None` leaves `run.id` unset, which is what every caller predating this
+    /// meant.
+    pub run_id: Option<String>,
 }
 
 impl RunInput {
@@ -156,6 +181,7 @@ impl RunInput {
             trigger,
             inputs: Map::new(),
             approvals: Vec::new(),
+            run_id: None,
         }
     }
 
@@ -170,6 +196,17 @@ impl RunInput {
     #[must_use]
     pub fn with_approvals(mut self, approvals: Vec<String>) -> Self {
         self.approvals = approvals;
+        self
+    }
+
+    /// Names this run with a durable, host-generated id (see [`Self::run_id`]).
+    ///
+    /// Pass the **same** id when resuming the run: that is what makes a paused
+    /// human review resolve to the one already in front of a person instead of
+    /// opening a second one.
+    #[must_use]
+    pub fn with_run_id(mut self, run_id: impl Into<String>) -> Self {
+        self.run_id = Some(run_id.into());
         self
     }
 }
