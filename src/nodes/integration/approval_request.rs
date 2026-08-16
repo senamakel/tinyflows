@@ -105,11 +105,23 @@ pub(super) fn build_request(ctx: &NodeContext<'_>, config: &Value) -> Result<App
                 )));
             }
             Some(values) => {
-                let assignees: Vec<String> = values
-                    .iter()
-                    .filter_map(Value::as_str)
-                    .map(str::to_string)
-                    .collect();
+                // Every element must be a string. Dropping the ones that are
+                // not would route the review to a *different* audience than the
+                // graph asked for, silently: `["=item.reviewer", 42]` would
+                // quietly become a one-reviewer list. Losing a reviewer is
+                // exactly the kind of quiet change a review must not make.
+                let mut assignees: Vec<String> = Vec::with_capacity(values.len());
+                for value in values {
+                    let Some(handle) = value.as_str() else {
+                        return Err(EngineError::Capability(format!(
+                            "approval node {:?}: `assignees` entry {value} is not a string; a \
+                             reviewer handle that resolved to something else would be dropped \
+                             and the review routed to a smaller audience than authored",
+                            ctx.node.id
+                        )));
+                    };
+                    assignees.push(handle.to_string());
+                }
                 if assignees.is_empty() {
                     return Err(EngineError::Capability(format!(
                         "approval node {:?}: `assignees` resolved to an empty array; a review \
@@ -188,16 +200,20 @@ pub(super) fn decision_from_resume(
         return Some(ApprovalDecision::approved());
     }
 
+    // A verdict object must say WHICH review it settles. One resume value is
+    // delivered to every interrupted node, so an unaddressed `{"approved":
+    // true}` would settle whichever reviews happen to read it — approving every
+    // pending review at once, without the sender needing to know a single id.
+    // An unaddressed verdict is therefore ignored rather than assumed to be
+    // ours; the array forms carry their ids and stay supported.
     let verdict = resume.get("decision").unwrap_or(resume);
-    if let Some(named) = verdict
+    let named = verdict
         .get("node_id")
         .or_else(|| verdict.get("request_id"))
-        .and_then(Value::as_str)
-    {
-        if named != request.node_id && named != request.request_id {
-            // Explicitly addressed to a different node's review; not ours to take.
-            return None;
-        }
+        .and_then(Value::as_str)?;
+    if named != request.node_id && named != request.request_id {
+        // Addressed to a different node's review; not ours to take.
+        return None;
     }
     let approved = verdict.get("approved").and_then(Value::as_bool)?;
     Some(ApprovalDecision {
@@ -223,12 +239,26 @@ pub(super) fn delivered(
     }
 
     // The re-execute resume path: `engine::resume` merges newly-approved ids
-    // into the run input, where they arrive as `run.trigger.approvals`. The
-    // top-level `run.approvals` is the same list seeded through the explicit
-    // channel; read both, because which one carries the id depends on how the
-    // host started the run.
-    let trigger_approvals = ctx.run.get("trigger").and_then(|t| t.get("approvals"));
-    if names(trigger_approvals, request) || names(ctx.run.get("approvals"), request) {
+    // into the run input, and they arrive here as the top-level `run.approvals`
+    // — the **explicit** channel (`RunInput::approvals`), which a host fills
+    // deliberately.
+    //
+    // `run.trigger.approvals` is deliberately NOT read, even though
+    // `engine::resume` also writes the merged list there. The trigger is the
+    // payload a caller hands to `engine::run`, so honouring it would let anyone
+    // who can start a run post `{"approvals": ["<node id>"]}` and approve their
+    // own review on the initial execution — skipping the human entirely. A
+    // review that can be self-approved by its own subject is not a review.
+    //
+    // Known residual, and why it is not fixed here: `merge_approvals` seeds its
+    // starting set from `trigger["approvals"]`, so a trigger-supplied id is
+    // folded into the explicit list *on a resume*. That is pre-existing engine
+    // behaviour shared with the `requires_approval` gate in
+    // `engine::build::activation`, and narrowing it changes resume semantics for
+    // every gate, not just this node — so it belongs in its own change rather
+    // than riding along here. The initial-run bypass, which is the reachable-
+    // without-a-host-action one, is closed.
+    if names(ctx.run.get("approvals"), request) {
         return Some(ApprovalDecision::approved());
     }
     None

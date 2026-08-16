@@ -20,8 +20,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the trigger is caller-supplied and, on a webhook, attacker-influenced, and the
   review-de-duplication key must not be.
 
-### Added
-
 - **`approval` node kind + the `ApprovalProvider` capability** — a
   human-in-the-loop review step that carries what is being reviewed (a URL, a
   draft, any payload) and routes on the answer: `approved` / `rejected` ports,
@@ -37,6 +35,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Note for hosts that build `caps::Capabilities` with a struct literal: it gains
   an `approvals: Option<Arc<dyn ApprovalProvider>>` field, so add
   `approvals: None` (or a provider) to keep compiling.
+
+### Changed
+
+- **Approval provenance is preserved across a resume.** `RunInput::approvals`
+  (surfaced as `run.approvals`) now carries only the ids a host explicitly
+  authorised — those passed to `engine::resume` plus any already on that
+  channel. It is no longer seeded from `run.trigger.approvals`.
+
+  The trigger is the payload a caller submits, so folding it into the
+  authorised list meant a caller-written id was promoted to trusted by the
+  first resume. `run.trigger.approvals` still receives the union and the
+  `requires_approval` gate still reads it, so that documented channel is
+  unchanged; what changed is that trigger-origin ids no longer cross into the
+  explicit one. A host that relied on `RunInput::approvals` echoing ids it had
+  written into the trigger payload must now pass them to `engine::resume` (or
+  `RunInput::with_approvals`) instead.
+
+  The `approval` node reads only the explicit channel, and a verdict object in
+  a resume value must name its review (`node_id` / `request_id`) — an
+  unaddressed `{"approved": true}` is ignored rather than settling whichever
+  review reads it, since one resume value is delivered to every interrupted
+  node.
 
 - **`tinyflows::testkit` — testing, mocking, and live debugging for workflows.**
   Behind the default-off `testkit` feature; adds no dependencies.
