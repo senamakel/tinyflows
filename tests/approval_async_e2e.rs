@@ -234,18 +234,38 @@ async fn a_polling_review_lets_the_rest_of_the_graph_run_and_then_absorbs_the_ve
     );
 
     // 2. The work branch ran to completion WHILE the review was outstanding.
-    //    This is the whole point: `summarize` is the last node of the sibling
-    //    branch, and it finished before the review did.
+    //    The finish order interleaves — review, enrich, review, score, review,
+    //    summarize, review — because each poll is its own activation and the
+    //    sibling branch advances in the super-steps between them. So the test
+    //    is: the review was still being polled *before* the work started, and
+    //    it settled *after* the work had finished.
     let finished = order.finished();
-    let summarize = order
-        .position_of("summarize")
-        .unwrap_or_else(|| panic!("the work branch must have finished, saw {finished:?}"));
-    let review = order
-        .position_of("review")
+    let first_review = order
+        .first_position_of("review")
+        .unwrap_or_else(|| panic!("the review must have been polled, saw {finished:?}"));
+    let settled_review = order
+        .last_position_of("review")
         .unwrap_or_else(|| panic!("the review must have settled, saw {finished:?}"));
+    let enrich = order
+        .first_position_of("enrich")
+        .unwrap_or_else(|| panic!("the work branch must have started, saw {finished:?}"));
+    let summarize = order
+        .last_position_of("summarize")
+        .unwrap_or_else(|| panic!("the work branch must have finished, saw {finished:?}"));
+
     assert!(
-        summarize < review,
-        "the work branch must finish while the review is still outstanding — \
+        first_review < enrich,
+        "the review must already be outstanding when the work branch starts — \
+         finish order was {finished:?}"
+    );
+    assert!(
+        summarize < settled_review,
+        "the work branch must finish before the verdict lands, not after it — \
+         finish order was {finished:?}"
+    );
+    assert!(
+        order.count_of("review") > 1,
+        "the review must have been polled repeatedly rather than settling at once — \
          finish order was {finished:?}"
     );
 
