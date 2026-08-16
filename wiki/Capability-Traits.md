@@ -53,10 +53,11 @@ must add an `approvals` field (`None` if it wires no provider) to keep
 compiling.
 
 Name the run with `RunInput::with_run_id("...")` when a graph contains an
-`approval` node: the review's `request_id` defaults to `"<run id>:<node id>"`,
-so without it the node has no identity it can trust and refuses rather than
-guessing one. Use a **server-generated** id, never a caller-supplied field —
-it is the key reviews are de-duplicated on.
+`approval` node and its config does not set an explicit `request_id`: the
+review's `request_id` defaults to `"<run id>:<node id>"`, so with neither a
+configured `request_id` nor a run id, the node has no identity it can trust
+and refuses rather than guessing one. Use a **server-generated** id, never a
+caller-supplied field — it is the key reviews are de-duplicated on.
 
 `ApprovalProvider::decide` is **create-or-fetch**, keyed on
 `ApprovalRequest::request_id`: the first call with an id creates the review, and
