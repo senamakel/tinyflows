@@ -188,16 +188,20 @@ pub(super) fn decision_from_resume(
         return Some(ApprovalDecision::approved());
     }
 
+    // A verdict object must say WHICH review it settles. One resume value is
+    // delivered to every interrupted node, so an unaddressed `{"approved":
+    // true}` would settle whichever reviews happen to read it — approving every
+    // pending review at once, without the sender needing to know a single id.
+    // An unaddressed verdict is therefore ignored rather than assumed to be
+    // ours; the array forms carry their ids and stay supported.
     let verdict = resume.get("decision").unwrap_or(resume);
-    if let Some(named) = verdict
+    let named = verdict
         .get("node_id")
         .or_else(|| verdict.get("request_id"))
-        .and_then(Value::as_str)
-    {
-        if named != request.node_id && named != request.request_id {
-            // Explicitly addressed to a different node's review; not ours to take.
-            return None;
-        }
+        .and_then(Value::as_str)?;
+    if named != request.node_id && named != request.request_id {
+        // Addressed to a different node's review; not ours to take.
+        return None;
     }
     let approved = verdict.get("approved").and_then(Value::as_bool)?;
     Some(ApprovalDecision {
