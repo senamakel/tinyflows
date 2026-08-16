@@ -286,6 +286,10 @@ pub async fn resume(
 /// is replaced by a fresh object holding just the merged approvals. Declared
 /// inputs ride along unchanged — a resume re-runs the *same* parameterized
 /// workflow, so dropping them would silently change what it does.
+///
+/// The returned [`RunInput::approvals`] carries **only** what a host explicitly
+/// authorised — never an id read out of the trigger payload. See the body for
+/// why the two sets are kept apart.
 pub(super) fn merge_approvals(input: impl Into<RunInput>, newly_approved: Vec<String>) -> RunInput {
     let RunInput {
         mut trigger,
