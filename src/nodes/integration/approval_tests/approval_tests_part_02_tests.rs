@@ -293,18 +293,22 @@ async fn two_runs_of_one_graph_get_distinct_reviews() {
 
     let graph = wf_raw(json!({ "title": "Publish this?" }));
     let compiled = compile(&graph).expect("compile");
+    // `mock_capabilities()` wires `MockApprovals::approving()` by default (see
+    // its doc comment), so the review settles inline rather than pausing —
+    // `items[0]` below is the approved decision, not a paused/null node.
+    let caps = mock_capabilities();
 
     let first = run(
         &compiled,
         RunInput::new(json!({})).with_run_id("run-a"),
-        &mock_capabilities(),
+        &caps,
     )
     .await
     .expect("first run");
     let second = run(
         &compiled,
         RunInput::new(json!({})).with_run_id("run-b"),
-        &mock_capabilities(),
+        &caps,
     )
     .await
     .expect("second run");
