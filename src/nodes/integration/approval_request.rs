@@ -227,12 +227,26 @@ pub(super) fn delivered(
     }
 
     // The re-execute resume path: `engine::resume` merges newly-approved ids
-    // into the run input, where they arrive as `run.trigger.approvals`. The
-    // top-level `run.approvals` is the same list seeded through the explicit
-    // channel; read both, because which one carries the id depends on how the
-    // host started the run.
-    let trigger_approvals = ctx.run.get("trigger").and_then(|t| t.get("approvals"));
-    if names(trigger_approvals, request) || names(ctx.run.get("approvals"), request) {
+    // into the run input, and they arrive here as the top-level `run.approvals`
+    // — the **explicit** channel (`RunInput::approvals`), which a host fills
+    // deliberately.
+    //
+    // `run.trigger.approvals` is deliberately NOT read, even though
+    // `engine::resume` also writes the merged list there. The trigger is the
+    // payload a caller hands to `engine::run`, so honouring it would let anyone
+    // who can start a run post `{"approvals": ["<node id>"]}` and approve their
+    // own review on the initial execution — skipping the human entirely. A
+    // review that can be self-approved by its own subject is not a review.
+    //
+    // Known residual, and why it is not fixed here: `merge_approvals` seeds its
+    // starting set from `trigger["approvals"]`, so a trigger-supplied id is
+    // folded into the explicit list *on a resume*. That is pre-existing engine
+    // behaviour shared with the `requires_approval` gate in
+    // `engine::build::activation`, and narrowing it changes resume semantics for
+    // every gate, not just this node — so it belongs in its own change rather
+    // than riding along here. The initial-run bypass, which is the reachable-
+    // without-a-host-action one, is closed.
+    if names(ctx.run.get("approvals"), request) {
         return Some(ApprovalDecision::approved());
     }
     None
