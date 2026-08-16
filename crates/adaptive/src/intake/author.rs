@@ -148,6 +148,8 @@ pub async fn author(
         },
         graph,
         inputs: answer["inputs"].as_object().cloned().unwrap_or_default(),
+        // Filled by `decide`, which is what knows what the planner was shown.
+        lessons_shown: Vec::new(),
     })
 }
 

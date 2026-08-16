@@ -107,9 +107,11 @@ pub async fn consolidate(
         }
     }
 
-    // Corroboration is a score, not a new row: `applied` is incremented by
-    // whoever put the lesson in front of a planner, so this only moves the
-    // numerator. An id that no longer exists is ignored by the backend.
+    // Corroboration is a score, not a new row. It moves both counters, which
+    // is right: an episode that independently confirmed a lesson both applied
+    // it and was helped by it. The ordinary denominator comes from the driver,
+    // which scores every lesson a planner was shown against what happened.
+    // An id that no longer exists is ignored by the backend.
     for id in answer["corroborate"].as_array().unwrap_or(&Vec::new()) {
         if let Some(id) = id.as_str().filter(|s| !s.is_empty()) {
             let _ = ledger.score_lesson(id, true).await;

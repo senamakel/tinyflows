@@ -74,6 +74,7 @@ fn attempt(graph: WorkflowGraph) -> Attempt {
         },
         graph,
         inputs: Map::new(),
+        lessons_shown: Vec::new(),
     }
 }
 

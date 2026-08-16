@@ -136,6 +136,8 @@ pub async fn select(
         },
         graph: WorkflowGraph::default(),
         inputs: inputs_of(&answer),
+        // Filled by `decide`, which is what knows what the planner was shown.
+        lessons_shown: Vec::new(),
     }))
 }
 

@@ -602,3 +602,104 @@ async fn a_ledger_and_a_vault_of_different_kinds_drive_the_same_loop() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[tokio::test]
+async fn a_lesson_put_in_front_of_a_planner_is_scored_against_what_happened() {
+    // `applied` is the denominator of a lesson's help rate, and nothing was
+    // moving it: `score_lesson` had one caller, the corroboration loop, which
+    // moves both counters together. So every lesson read 0/0 or n/n, the rate
+    // carried no information, and every ordering built on it was inert.
+    use tinyflows_adaptive::ledger::{Lesson, LessonKind};
+
+    let llm = succeeding(parameterised(), true);
+    let caps = Capabilities {
+        llm: llm.clone(),
+        ..mock_capabilities()
+    };
+    let ledger = MemoryLedger::new();
+    let id = ledger
+        .promote(
+            &Lesson {
+                id: String::new(),
+                kind: LessonKind::Strategy,
+                trigger: "a report that must cite figures".into(),
+                mechanism: String::new(),
+                claim: "read them from the source".into(),
+                applied: 0,
+                helped: 0,
+                scope_key: None,
+            },
+            &[],
+        )
+        .await
+        .expect("promote");
+
+    let store = store("scored");
+    let runner = Local {
+        caps: &caps,
+        workspace: &Unobserved,
+    };
+    engine_over(&ledger, &store, &caps, &runner, &HostFacts::unknown())
+        .run("ep-scored", &Goal::new("review the PRs on acme/thing"))
+        .await
+        .expect("run");
+
+    let back = ledger
+        .lessons(None)
+        .await
+        .expect("lessons")
+        .into_iter()
+        .find(|l| l.id == id)
+        .expect("still there");
+    assert_eq!(back.applied, 1, "it was shown to the planner");
+    assert_eq!(back.helped, 1, "and the episode was satisfied");
+}
+
+#[tokio::test]
+async fn a_lesson_shown_before_a_failure_moves_only_its_denominator() {
+    use tinyflows_adaptive::ledger::{Lesson, LessonKind};
+
+    let llm = authoring(); // its judge always says not-satisfied
+    let caps = caps_with(llm);
+    let ledger = MemoryLedger::new();
+    let id = ledger
+        .promote(
+            &Lesson {
+                id: String::new(),
+                kind: LessonKind::Strategy,
+                trigger: "a class of task".into(),
+                mechanism: String::new(),
+                claim: "does not actually help".into(),
+                applied: 0,
+                helped: 0,
+                scope_key: None,
+            },
+            &[],
+        )
+        .await
+        .expect("promote");
+
+    let store = store("unhelpful");
+    let runner = Local {
+        caps: &caps,
+        workspace: &Unobserved,
+    };
+    engine_over(&ledger, &store, &caps, &runner, &HostFacts::unknown())
+        .run("ep-unhelpful", &Goal::new("write the weekly report"))
+        .await
+        .expect("run");
+
+    let back = ledger
+        .lessons(None)
+        .await
+        .expect("lessons")
+        .into_iter()
+        .find(|l| l.id == id)
+        .expect("still there");
+    assert!(
+        back.applied >= 2,
+        "shown on every attempt: {}",
+        back.applied
+    );
+    assert_eq!(back.helped, 0, "and it never helped");
+}

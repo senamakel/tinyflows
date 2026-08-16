@@ -41,6 +41,15 @@ pub struct Attempt {
     pub graph: WorkflowGraph,
     /// Values for the graph's declared inputs, by name.
     pub inputs: Map<String, Value>,
+    /// The lessons this attempt's planner was shown.
+    ///
+    /// Carried so the closing pass can score them against what happened. A
+    /// lesson's `applied` counter is the denominator of its help rate, and
+    /// nothing was incrementing it: `score_lesson` had exactly one caller, the
+    /// corroboration loop, which moves both numbers together. So every lesson
+    /// read either 0/0 or n/n, the rate carried no information, and the
+    /// ordering built on it could not order anything.
+    pub lessons_shown: Vec<String>,
 }
 
 /// What went wrong deciding.
@@ -120,13 +129,23 @@ pub async fn decide(
         crate::recall::render_lessons(&lessons)
     );
 
+    let shown: Vec<String> = lessons.iter().map(|l| l.id.clone()).collect();
+
     if let Some(chosen) = select(goal, &candidates, &past, caps, conn).await? {
         // `select` answers with an id; the graph and the input check come from
         // the store. Returning the choice unbound would hand the engine an
         // empty graph, which compiles to nothing and reads as the work failing.
-        return bind(chosen, store);
+        return bind(chosen, store).map(|attempt| Attempt {
+            lessons_shown: shown,
+            ..attempt
+        });
     }
-    author(goal, facts, store.policy(), &past, caps, conn).await
+    author(goal, facts, store.policy(), &past, caps, conn)
+        .await
+        .map(|attempt| Attempt {
+            lessons_shown: shown,
+            ..attempt
+        })
 }
 
 /// The stored workflows worth offering, with what is known about each.

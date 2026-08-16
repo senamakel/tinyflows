@@ -153,6 +153,17 @@ impl Loop<'_> {
         )
         .await?;
 
+        // The other half of the knowledge ladder's scoring. `close` moves the
+        // workflow's counters; nothing was moving a lesson's, so a lesson that
+        // was read forty times and never helped looked exactly like one written
+        // this morning.
+        for lesson in &planned.lessons_shown {
+            let _ = self
+                .ledger
+                .score_lesson(lesson, closed.verdict.satisfied)
+                .await;
+        }
+
         if closed.verdict.satisfied {
             self.keep_if_it_generalises(goal, &planned).await;
         } else {
