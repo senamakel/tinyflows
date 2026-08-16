@@ -289,7 +289,7 @@ pub async fn resume(
 }
 
 /// Unions `newly_approved` into the run input's `trigger["approvals"]`, leaving
-/// the declared-input values untouched.
+/// the declared-input values and the run's host id untouched.
 ///
 /// Reads defensively: a missing or non-array `approvals` yields an empty
 /// starting set, and a non-object trigger (which carries no fields to preserve)
@@ -339,5 +339,10 @@ pub(super) fn merge_approvals(input: impl Into<RunInput>, newly_approved: Vec<St
         trigger,
         inputs,
         approvals,
+        // Carried through untouched. A resume is the SAME run continuing, so
+        // dropping its id here would re-key everything derived from it — a
+        // paused human review would open a second card instead of resolving
+        // the one already in front of somebody.
+        run_id,
     }
 }
