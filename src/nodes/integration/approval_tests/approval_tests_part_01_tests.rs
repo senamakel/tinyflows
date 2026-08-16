@@ -47,7 +47,7 @@ fn resume_reads_a_verdict_inline_or_nested() {
     let req = request("run-1:review");
 
     let inline = decision_from_resume(
-        &json!({ "approved": true, "decided_by": "ada", "comment": "ship it" }),
+        &json!({ "node_id": "review", "approved": true, "decided_by": "ada", "comment": "ship it" }),
         &req,
     )
     .expect("a decision");
@@ -56,7 +56,7 @@ fn resume_reads_a_verdict_inline_or_nested() {
     assert_eq!(inline.comment.as_deref(), Some("ship it"));
 
     let nested = decision_from_resume(
-        &json!({ "decision": { "approved": false, "comment": "wrong link" } }),
+        &json!({ "decision": { "request_id": "run-1:review", "approved": false, "comment": "wrong link" } }),
         &req,
     )
     .expect("a decision");
@@ -69,15 +69,31 @@ fn resume_reads_a_verdict_inline_or_nested() {
     );
 }
 
-/// An inline verdict object with no `node_id`/`request_id` is the documented
-/// single-interrupt shorthand and is accepted, matching the same tradeoff
-/// `engine::build::activation`'s bare `Value::Bool(true)` makes for `gate`.
-/// But one that names a *different* request must not be silently absorbed —
-/// several approval nodes can be interrupted in the same run, and a verdict
-/// addressed to one of them is not an answer for the others.
+/// A verdict object must name the review it settles.
+///
+/// One resume value is delivered to **every** interrupted node, so an
+/// unaddressed `{"approved": true}` would settle whichever reviews read it —
+/// approving every pending review in the run at once, without the sender
+/// needing to know a single id. And a verdict naming a *different* review is
+/// not an answer for this one. Both are refused; only an explicit match is
+/// taken.
 #[test]
-fn an_inline_verdict_addressed_to_another_request_is_not_taken() {
+fn a_verdict_object_must_name_the_review_it_settles() {
     let req = request("run-1:review");
+
+    let unaddressed = decision_from_resume(&json!({ "approved": true }), &req);
+    assert!(
+        unaddressed.is_none(),
+        "an unaddressed verdict must not settle this review: the same resume value \
+         reaches every interrupted node, so it would approve all of them at once"
+    );
+
+    let unaddressed_nested =
+        decision_from_resume(&json!({ "decision": { "approved": true } }), &req);
+    assert!(
+        unaddressed_nested.is_none(),
+        "the nested form carries the same risk and gets the same refusal"
+    );
 
     let for_someone_else = decision_from_resume(
         &json!({ "approved": true, "node_id": "other-review" }),
