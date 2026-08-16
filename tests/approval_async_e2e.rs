@@ -253,6 +253,17 @@ async fn a_polling_review_lets_the_rest_of_the_graph_run_and_then_absorbs_the_ve
         .last_position_of("summarize")
         .unwrap_or_else(|| panic!("the work branch must have finished, saw {finished:?}"));
 
+    // This ordering is not a scheduler race: this test runs on the default
+    // `current_thread` tokio flavor (one poller, no cross-thread scheduling),
+    // and neither `review`'s first poll (`SlowDesk::decide`, a synchronous
+    // `std::sync::Mutex` push with no real I/O) nor `enrich` (a synchronous
+    // jq transform) suspends on its first poll. `run_active_parallel`
+    // (src/graph/compiled/executor/node_execution.rs) drives the two
+    // trigger-fanned-out branches via `futures_util::future::join_all`, which
+    // polls each branch's future in the order it was pushed — `review`'s edge
+    // is declared before `enrich`'s in `graph()` above — so `review` runs to
+    // completion, including firing `on_step_finish`, before `enrich` is ever
+    // polled.
     assert!(
         first_review < enrich,
         "the review must already be outstanding when the work branch starts — \
