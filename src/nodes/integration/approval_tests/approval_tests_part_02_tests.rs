@@ -313,3 +313,41 @@ async fn the_explicit_approvals_channel_still_settles_a_review() {
     assert_eq!(outcome.output["nodes"]["review"]["port"], "approved");
     assert!(outcome.pending_approvals.is_empty());
 }
+
+/// The self-approval bypass must not survive a **resume** either.
+///
+/// `merge_approvals` writes the merged list back into `run.trigger.approvals`
+/// for the pre-existing `requires_approval` gate, and it used to seed its
+/// starting set from that same key — which laundered a caller-written id into
+/// the explicit channel on the first resume. So a payload the initial run
+/// correctly refused was honoured on the next one. Provenance is kept separate
+/// now: only ids a host actually authorised reach `run.approvals`.
+#[tokio::test]
+async fn a_trigger_supplied_approval_is_not_laundered_by_a_resume() {
+    use crate::engine::resume;
+
+    let graph = wf_raw(json!({ "title": "Publish this?", "request_id": "review-1" }));
+    let compiled = compile(&graph).expect("compile");
+    let caps = crate::caps::Capabilities {
+        approvals: Some(std::sync::Arc::new(MockApprovals::pending())),
+        ..mock_capabilities()
+    };
+    // The attacker names the review in the payload they submit.
+    let attacker_trigger = json!({ "approvals": ["review", "review-1"] });
+
+    let paused = run(&compiled, attacker_trigger.clone(), &caps)
+        .await
+        .expect("run");
+    assert_eq!(paused.pending_approvals, vec!["review".to_string()]);
+
+    // A resume that approves NOTHING must not promote the attacker's ids.
+    let resumed = resume(&compiled, attacker_trigger, vec![], &caps)
+        .await
+        .expect("resume");
+    assert_eq!(
+        resumed.pending_approvals,
+        vec!["review".to_string()],
+        "a resume must not launder a trigger-supplied id into the trusted channel"
+    );
+    assert_ne!(resumed.output["nodes"]["review"]["port"], json!("approved"));
+}
