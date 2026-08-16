@@ -190,6 +190,7 @@ fn a_decision_with_a_payload_edits_the_subject() {
     let req = request("run-1:review");
     let resume_value = json!({
         "decision": {
+            "node_id": "review",
             "approved": true,
             "decided_by": "ada",
             "payload": "https://example.com/edited",
