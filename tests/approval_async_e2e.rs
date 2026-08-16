@@ -345,8 +345,7 @@ async fn a_rejection_arriving_late_routes_without_disturbing_the_work_branch() {
 
     assert_eq!(outcome.output["nodes"]["review"]["port"], "rejected");
     assert_eq!(
-        outcome.output["nodes"]["revise"]["items"][0]["json"]["revise_because"],
-        "wrong draft",
+        outcome.output["nodes"]["revise"]["items"][0]["json"]["revise_because"], "wrong draft",
         "the rejection branch runs with the reviewer's reason"
     );
     assert_eq!(
