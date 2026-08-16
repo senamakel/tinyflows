@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`RunInput::with_run_id`** — a host names a run with a durable,
+  server-generated id, seeded into the run state as `run.id`. The engine's own
+  run id is process-local and minted fresh on every call (a resume re-executes,
+  so it changes between a run and its own resume), which makes it unusable for
+  anything that must name *this* run across a pause. The `approval` node's
+  `request_id` defaults to `"<run id>:<node id>"` and so is now unique per run
+  **and** stable across resume — the property that makes one human review
+  rather than a fresh card per resume. Seeded outside `run.trigger` on purpose:
+  the trigger is caller-supplied and, on a webhook, attacker-influenced, and the
+  review-de-duplication key must not be.
+
 - **`approval` node kind + the `ApprovalProvider` capability** — a
   human-in-the-loop review step that carries what is being reviewed (a URL, a
   draft, any payload) and routes on the answer: `approved` / `rejected` ports,

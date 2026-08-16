@@ -250,6 +250,80 @@ async fn a_resume_decision_withdraws_the_provider_card() {
     );
 }
 
+/// The host-seeded run id is what makes the default `request_id` work: unique
+/// per run, and — crucially — the *same* across a resume, so a paused review
+/// resolves the card already in front of a person.
+#[tokio::test]
+async fn a_host_seeded_run_id_derives_the_request_id_and_survives_a_resume() {
+    use crate::caps::mock::MockApprovals;
+    use crate::engine::{RunInput, resume};
+
+    let graph = wf_raw(json!({ "title": "Publish this?" }));
+    let compiled = compile(&graph).expect("compile");
+    let provider = std::sync::Arc::new(MockApprovals::pending());
+    let caps = crate::caps::Capabilities {
+        approvals: Some(provider.clone()),
+        ..mock_capabilities()
+    };
+    let input = || RunInput::new(json!({ "url": "https://example.com" })).with_run_id("run-7f3a");
+
+    // Nobody has answered: the run pauses at the review.
+    let paused = run(&compiled, input(), &caps).await.expect("run");
+    assert_eq!(paused.pending_approvals, vec!["review".to_string()]);
+
+    // Resuming the SAME run must address the SAME review, not open a second.
+    let resumed = resume(&compiled, input(), vec!["review".to_string()], &caps)
+        .await
+        .expect("resume");
+    assert_eq!(
+        resumed.output["nodes"]["review"]["items"][0]["json"]["request_id"],
+        "run-7f3a:review"
+    );
+    let ids = provider.requested();
+    assert!(
+        ids.iter().all(|id| id == "run-7f3a:review"),
+        "every ask must name one review across the run and its resume, got {ids:?}"
+    );
+}
+
+/// Two runs of the same graph must not share a review — that collision is
+/// precisely what would let a later run inherit an earlier approval.
+#[tokio::test]
+async fn two_runs_of_one_graph_get_distinct_reviews() {
+    use crate::engine::RunInput;
+
+    let graph = wf_raw(json!({ "title": "Publish this?" }));
+    let compiled = compile(&graph).expect("compile");
+    // `mock_capabilities()` wires `MockApprovals::approving()` by default (see
+    // its doc comment), so the review settles inline rather than pausing —
+    // `items[0]` below is the approved decision, not a paused/null node.
+    let caps = mock_capabilities();
+
+    let first = run(
+        &compiled,
+        RunInput::new(json!({})).with_run_id("run-a"),
+        &caps,
+    )
+    .await
+    .expect("first run");
+    let second = run(
+        &compiled,
+        RunInput::new(json!({})).with_run_id("run-b"),
+        &caps,
+    )
+    .await
+    .expect("second run");
+
+    assert_eq!(
+        first.output["nodes"]["review"]["items"][0]["json"]["request_id"],
+        "run-a:review"
+    );
+    assert_eq!(
+        second.output["nodes"]["review"]["items"][0]["json"]["request_id"],
+        "run-b:review"
+    );
+}
+
 /// THE self-approval bypass: a caller must not be able to approve their own
 /// review by putting the node's id in the trigger payload they submit.
 ///

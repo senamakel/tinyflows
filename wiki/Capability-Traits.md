@@ -52,6 +52,16 @@ example, durable key/value state via `ctx.caps.state`, and a human review via
 must add an `approvals` field (`None` if it wires no provider) to keep
 compiling.
 
+An `approval` node needs an identity for its review: either an explicit
+`request_id` in its own config, or — the common case, since a graph is
+authored once and run many times — `RunInput::with_run_id("...")` on the run,
+which the node falls back to as `"<run id>:<node id>"`. A node with neither
+has nothing stable to key the review on and refuses to run rather than
+guessing; it does not silently fall back to the bare node id, which would let
+a later run of the same graph reuse an earlier run's decision. Use a
+**server-generated** run id, never a caller-supplied field — it is the key
+reviews are de-duplicated on.
+
 `ApprovalProvider::decide` is **create-or-fetch**, keyed on
 `ApprovalRequest::request_id`: the first call with an id creates the review, and
 every later call with that id reports where *that* review stands. This matters
