@@ -335,6 +335,7 @@ fn kind_name(kind: &NodeKind) -> &'static str {
         NodeKind::Scatter => "scatter",
         NodeKind::Gather => "gather",
         NodeKind::Gate => "gate",
+        NodeKind::Approval => "approval",
         NodeKind::Void => "void",
     }
 }
@@ -347,6 +348,9 @@ fn node_fill(kind: Option<&NodeKind>) -> Rgb<u8> {
         Some(NodeKind::Agent | NodeKind::ToolCall | NodeKind::HttpRequest | NodeKind::Memory) => {
             Rgb([220, 252, 231])
         }
+        // A human review reads as a decision point, not as work the machine
+        // does, so it takes the branching palette rather than the capability one.
+        Some(NodeKind::Approval) => Rgb([254, 226, 226]),
         _ => Rgb([241, 245, 249]),
     }
 }
@@ -359,6 +363,7 @@ fn node_accent(kind: Option<&NodeKind>) -> Rgb<u8> {
         Some(NodeKind::Agent | NodeKind::ToolCall | NodeKind::HttpRequest | NodeKind::Memory) => {
             Rgb([22, 163, 74])
         }
+        Some(NodeKind::Approval) => Rgb([220, 38, 38]),
         None => Rgb([220, 38, 38]),
         _ => Rgb([71, 85, 105]),
     }

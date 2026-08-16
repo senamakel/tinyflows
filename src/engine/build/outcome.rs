@@ -88,8 +88,10 @@ where
                                 return Ok(NodeResult::Update(items_update(&node.id, &[], None)?));
                             }
                             let slice = remaining.min(BACKOFF_POLL_MS);
-                            futures_timer::Delay::new(std::time::Duration::from_millis(slice))
-                                .await;
+                            // Always yields, so the tasks this node is polling
+                            // for get a turn before it looks again — see
+                            // `super::backoff`.
+                            super::backoff::wait_slice(slice).await;
                             remaining -= slice;
                         }
                     }

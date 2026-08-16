@@ -90,6 +90,21 @@ pub enum NodeKind {
     /// Where lanes end: routing to a gather is a plain activation, so N lanes
     /// converge on one gather rather than each running their own.
     Gather,
+    /// Presents a subject — a URL, a block of text, a generated payload — to a
+    /// **human** for an approve/reject, and routes on their answer.
+    ///
+    /// Distinct from the `requires_approval` flag, which gates a node that
+    /// would otherwise run: this *is* the review step, it carries what is being
+    /// reviewed, and its verdict is data (who decided, their comment, any edit
+    /// they made) that the graph can branch on via its `approved` / `rejected`
+    /// ports.
+    ///
+    /// Reaches the human through the optional
+    /// [`ApprovalProvider`](crate::caps::ApprovalProvider) capability. With none
+    /// injected it falls back to pausing the run, so the host settles it with
+    /// [`engine::resume`](crate::engine::resume) the way it already settles an
+    /// approval gate.
+    Approval,
     /// Waits for tickets — from [`NodeKind::Spawn`], or named by expression —
     /// and emits their results once its release policy is satisfied.
     ///

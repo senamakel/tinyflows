@@ -376,6 +376,27 @@ async fn smoke_scatter_gather() {
     assert_eq!(items.len(), 2, "two lanes, two collected results");
 }
 
+/// The default mock approvals provider approves, so an `approval` node
+/// dry-runs end to end the way a `memory` node does — the point being that a
+/// graph containing a review is runnable without the host standing up a review
+/// surface first.
+#[tokio::test]
+async fn smoke_approval() {
+    smoke_single_node(
+        NodeKind::Approval,
+        json!({
+            "title": "Ship it?",
+            "subject_kind": "url",
+            "subject": "=item.url",
+            // `request_id` (or a run-scoped id) is required: without one, the
+            // node refuses to guess an identity a later run could collide on.
+            "request_id": "smoke-approval",
+        }),
+        json!({ "url": "https://example.com/preview" }),
+    )
+    .await;
+}
+
 #[tokio::test]
 async fn smoke_void() {
     // `smoke_single_node` asserts a non-empty `items` slot, which a void can

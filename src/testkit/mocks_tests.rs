@@ -5,6 +5,8 @@
 //! graph to reach them would be testing the engine instead.
 
 use super::*;
+use crate::caps::{ApprovalOutcome, ApprovalRequest, ApprovalSubject};
+use serde_json::json;
 
 fn mocks(build: impl FnOnce(MockCaps) -> MockCaps) -> Arc<MockCaps> {
     Arc::new(build(MockCaps::new()))
@@ -282,6 +284,50 @@ async fn the_state_store_really_stores() {
     assert_eq!(mocks.log().count(capability::STATE, None), 3);
 }
 
+/// `capabilities_for_node` builds a fresh `Capabilities` bundle — and so a
+/// fresh `Double` — on every node activation, so it can attribute calls to
+/// the right node. State must not live on that per-activation `Double`, or
+/// nothing written by one activation would be visible to the next: not a
+/// later activation of the SAME node (a loop reading what an earlier
+/// iteration stored), and not a different node reading what an upstream one
+/// wrote.
+#[tokio::test]
+async fn state_persists_across_node_scoped_bundles() {
+    let mocks = mocks(|m| m);
+
+    // Node "writer"'s first activation stores a value...
+    mocks
+        .capabilities_for_node("writer")
+        .state
+        .store("k", json!("from writer"))
+        .await
+        .expect("store");
+
+    // ...a later activation of the SAME node must still see it...
+    assert_eq!(
+        mocks
+            .capabilities_for_node("writer")
+            .state
+            .load("k")
+            .await
+            .expect("load"),
+        Some(json!("from writer")),
+        "a node's own later activation must see what an earlier one stored"
+    );
+
+    // ...and so must a DIFFERENT node's bundle, entirely.
+    assert_eq!(
+        mocks
+            .capabilities_for_node("reader")
+            .state
+            .load("k")
+            .await
+            .expect("load"),
+        Some(json!("from writer")),
+        "state is one store shared across the whole run, not one per node"
+    );
+}
+
 #[tokio::test]
 async fn a_delayed_response_still_answers() {
     let mocks = mocks(|m| {
@@ -311,4 +357,117 @@ async fn an_unregistered_sub_workflow_is_refused_by_name() {
         .await
         .expect_err("an unregistered id should not silently resolve");
     assert!(err.to_string().contains("nope"), "got {err}");
+}
+
+fn approval_request(request_id: &str) -> ApprovalRequest {
+    ApprovalRequest {
+        request_id: request_id.to_string(),
+        node_id: "review".to_string(),
+        run_id: Some("run-1".to_string()),
+        title: Some("Ship it?".to_string()),
+        prompt: None,
+        subject: ApprovalSubject {
+            kind: "url".to_string(),
+            value: json!("https://example.com/preview"),
+        },
+        assignees: vec!["reviewer@example.com".to_string()],
+        metadata: json!({}),
+    }
+}
+
+#[tokio::test]
+async fn an_unprogrammed_review_approves_and_is_logged() {
+    // Same bargain as every other default here: a graph containing a review
+    // runs end to end without a test standing a reviewer up, and the call still
+    // shows in the log so a test can assert the review was *asked for*.
+    let mocks = mocks(|m| m);
+    let caps = mocks.capabilities();
+    let approvals = caps.approvals.clone().expect("the doubles wire approvals");
+
+    let outcome = approvals
+        .decide(&approval_request("run-1:review"))
+        .await
+        .expect("an unprogrammed review still answers");
+
+    match outcome {
+        ApprovalOutcome::Decided(decision) => {
+            assert!(decision.approved);
+            assert_eq!(decision.decided_by.as_deref(), Some("testkit"));
+        }
+        ApprovalOutcome::Pending => panic!("the default should decide, not park the run"),
+    }
+
+    let calls = mocks.log().calls();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].capability, capability::APPROVALS);
+    assert_eq!(calls[0].target, "run-1:review");
+    assert_eq!(calls[0].args["subject"]["kind"], json!("url"));
+}
+
+#[tokio::test]
+async fn a_programmed_review_can_reject_or_stay_pending() {
+    // Rules match on `request_id`, which is what lets one test settle one
+    // review and leave another waiting — the two halves of the wait paths a
+    // review node has to cope with.
+    let mocks = mocks(|m| {
+        m.on_approval(
+            "run-1:reject*",
+            Respond::value(json!({ "approved": false, "comment": "not yet" })),
+        )
+        .on_approval(
+            "run-1:slow*",
+            Respond::value(json!({ "status": "pending" })),
+        )
+    });
+    let caps = mocks.capabilities();
+    let approvals = caps.approvals.clone().expect("the doubles wire approvals");
+
+    let rejected = approvals
+        .decide(&approval_request("run-1:rejected-review"))
+        .await
+        .expect("call");
+    match rejected {
+        ApprovalOutcome::Decided(decision) => {
+            assert!(!decision.approved);
+            assert_eq!(decision.comment.as_deref(), Some("not yet"));
+        }
+        ApprovalOutcome::Pending => panic!("a programmed verdict should decide"),
+    }
+
+    let pending = approvals
+        .decide(&approval_request("run-1:slow-review"))
+        .await
+        .expect("call");
+    assert_eq!(
+        pending,
+        ApprovalOutcome::Pending,
+        "`status: pending` is how a test exercises a poll or a suspend"
+    );
+
+    approvals
+        .cancel("run-1:slow-review", "run ended")
+        .await
+        .expect("cancelling a review is answered too");
+    assert_eq!(mocks.log().count(capability::APPROVALS, None), 3);
+}
+
+/// The bare string `"pending"` is documented shorthand for "nobody has got to
+/// this review yet" — the same flexibility `on_shell` accepts a bare stdout
+/// string for. A rule answering with it must not be read as an (approving)
+/// verdict object with no recognized fields.
+#[tokio::test]
+async fn on_approval_accepts_a_bare_pending_string() {
+    let mocks = mocks(|m| m.on_approval("run-1:bare*", Respond::value(json!("pending"))));
+    let caps = mocks.capabilities();
+    let approvals = caps.approvals.clone().expect("the doubles wire approvals");
+
+    let outcome = approvals
+        .decide(&approval_request("run-1:bare-review"))
+        .await
+        .expect("call");
+    assert_eq!(
+        outcome,
+        ApprovalOutcome::Pending,
+        "a bare \"pending\" string must not be read as an approving verdict"
+    );
 }

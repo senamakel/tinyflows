@@ -23,7 +23,7 @@ fn every_node_kind_has_a_contract() {
             }
         }
     }
-    assert_eq!(all_contracts().len(), 21);
+    assert_eq!(all_contracts().len(), 22);
 }
 
 #[test]
@@ -48,8 +48,8 @@ fn unknown_kind_has_no_contract() {
 }
 
 #[test]
-fn node_kinds_has_21_entries_including_the_async_and_lane_pairs() {
-    assert_eq!(NODE_KINDS.len(), 21);
+fn node_kinds_has_22_entries_including_the_async_and_lane_pairs() {
+    assert_eq!(NODE_KINDS.len(), 22);
     assert!(NODE_KINDS.contains(&"shell"));
     assert!(NODE_KINDS.contains(&"memory"));
     assert!(NODE_KINDS.contains(&"dedup"));
@@ -67,8 +67,9 @@ fn node_kinds_has_21_entries_including_the_async_and_lane_pairs() {
     assert_eq!(NODE_KINDS[17], "gate");
     assert_eq!(NODE_KINDS[18], "scatter");
     assert_eq!(NODE_KINDS[19], "gather");
+    assert_eq!(NODE_KINDS[20], "approval");
     assert!(NODE_KINDS.contains(&"void"));
-    assert_eq!(NODE_KINDS[20], "void");
+    assert_eq!(NODE_KINDS[21], "void");
 }
 
 #[test]

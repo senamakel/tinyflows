@@ -41,17 +41,19 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::Value;
 
-use crate::caps::{
-    AgentRunner, Capabilities, CodeLanguage, CodeRunner, HttpClient, LlmProvider, MemoryProvider,
-    ShellOutcome, ShellRequest, ShellRunner, StateStore, ToolInvoker, WorkflowResolver,
-    sample_for_schema,
-};
+use crate::caps::{Capabilities, sample_for_schema};
 use crate::error::{EngineError, Result};
 use crate::model::WorkflowGraph;
+
+#[path = "mocks_log.rs"]
+mod log;
+pub use log::{CallLog, CallOutcome, CapCall};
+
+#[path = "mocks_double.rs"]
+mod double;
+use double::Double;
 
 /// Which capability a call went to.
 ///
@@ -74,113 +76,8 @@ pub mod capability {
     pub const MEMORY: &str = "memory";
     /// [`StateStore`](crate::caps::StateStore).
     pub const STATE: &str = "state";
-}
-
-/// How one capability call ended.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum CallOutcome {
-    /// The call returned a value.
-    Ok(Value),
-    /// The call failed, with this message.
-    Err(String),
-}
-
-/// One capability call a run made.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CapCall {
-    /// Position in the run's single call sequence, from 0.
-    ///
-    /// One counter across *all* capabilities, so the log says what order things
-    /// happened in — which per-capability counters cannot.
-    pub seq: u64,
-    /// Which capability — see the [`capability`] constants.
-    pub capability: String,
-    /// The trait method (`invoke`, `complete`, `request`, …).
-    pub method: String,
-    /// The node that made the call.
-    ///
-    /// `None` only when the call was made outside a node activation, which no
-    /// engine path does today.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub node_id: Option<String>,
-    /// What identifies the target within the capability: a tool slug, an agent
-    /// ref, an HTTP method and URL, a state key. Empty when the capability has
-    /// no such notion.
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub target: String,
-    /// The arguments the call was made with.
-    pub args: Value,
-    /// What it returned.
-    pub outcome: CallOutcome,
-}
-
-/// Every capability call a run made, in order.
-///
-/// Shared by every double in one [`MockCaps`], so the ordering across
-/// capabilities is real rather than assembled afterwards from separate logs.
-#[derive(Debug, Default)]
-pub struct CallLog {
-    calls: Mutex<Vec<CapCall>>,
-    next_seq: AtomicU64,
-}
-
-impl CallLog {
-    /// An empty log.
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Append a call, assigning it the next sequence number.
-    fn record(
-        &self,
-        capability: &str,
-        method: &str,
-        node_id: Option<String>,
-        target: String,
-        args: Value,
-        outcome: CallOutcome,
-    ) {
-        let call = CapCall {
-            seq: self.next_seq.fetch_add(1, Ordering::SeqCst),
-            capability: capability.to_string(),
-            method: method.to_string(),
-            node_id,
-            target,
-            args,
-            outcome,
-        };
-        self.calls.lock().expect("call log poisoned").push(call);
-    }
-
-    /// Every call recorded so far, in sequence order.
-    #[must_use]
-    pub fn calls(&self) -> Vec<CapCall> {
-        let mut calls = self.calls.lock().expect("call log poisoned").clone();
-        calls.sort_by_key(|call| call.seq);
-        calls
-    }
-
-    /// The calls matching a capability and an optional target glob.
-    ///
-    /// `capability` is one of the [`capability`] constants; `target` accepts the
-    /// same `*` globbing the rules do, and `None` matches every target.
-    #[must_use]
-    pub fn matching(&self, capability: &str, target: Option<&str>) -> Vec<CapCall> {
-        self.calls()
-            .into_iter()
-            .filter(|call| call.capability == capability)
-            .filter(|call| target.is_none_or(|glob| glob_matches(glob, &call.target)))
-            .collect()
-    }
-
-    /// How many calls match — the count an assertion usually wants.
-    #[must_use]
-    pub fn count(&self, capability: &str, target: Option<&str>) -> usize {
-        self.matching(capability, target).len()
-    }
+    /// [`ApprovalProvider`](crate::caps::ApprovalProvider).
+    pub const APPROVALS: &str = "approvals";
 }
 
 /// What a matched rule answers with.
@@ -345,6 +242,15 @@ pub struct MockCaps {
     rules: Vec<Rule>,
     log: Arc<CallLog>,
     workflows: HashMap<String, WorkflowGraph>,
+    /// Backing map for the [`StateStore`](crate::caps::StateStore) impl.
+    ///
+    /// Lives here, not on each [`Double`](double::Double), because
+    /// [`capabilities_for_node`](Self::capabilities_for_node) builds a fresh
+    /// `Double` per node activation (so the call log can attribute calls to
+    /// the right node); a per-`Double` map would make state invisible across
+    /// activations — including a node's own later activation — defeating the
+    /// one job a state store has.
+    state: Mutex<HashMap<String, Value>>,
 }
 
 impl MockCaps {
@@ -412,6 +318,19 @@ impl MockCaps {
         self.rule(capability::SHELL, "*", respond)
     }
 
+    /// Answer human review for the requests whose `request_id` matches
+    /// `request_id` (a glob).
+    ///
+    /// The answer is read loosely, the way [`on_shell`](Self::on_shell)'s is:
+    /// `{"approved": false, "comment": "…"}` is a rejection, `{"approved":
+    /// true}` an approval, and `{"status": "pending"}` a review nobody has got
+    /// to yet — which is how a test exercises a `poll`ing review or the
+    /// suspend/resume path. `Respond::error` fails the call instead.
+    #[must_use]
+    pub fn on_approval(self, request_id: &str, respond: Respond) -> Self {
+        self.rule(capability::APPROVALS, request_id, respond)
+    }
+
     /// Restrict the most recently programmed rule to calls made by `node_id`.
     ///
     /// This is what per-node mocking looks like: stub one node's tool calls and
@@ -469,6 +388,7 @@ impl MockCaps {
             shell: Some(Arc::new(Double::new(shared.clone(), None))),
             memory: Some(Arc::new(Double::new(shared.clone(), None))),
             tasks: Some(Arc::new(crate::caps::TokioTaskRunner::new())),
+            approvals: Some(Arc::new(Double::new(shared, None))),
         }
     }
 
@@ -490,324 +410,10 @@ impl MockCaps {
             resolver: Arc::new(Double::new(shared.clone(), node.clone())),
             agent: Some(Arc::new(Double::new(shared.clone(), node.clone()))),
             shell: Some(Arc::new(Double::new(shared.clone(), node.clone()))),
-            memory: Some(Arc::new(Double::new(shared.clone(), node))),
+            memory: Some(Arc::new(Double::new(shared.clone(), node.clone()))),
             tasks: Some(Arc::new(crate::caps::TokioTaskRunner::new())),
+            approvals: Some(Arc::new(Double::new(shared, node))),
         }
-    }
-}
-
-/// One capability double: it consults the rules, records the call, and answers.
-///
-/// A single type implementing every capability trait rather than nine, because
-/// each implementation is the same three steps and nine copies of them would
-/// drift.
-struct Double {
-    mocks: Arc<MockCaps>,
-    /// The node this double was scoped to, stamped onto every call it logs.
-    node_id: Option<String>,
-    /// Backing map for the [`StateStore`] impl, which is the one capability
-    /// whose whole job is to remember.
-    state: Mutex<HashMap<String, Value>>,
-}
-
-impl Double {
-    fn new(mocks: Arc<MockCaps>, node_id: Option<String>) -> Self {
-        Self {
-            mocks,
-            node_id,
-            state: Mutex::new(HashMap::new()),
-        }
-    }
-
-    /// Consult the rules, log whatever happens, and return it.
-    async fn dispatch(
-        &self,
-        capability: &str,
-        method: &str,
-        target: String,
-        request: Value,
-        default: impl FnOnce(&Value) -> Value,
-    ) -> Result<Value> {
-        let programmed = self
-            .mocks
-            .respond_to(capability, &target, self.node_id.as_deref(), &request)
-            .await;
-        let result = match programmed {
-            Some(result) => result,
-            None => Ok(default(&request)),
-        };
-        let outcome = match &result {
-            Ok(value) => CallOutcome::Ok(value.clone()),
-            Err(err) => CallOutcome::Err(err.to_string()),
-        };
-        self.mocks.log.record(
-            capability,
-            method,
-            self.node_id.clone(),
-            target,
-            request,
-            outcome,
-        );
-        result
-    }
-}
-
-#[async_trait]
-impl LlmProvider for Double {
-    async fn complete(&self, request: Value, conn: Option<&str>) -> Result<Value> {
-        let conn = conn.map(str::to_string);
-        self.dispatch(
-            capability::LLM,
-            "complete",
-            String::new(),
-            request,
-            |req| json!({ "completion": req, "connection": conn }),
-        )
-        .await
-    }
-}
-
-#[async_trait]
-impl ToolInvoker for Double {
-    async fn invoke(&self, slug: &str, args: Value, conn: Option<&str>) -> Result<Value> {
-        let slug_owned = slug.to_string();
-        let conn = conn.map(str::to_string);
-        self.dispatch(
-            capability::TOOLS,
-            "invoke",
-            slug.to_string(),
-            args,
-            move |args| json!({ "tool": slug_owned, "args": args, "connection": conn }),
-        )
-        .await
-    }
-}
-
-#[async_trait]
-impl HttpClient for Double {
-    async fn request(&self, request: Value, conn: Option<&str>) -> Result<Value> {
-        // The URL is what a rule globs on; a request without one still matches
-        // a bare `*`.
-        let url = request
-            .get("url")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string();
-        let conn = conn.map(str::to_string);
-        self.dispatch(
-            capability::HTTP,
-            "request",
-            url,
-            request,
-            |req| json!({ "status": 200, "request": req, "connection": conn }),
-        )
-        .await
-    }
-}
-
-#[async_trait]
-impl CodeRunner for Double {
-    async fn run(&self, language: CodeLanguage, source: &str, input: Value) -> Result<Value> {
-        let request = json!({
-            "language": format!("{language:?}"),
-            "source": source,
-            "input": input,
-        });
-        self.dispatch(
-            capability::CODE,
-            "run",
-            format!("{language:?}"),
-            request,
-            |req| json!({ "result": req.get("input").cloned().unwrap_or(Value::Null) }),
-        )
-        .await
-    }
-}
-
-#[async_trait]
-impl ShellRunner for Double {
-    async fn run(&self, request: ShellRequest) -> Result<ShellOutcome> {
-        let script = match &request.script {
-            crate::caps::ShellScript::Inline(source) => source.clone(),
-            crate::caps::ShellScript::Path(path) => path.clone(),
-        };
-        let encoded = json!({
-            "interpreter": request.interpreter.as_str(),
-            "script": script,
-            "cwd": request.cwd,
-            "env": request.env,
-            "input": request.input,
-        });
-        let value = self
-            .dispatch(
-                capability::SHELL,
-                "run",
-                script.clone(),
-                encoded,
-                move |_req| json!({ "exit_code": 0, "stdout": script, "stderr": "" }),
-            )
-            .await?;
-        // A programmed value may describe the whole outcome, or just be the
-        // stdout a test cares about. Accept either rather than making a caller
-        // spell out an exit code they do not care about.
-        Ok(ShellOutcome {
-            exit_code: value
-                .get("exit_code")
-                .and_then(Value::as_i64)
-                .unwrap_or(0)
-                .try_into()
-                .unwrap_or(0),
-            stdout: value
-                .get("stdout")
-                .and_then(Value::as_str)
-                .map(str::to_string)
-                .unwrap_or_else(|| value.to_string()),
-            stderr: value
-                .get("stderr")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .to_string(),
-        })
-    }
-}
-
-#[async_trait]
-impl AgentRunner for Double {
-    async fn run_agent(
-        &self,
-        agent_ref: &str,
-        request: Value,
-        conn: Option<&str>,
-    ) -> Result<Value> {
-        let name = agent_ref.to_string();
-        let conn = conn.map(str::to_string);
-        self.dispatch(
-            capability::AGENT,
-            "run_agent",
-            agent_ref.to_string(),
-            request,
-            move |req| json!({ "agent": name, "request": req, "connection": conn }),
-        )
-        .await
-    }
-}
-
-#[async_trait]
-impl MemoryProvider for Double {
-    async fn recall(&self, scope: &str, query: &str, opts: Value) -> Result<Value> {
-        let request = json!({ "scope": scope, "query": query, "opts": opts });
-        self.dispatch(
-            capability::MEMORY,
-            "recall",
-            scope.to_string(),
-            request,
-            |_| json!({ "results": [] }),
-        )
-        .await
-    }
-
-    async fn flavour(&self, slug: &str) -> Result<Value> {
-        let request = json!({ "slug": slug });
-        self.dispatch(
-            capability::MEMORY,
-            "flavour",
-            slug.to_string(),
-            request,
-            |_| json!({ "traits": {} }),
-        )
-        .await
-    }
-
-    async fn people(&self, query: Option<&str>) -> Result<Value> {
-        let request = json!({ "query": query });
-        self.dispatch(
-            capability::MEMORY,
-            "people",
-            String::new(),
-            request,
-            |_| json!({ "people": [] }),
-        )
-        .await
-    }
-
-    async fn remember(&self, scope: &str, key: &str, value: Value) -> Result<()> {
-        let request = json!({ "scope": scope, "key": key, "value": value });
-        self.dispatch(
-            capability::MEMORY,
-            "remember",
-            format!("{scope}/{key}"),
-            request,
-            |_| Value::Null,
-        )
-        .await
-        .map(|_| ())
-    }
-
-    async fn forget(&self, scope: &str, key: &str) -> Result<()> {
-        let request = json!({ "scope": scope, "key": key });
-        self.dispatch(
-            capability::MEMORY,
-            "forget",
-            format!("{scope}/{key}"),
-            request,
-            |_| Value::Null,
-        )
-        .await
-        .map(|_| ())
-    }
-}
-
-#[async_trait]
-impl StateStore for Double {
-    async fn load(&self, key: &str) -> Result<Option<Value>> {
-        let stored = self
-            .state
-            .lock()
-            .expect("mock state poisoned")
-            .get(key)
-            .cloned();
-        // Logged like any other call, but the *store* is the source of truth:
-        // a rule that overrode a load would make a stateful graph unreadable.
-        self.mocks.log.record(
-            capability::STATE,
-            "load",
-            self.node_id.clone(),
-            key.to_string(),
-            json!({ "key": key }),
-            CallOutcome::Ok(stored.clone().unwrap_or(Value::Null)),
-        );
-        Ok(stored)
-    }
-
-    async fn store(&self, key: &str, value: Value) -> Result<()> {
-        self.state
-            .lock()
-            .expect("mock state poisoned")
-            .insert(key.to_string(), value.clone());
-        self.mocks.log.record(
-            capability::STATE,
-            "store",
-            self.node_id.clone(),
-            key.to_string(),
-            json!({ "key": key, "value": value }),
-            CallOutcome::Ok(Value::Null),
-        );
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl WorkflowResolver for Double {
-    async fn resolve(&self, workflow_id: &str) -> Result<WorkflowGraph> {
-        self.mocks
-            .workflows
-            .get(workflow_id)
-            .cloned()
-            .ok_or_else(|| {
-                EngineError::Capability(format!(
-                    "testkit: no workflow registered as {workflow_id:?}"
-                ))
-            })
     }
 }
 

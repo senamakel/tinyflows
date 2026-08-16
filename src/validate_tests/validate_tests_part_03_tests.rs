@@ -148,3 +148,84 @@ fn validation_error_code_and_node_id_accessors() {
         None
     );
 }
+
+/// Builds a trigger -> approval graph carrying `config` on the approval node.
+fn approval_graph(config: serde_json::Value) -> WorkflowGraph {
+    let mut review = node("review", NodeKind::Approval);
+    review.config = config;
+    WorkflowGraph {
+        nodes: vec![node("t", NodeKind::Trigger), review],
+        ..Default::default()
+    }
+}
+
+/// Every `approval` behaviour selector is a closed enum, and a typo in one
+/// silently changes what the node does rather than failing — so it is refused
+/// here instead.
+#[test]
+fn approval_behaviour_selectors_must_be_known_values() {
+    for (key, bad) in [
+        ("wait_mode", "suspended"),
+        ("on_reject", "reroute"),
+        ("on_timeout", "partial"),
+    ] {
+        let graph = approval_graph(serde_json::json!({ (key): bad }));
+        let errors = validate_all(&graph);
+        assert!(
+            errors.iter().any(|e| matches!(
+                e,
+                ValidationError::InvalidNodeConfig { node, reason }
+                    if node == "review" && reason.contains(key)
+            )),
+            "expected {key}={bad} to be refused, got {errors:?}"
+        );
+    }
+
+    assert!(
+        validate_all(&approval_graph(serde_json::json!({
+            "wait_mode": "poll",
+            "on_reject": "error",
+            "on_timeout": "route",
+        })))
+        .is_empty(),
+        "the documented values must all pass"
+    );
+}
+
+/// A single reviewer written as a bare string would be read as an empty
+/// audience, so the shape is checked even though the handles are opaque.
+#[test]
+fn approval_assignees_must_be_an_array_of_strings() {
+    let errors = validate_all(&approval_graph(
+        serde_json::json!({ "assignees": "ada" }),
+    ));
+    assert!(
+        errors.iter().any(|e| matches!(
+            e,
+            ValidationError::InvalidNodeConfig { node, reason }
+                if node == "review" && reason.contains("assignees")
+        )),
+        "got {errors:?}"
+    );
+    assert!(
+        validate_all(&approval_graph(
+            serde_json::json!({ "assignees": ["ada"] })
+        ))
+        .is_empty()
+    );
+}
+
+/// An empty array reaches the same silent "nobody reviews this" audience a
+/// bare string does, so it is refused for the same reason.
+#[test]
+fn approval_assignees_must_not_be_an_empty_array() {
+    let errors = validate_all(&approval_graph(serde_json::json!({ "assignees": [] })));
+    assert!(
+        errors.iter().any(|e| matches!(
+            e,
+            ValidationError::InvalidNodeConfig { node, reason }
+                if node == "review" && reason.contains("assignees")
+        )),
+        "an empty `assignees` array must be refused, got {errors:?}"
+    );
+}
