@@ -381,12 +381,10 @@ where
 
         // static edges
         for (from, to) in &self.edges {
-            if from.as_str() != START {
-                self.require_node(from)?;
-            }
-            if to.as_str() != END {
-                self.require_node(to)?;
-            }
+            // Check reserved virtual nodes before ordinary membership. START
+            // and END intentionally are not present in `nodes`, so doing the
+            // membership lookup first hides these actionable topology errors
+            // behind a generic MissingNode result.
             if to.as_str() == START {
                 return Err(GraphError::Validation(
                     "START cannot be an edge target".to_string(),
@@ -396,6 +394,12 @@ where
                 return Err(GraphError::Validation(
                     "END cannot be an edge source".to_string(),
                 ));
+            }
+            if from.as_str() != START {
+                self.require_node(from)?;
+            }
+            if to.as_str() != END {
+                self.require_node(to)?;
             }
         }
 

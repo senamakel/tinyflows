@@ -4,6 +4,8 @@
 #
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
+cc 894a0f28fbdf8a5023faccd8064202a426bade45ae73dfe27fbaa44ce75309ba # shrinks to shape = Loop { max_iter: 2, body: Loop { max_iter: 1, body: Spawned { tasks: 3, release: "all", n: 2 } } }
+cc 039cd9bb03516e03e08d0928043e5bad8800d66ce8ad9e3a8e96178973542774 # shrinks to shape = Fanout([Linear(1), Fanout([Linear(1), Linear(2), Spawned { tasks: 1, release: "all", n: 1 }])])
 cc 5a8255f59206209c6bbdf34e78e14ead0bae17e4af6fdb64842502686224265d # shrinks to shape = Branch(Branch(Spawned { tasks: 3, release: "all", n: 3 }, Spawned { tasks: 1, release: "all", n: 1 }), Spawned { tasks: 2, release: "all", n: 3 })
 cc 201cea089acc9cbb4ed3a0bf98e20f57b1e671b9fb6d8636084a4c5a06abd47c # shrinks to shape = Loop { max_iter: 3, body: Spawned { tasks: 3, release: "all", n: 3 } }
 cc 60dcc55b51c47d53d5c569e160e47326be3516ad1444256c44ef6a21f1a3a708 # shrinks to shape = Nested(Branch(Spawned { tasks: 1, release: "all", n: 2 }, Loop { max_iter: 3, body: Spawned { tasks: 3, release: "all", n: 1 } }))
