@@ -82,12 +82,33 @@ struct FinishOrder {
 }
 
 impl FinishOrder {
-    fn position_of(&self, node: &str) -> Option<usize> {
+    /// Where a node **first** appears. A polling node records a step per poll,
+    /// so for `review` this is the first look, not the verdict.
+    fn first_position_of(&self, node: &str) -> Option<usize> {
         self.order
             .lock()
             .expect("lock")
             .iter()
             .position(|id| id == node)
+    }
+
+    /// Where a node **last** appears — for a polling node, the activation that
+    /// actually settled it.
+    fn last_position_of(&self, node: &str) -> Option<usize> {
+        self.order
+            .lock()
+            .expect("lock")
+            .iter()
+            .rposition(|id| id == node)
+    }
+
+    fn count_of(&self, node: &str) -> usize {
+        self.order
+            .lock()
+            .expect("lock")
+            .iter()
+            .filter(|id| *id == node)
+            .count()
     }
 
     fn finished(&self) -> Vec<String> {
