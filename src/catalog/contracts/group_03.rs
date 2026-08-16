@@ -166,7 +166,9 @@ pub(super) fn contract_approval() -> NodeKindContract {
                  whichever of `run.id` / `run.run_id` the host seeds — never read from the \
                  caller-supplied trigger payload). \
                  Must be stable across resumes: it is the key the host de-duplicates reviews on. \
-                 Required when no run-scoped id is available — falling back to the bare node id \
+                 A host names the run with `RunInput::with_run_id`, which lands in `run.id`; \
+                 with that seeded this field is optional. Required only when no run-scoped id \
+                 is available — falling back to the bare node id \
                  would let a later run of the same graph reuse an earlier run's decision, so the \
                  node refuses to guess and fails instead. SECURITY: whichever run id feeds this \
                  must be server-generated, never a caller-supplied trigger field forwarded \

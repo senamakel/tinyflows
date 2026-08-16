@@ -24,7 +24,7 @@ async fn main() {
         ApprovalDecision, ApprovalOutcome, ApprovalProvider, ApprovalRequest, Capabilities,
     };
     use tinyflows::compiler::compile;
-    use tinyflows::engine::{resume, run};
+    use tinyflows::engine::{RunInput, resume, run};
     use tinyflows::model::{Edge, Node, NodeKind, WorkflowGraph};
 
     /// A host's review desk: one row per `request_id`, holding the verdict once
@@ -108,7 +108,6 @@ async fn main() {
                     // A real host would key this on the run id (e.g.
                     // `"=run.id"`) rather than a literal, so two runs of this
                     // graph never collide on the same review.
-                    "request_id": "hitl-review-example",
                     "title": "Publish this post?",
                     "prompt": "Approving publishes it to the public feed.",
                     "subject_kind": "url",
@@ -141,11 +140,18 @@ async fn main() {
         approvals: Some(desk.clone()),
         ..mock_capabilities()
     };
+    // The host names the run. This is what gives the review a stable identity
+    // (`request_id` defaults to "<run id>:<node id>"), so the resume below
+    // resolves the card already in front of a person instead of opening a
+    // second one. It is seeded outside the trigger payload on purpose: a
+    // caller-supplied value here would hand an attacker the de-duplication key.
+    let run_id = "run-7f3a";
     let trigger = json!({ "url": "https://example.com/drafts/42" });
+    let input = || RunInput::new(trigger.clone()).with_run_id(run_id);
 
     // 1) Nobody has answered, so the run suspends at the review. Nothing is
     //    burned while the card sits in someone's queue.
-    let paused = run(&compiled, trigger.clone(), &caps).await.expect("run");
+    let paused = run(&compiled, input(), &caps).await.expect("run");
     println!("--- before the human answers ---");
     println!("pending_approvals: {:?}", paused.pending_approvals);
     println!("desk queue:        {:?}", desk.queue());
@@ -165,7 +171,7 @@ async fn main() {
 
     // 3) Resuming re-asks the desk, which now has the verdict. Note the review
     //    id is unchanged, so the reviewer is never asked a second time.
-    let done = resume(&compiled, trigger, vec![], &caps)
+    let done = resume(&compiled, input(), vec![], &caps)
         .await
         .expect("resume");
     println!("--- after the human answers ---");
