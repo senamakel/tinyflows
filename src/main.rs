@@ -326,6 +326,9 @@ fn standalone_capabilities() -> tinyflows::caps::Capabilities {
         // The stub binary refuses every outside-world capability; background
         // work is no exception, so `spawn` degrades to running inline.
         tasks: None,
+        // Likewise for human review: with no provider, an `approval` node
+        // pauses the run and waits for a resume that the stub never sends.
+        approvals: None,
     }
 }
 

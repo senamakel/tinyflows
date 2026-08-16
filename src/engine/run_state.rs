@@ -286,6 +286,10 @@ pub async fn resume(
 /// is replaced by a fresh object holding just the merged approvals. Declared
 /// inputs ride along unchanged — a resume re-runs the *same* parameterized
 /// workflow, so dropping them would silently change what it does.
+///
+/// The returned [`RunInput::approvals`] carries **only** what a host explicitly
+/// authorised — never an id read out of the trigger payload. See the body for
+/// why the two sets are kept apart.
 pub(super) fn merge_approvals(input: impl Into<RunInput>, newly_approved: Vec<String>) -> RunInput {
     let RunInput {
         mut trigger,
@@ -293,7 +297,33 @@ pub(super) fn merge_approvals(input: impl Into<RunInput>, newly_approved: Vec<St
         approvals: prior,
     } = input.into();
 
-    let mut approvals: Vec<String> = trigger
+    // Approval **provenance** is preserved rather than flattened, and the two
+    // sets are deliberately not the same list.
+    //
+    // `explicit` is what a host actually authorised: the ids passed to
+    // `engine::resume`, plus any carried on `RunInput::approvals`. It never
+    // includes anything read out of the trigger, because the trigger is the
+    // payload a caller submitted — on a webhook, attacker-supplied. Flattening
+    // the two meant a caller-written `trigger.approvals` entry was promoted
+    // into the trusted list by the first resume, so a self-approval that the
+    // initial run correctly refused went through on the next one.
+    //
+    // `trigger.approvals` still receives the union, unchanged, because the
+    // `requires_approval` gate in `engine::build::activation` reads exactly
+    // that key and callers are documented as being able to write approvals
+    // there directly. Narrowing *that* is a separate change to a shared,
+    // documented channel; this only stops trigger-origin ids laundering
+    // themselves into the explicit one.
+    let mut explicit: Vec<String> = Vec::new();
+    for id in newly_approved.into_iter().chain(prior) {
+        if !explicit.contains(&id) {
+            explicit.push(id);
+        }
+    }
+
+    // The union written back to the trigger: whatever the caller already had
+    // there, plus everything explicitly authorised.
+    let mut union: Vec<String> = trigger
         .get("approvals")
         .and_then(Value::as_array)
         .map(|existing| {
@@ -304,29 +334,21 @@ pub(super) fn merge_approvals(input: impl Into<RunInput>, newly_approved: Vec<St
                 .collect()
         })
         .unwrap_or_default();
-    for id in newly_approved {
-        if !approvals.contains(&id) {
-            approvals.push(id);
-        }
-    }
-
-    // Carry forward approvals delivered through the explicit channel too, so a
-    // resume of a run started with `with_approvals` does not silently drop them.
-    for id in prior {
-        if !approvals.contains(&id) {
-            approvals.push(id);
+    for id in &explicit {
+        if !union.contains(id) {
+            union.push(id.clone());
         }
     }
 
     if let Value::Object(map) = &mut trigger {
-        map.insert("approvals".to_string(), json!(approvals.clone()));
+        map.insert("approvals".to_string(), json!(union));
     } else {
-        trigger = json!({ "approvals": approvals.clone() });
+        trigger = json!({ "approvals": union });
     }
 
     RunInput {
         trigger,
         inputs,
-        approvals,
+        approvals: explicit,
     }
 }

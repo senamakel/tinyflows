@@ -549,7 +549,10 @@ impl HandlerData {
                         return Ok(NodeResult::Update(items_update(&node.id, &[], None)?));
                     }
                     let step = remaining.min(BACKOFF_POLL_MS);
-                    futures_timer::Delay::new(std::time::Duration::from_millis(step)).await;
+                    // Yields even when the timer has already fired, so a retry
+                    // backoff never starves the executor it shares — see
+                    // `super::backoff`.
+                    super::backoff::wait_slice(step).await;
                     remaining -= step;
                 }
             }

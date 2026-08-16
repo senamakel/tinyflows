@@ -199,6 +199,64 @@ fn gated_graphs_are_mostly_runnable_and_actually_suspend() {
     );
 }
 
+/// The shape `resuming_is_deterministic` shrank to when it caught a real race.
+///
+/// A gate sitting beside concurrent work, with three spawned tasks either side
+/// of a branch — the arrangement in which the number of polls a gate needs was
+/// decided by OS scheduling rather than by the graph.
+fn regression_shape() -> Shape {
+    Shape::Gate(Box::new(Shape::Branch(
+        Box::new(Shape::Spawned {
+            tasks: 3,
+            release: "all",
+            n: 3,
+        }),
+        Box::new(Shape::Fanout(vec![
+            Shape::Linear(2),
+            Shape::Linear(0),
+            Shape::Spawned {
+                tasks: 3,
+                release: "all",
+                n: 3,
+            },
+        ])),
+    )))
+}
+
+/// **Regression.** A gate needs the same number of polls every time.
+///
+/// `resuming_is_deterministic` found this shape producing runs that agreed on
+/// every collected item yet disagreed on the gate's `polls` count and on every
+/// downstream `_activation_step`. The cause was not the gate: a `Reenter`
+/// backoff whose timer had already fired completed without ever returning
+/// `Pending`, so on a single-threaded runtime the spawned tasks the gate was
+/// waiting on got no turn to run, and the gate spent an extra poll observing a
+/// world that had not moved. Whether that happened depended on whether the
+/// thread was descheduled for longer than the poll interval — which is why the
+/// property test only ever failed on a loaded CI machine.
+///
+/// Run as a fixed loop rather than a property, because the shape is already
+/// known and the variable being exercised is repetition, not generation. It
+/// reproduced within a few hundred iterations under load before the fix.
+#[test]
+fn a_gate_takes_the_same_number_of_polls_every_run() {
+    const RUNS: usize = 150;
+
+    let shape = regression_shape();
+    let mut baseline: Option<Value> = None;
+    for run_index in 0..RUNS {
+        let (_, resumed) = run_both_ways(&shape).expect("the regression shape should compile");
+        match &baseline {
+            None => baseline = Some(resumed),
+            Some(first) => assert_eq!(
+                first, &resumed,
+                "run {run_index} of the same shape differed from the first; a gate's poll count \
+                 or an activation step is being decided by scheduling rather than by the graph"
+            ),
+        }
+    }
+}
+
 proptest! {
     // Deliberately fewer cases than the other fuzz files: each case runs the
     // same graph at least twice, once through the checkpointer.
