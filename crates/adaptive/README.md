@@ -21,6 +21,23 @@ Every phase of the plan below is built. What closes the loop is the bottom
 edge: the next attempt sees what this episode already spent and what earlier
 ones learned, so a retry is a different idea rather than the same one reworded.
 
+## A worked host
+
+```text
+cargo run -p tinyflows-adaptive --example service
+```
+
+[`examples/service.rs`](examples/service.rs) is the reference for embedding the
+crate in a service: the tenant handles built once, a `Loop` per goal run, and —
+the part most worth copying — a **`Relay`**: dispatch mints a unique wire id,
+registers a oneshot waiter, serializes the `RunRequest`, sends, and awaits with
+a deadline; `deliver()` is the socket receive handler that correlates the
+echoed id back to its waiter. The transport is a pair of channels there so the
+pattern is visible without a web framework in the way; every seam a production
+host replaces is marked `HOST:`. It runs two goal runs end to end — the first
+authors a workflow and the success gate files it, the second selects it off the
+shelf.
+
 ## Why it is a separate crate
 
 The engine's graph is **frozen at compile**: `CompiledWorkflow` is
