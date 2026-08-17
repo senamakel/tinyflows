@@ -19,8 +19,8 @@
 //! notices, because the only symptom is that it never gets better.
 //!
 //! So it is named for what it does, has to be constructed on purpose, and says
-//! so in one line at the top. Reach for [`sqlite`](super::sqlite) or
-//! [`mongo`](super::mongo) the moment learning is supposed to outlive a
+//! so in one line at the top. Reach for `super::sqlite` or
+//! `super::mongo` the moment learning is supposed to outlive a
 //! process.
 //!
 //! # What it is good for

@@ -7,7 +7,7 @@
 //! away every score it had accumulated.
 //!
 //! Neither path names a model or a provider. Both reach inference through the
-//! engine's own [`LlmProvider`], so the host decides who answers and supplies
+//! engine's own [`LlmProvider`](tinyflows::caps::LlmProvider), so the host decides who answers and supplies
 //! the credential as an opaque `conn` reference this crate never inspects.
 //!
 //! What comes out is an [`Attempt`]: an [`Approach`] saying how the decision was

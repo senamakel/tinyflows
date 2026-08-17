@@ -12,7 +12,7 @@
 //! **A run is observed, always.** [`RunOutcome`] alone says the graph finished;
 //! it does not say a binding resolved to null, that an `on_error` policy
 //! swallowed a failure, or that half the nodes never executed. Those come from
-//! [`diagnose`], which needs the run's steps, which only exist if an observer
+//! [`diagnose`](tinyflows::diagnostics::diagnose), which needs the run's steps, which only exist if an observer
 //! was attached. A run without one produces a green outcome and a blank
 //! diagnosis — and a blank diagnosis is not "nothing was wrong", it is "nobody
 //! looked". Every gate downstream reads it: the judge's findings, the three

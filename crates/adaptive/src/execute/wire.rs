@@ -20,7 +20,7 @@
 //! * and a run that returned `Err` has **no output at all**, while its steps are
 //!   all still there. That is the run most in need of triage.
 //!
-//! So the steps cross, and the server reconstructs the rest. [`Diagnosis`] is
+//! So the steps cross, and the server reconstructs the rest. [`Diagnosis`](tinyflows::diagnostics::Diagnosis) is
 //! not sent either: `diagnose` is a pure function of the graph and the steps,
 //! the server already has the graph, and re-deriving it there is both smaller
 //! and impossible to disagree about.

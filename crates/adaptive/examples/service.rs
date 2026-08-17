@@ -135,7 +135,11 @@ impl Relay for ChannelRelay {
 
         match tokio::time::timeout(self.deadline, rx).await {
             Ok(Ok(mut report)) => {
-                println!("   ← RunReport   {} steps, failed: {:?}", report.steps.len(), report.failed);
+                println!(
+                    "   ← RunReport   {} steps, failed: {:?}",
+                    report.steps.len(),
+                    report.failed
+                );
                 // Hand the loop back its own id; the wire salt was ours.
                 report.attempt_id = request.attempt_id.clone();
                 Ok(report)
@@ -193,7 +197,9 @@ struct TierRouter;
 #[async_trait]
 impl LlmProvider for TierRouter {
     async fn complete(&self, request: Value, _conn: Option<&str>) -> EngineResult<Value> {
-        let shown = request["messages"][1]["content"].as_str().unwrap_or_default();
+        let shown = request["messages"][1]["content"]
+            .as_str()
+            .unwrap_or_default();
         Ok(match request["tier"].as_str().unwrap_or_default() {
             // Reads the candidate listing it was shown, like a real selector.
             "select" => {
@@ -357,7 +363,10 @@ async fn main() {
     for listing in inventory::shelf(&store, &ledger).await.expect("shelf") {
         println!(
             "   {} · {:?} · run {}× satisfied {}× · learned: {}",
-            listing.id, listing.standing, listing.score.applied, listing.score.helped,
+            listing.id,
+            listing.standing,
+            listing.score.applied,
+            listing.score.helped,
             listing.learned
         );
     }
@@ -365,7 +374,10 @@ async fn main() {
     println!("\n── the trail ──");
     for episode in ["ep-1", "ep-2"] {
         for row in ledger.rows(episode).await.expect("rows") {
-            println!("   {episode} attempt {} · [{}] → {}", row.attempt, row.approach_sig, row.outcome);
+            println!(
+                "   {episode} attempt {} · [{}] → {}",
+                row.attempt, row.approach_sig, row.outcome
+            );
         }
     }
 }

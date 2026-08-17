@@ -27,6 +27,11 @@ ones learned, so a retry is a different idea rather than the same one reworded.
 cargo run -p tinyflows-adaptive --example service
 ```
 
+[`docs/api.md`](docs/api.md) is the API reference for hosts — the traits you
+implement (including the per-tier reply contract your `LlmProvider` must
+honour), the constructors, the wire shapes, and the invariants. Full item-level
+docs: `cargo doc -p tinyflows-adaptive --open`.
+
 [`examples/service.rs`](examples/service.rs) is the reference for embedding the
 crate in a service: the tenant handles built once, a `Loop` per goal run, and —
 the part most worth copying — a **`Relay`**: dispatch mints a unique wire id,

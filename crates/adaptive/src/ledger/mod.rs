@@ -11,7 +11,7 @@
 //! rests on — *the engine may know about one run, anything that spans runs is
 //! ours* — is worth having in the type system rather than in a document.
 //!
-//! Three implementations ship. [`sqlite`] and [`mongo`] are behind features,
+//! Three implementations ship. `sqlite` and `mongo` are behind features,
 //! because the choice is the host's and a deployment that wants one should not
 //! build the other's driver. [`memory`] is always compiled, needs no driver,
 //! and **forgets everything on restart** — it exists so the crate is usable the
