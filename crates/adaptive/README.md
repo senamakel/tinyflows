@@ -380,10 +380,18 @@ catalogue. Same records, different way in, and without one the loop can only
 select what it wrote itself.
 
 ```rust
-let theirs = Arc::new(StoreVault::new(device_store));       // read-only
-let ours   = Arc::new(MongoVault::….for_tenant(&user));     // writable
-let vault  = Layered::new(vec![theirs], ours);
+let theirs = Arc::new(DeviceVault::new(&relay, &user));      // read-only, fetched
+let ours   = Arc::new(MongoVault::….for_tenant(&user));      // writable
+let vault  = Layered::new(vec![("device".into(), theirs)], ours)
+    .degrading(Arc::new(|layer, why| warn!(%layer, %why, "catalogue unavailable")));
+
+let snapshot = Snapshot::load(&vault, policy).await?;        // once, per episode
 ```
+
+`Vault::load` is the **only** async catalogue read, and it happens once when an
+episode starts. `store.list()` inside `decide()` is synchronous and served from
+the snapshot, so fetching per episode costs one round trip against a run that
+takes minutes — cheap enough that freshness is the better trade.
 
 `StoreVault` makes any `WorkflowStore` a `Vault` — nothing is migrated or
 rewritten to become selectable.
@@ -396,6 +404,15 @@ touched. No second master, no question of whose version is current, and a
 
 Later layers shadow earlier ones by id, so order the writable one last: a copy
 we have taken ownership of wins over the original it came from.
+
+**A sleeping device must not stop a tenant's goals.** `new` is strict — any
+unreadable layer fails the load, and therefore the episode — which is right when
+every layer is a database you own and wrong the moment one is somebody's laptop.
+`degrading` skips a read-only layer that errors, and **requires a handler**: a
+catalogue that quietly vanishes is this crate's worst failure shape, because the
+loop then authors from scratch and looks like it is working. You cannot have the
+degradation without being told each time. The writable layer stays fatal either
+way — a loop that cannot read its own procedures should stop, not relearn them.
 
 One caveat worth reading twice: `StoreVault` is **unscoped**, because the
 engine's store has no tenant concept to filter on. Scoping is by construction —
