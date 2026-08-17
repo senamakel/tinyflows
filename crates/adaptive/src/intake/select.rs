@@ -147,6 +147,12 @@ pub async fn select(
 /// The model is confident about inputs it did not actually find in the goal, so
 /// the cheap deterministic check catches what the expensive one asserted.
 ///
+/// The check runs in both directions. A required input the model did not
+/// supply is an error. An input the model supplied that the graph never
+/// declared is *dropped*: the engine rejects undeclared keys before any node
+/// executes, so one invented key — and models invent them freely — would
+/// otherwise turn a sound selection into an attempt that ran nothing.
+///
 /// # Errors
 /// When the workflow is gone, or an input has no value.
 pub fn bind(attempt: Attempt, store: &dyn WorkflowStore) -> Result<Attempt> {
@@ -176,6 +182,11 @@ pub fn bind(attempt: Attempt, store: &dyn WorkflowStore) -> Result<Attempt> {
             });
         }
     }
+
+    let mut attempt = attempt;
+    attempt
+        .inputs
+        .retain(|name, _| record.graph.inputs.iter().any(|d| d.name == *name));
 
     Ok(Attempt {
         graph: record.graph,
