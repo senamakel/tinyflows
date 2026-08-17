@@ -286,22 +286,65 @@ async fn a_workflow_already_tried_this_episode_is_not_offered_again() {
 }
 
 #[tokio::test]
-async fn a_selection_whose_required_input_is_missing_is_refused_before_it_runs() {
+async fn a_selection_missing_an_input_gets_the_refusal_back_and_binds_on_the_retry() {
     // The model is confident about inputs it did not find in the goal. The
-    // cheap deterministic check catches what the expensive one asserted.
-    let llm = std::sync::Arc::new(Scripted::new(vec![json!({
-        "workflow_id": "needs-repo",
-        "why": "matches",
-        "inputs": {},
-    })]));
-    let caps = caps_with(llm);
+    // cheap deterministic check catches what the expensive one asserted —
+    // and hands it back, because the slip is correctable and ending the
+    // episode over it would waste a sound selection.
+    let llm = std::sync::Arc::new(Scripted::new(vec![
+        json!({ "workflow_id": "needs-repo", "why": "matches", "inputs": {} }),
+        json!({
+            "workflow_id": "needs-repo",
+            "why": "matches, with the input this time",
+            "inputs": { "repo": "acme/thing" },
+        }),
+    ]));
+    let caps = caps_with(llm.clone());
     let (store, _root) = empty_store("5");
     store
         .save(&stored("needs-repo", "reviews PRs in a repo", Some("repo")))
         .expect("save");
     let ledger = MemoryLedger::new();
 
-    let err = decide(
+    let attempt = decide(
+        &Goal::new("review the PRs on acme/thing"),
+        "ep1",
+        &store,
+        &ledger,
+        &HostFacts::unknown(),
+        &caps,
+        None,
+    )
+    .await
+    .expect("the retried selection binds");
+
+    assert!(matches!(attempt.approach, Approach::Selected { .. }));
+    assert_eq!(attempt.inputs["repo"], "acme/thing");
+    let retry_prompt = llm.prompts().pop().expect("two prompts");
+    assert!(
+        retry_prompt.contains("failed to bind") && retry_prompt.contains("repo"),
+        "the retry names the refusal and the input: {retry_prompt}"
+    );
+}
+
+#[tokio::test]
+async fn a_selection_that_still_cannot_bind_falls_back_to_authoring() {
+    // Two unbindable selections mean the goal does not carry what the
+    // workflow needs — authoring is the planner that can always produce
+    // something runnable, and it sees the refusal too.
+    let llm = std::sync::Arc::new(Scripted::new(vec![
+        json!({ "workflow_id": "needs-repo", "why": "matches", "inputs": {} }),
+        json!({ "workflow_id": "needs-repo", "why": "still sure", "inputs": {} }),
+        json!({ "graph": tiny_graph("fresh", None), "why": "wrote one instead", "inputs": {} }),
+    ]));
+    let caps = caps_with(llm.clone());
+    let (store, _root) = empty_store("5b");
+    store
+        .save(&stored("needs-repo", "reviews PRs in a repo", Some("repo")))
+        .expect("save");
+    let ledger = MemoryLedger::new();
+
+    let attempt = decide(
         &Goal::new("review the PRs"),
         "ep1",
         &store,
@@ -311,11 +354,49 @@ async fn a_selection_whose_required_input_is_missing_is_refused_before_it_runs()
         None,
     )
     .await
-    .expect_err("an unbindable selection must not reach the engine");
+    .expect("authoring takes over");
 
+    assert!(matches!(attempt.approach, Approach::Authored { .. }));
+    let author_prompt = llm.prompts().pop().expect("three prompts");
     assert!(
-        err.to_string().contains("repo"),
-        "the error names the missing input: {err}"
+        author_prompt.contains("failed to bind"),
+        "the author sees why selection was abandoned: {author_prompt}"
+    );
+}
+
+#[tokio::test]
+async fn inputs_the_graph_never_declared_are_trimmed_before_the_engine_sees_them() {
+    // The engine rejects undeclared keys before any node executes, so one
+    // invented input — models invent them freely — would turn a sound
+    // selection into an attempt that ran nothing.
+    let llm = std::sync::Arc::new(Scripted::new(vec![json!({
+        "workflow_id": "needs-repo",
+        "why": "matches",
+        "inputs": { "repo": "acme/thing", "topic": "invented", "verbosity": "high" },
+    })]));
+    let caps = caps_with(llm);
+    let (store, _root) = empty_store("trim");
+    store
+        .save(&stored("needs-repo", "reviews PRs in a repo", Some("repo")))
+        .expect("save");
+    let ledger = MemoryLedger::new();
+
+    let attempt = decide(
+        &Goal::new("review the PRs on acme/thing"),
+        "ep1",
+        &store,
+        &ledger,
+        &HostFacts::unknown(),
+        &caps,
+        None,
+    )
+    .await
+    .expect("a sound selection with over-supplied inputs must still bind");
+
+    assert_eq!(
+        attempt.inputs.keys().collect::<Vec<_>>(),
+        ["repo"],
+        "only the declared input survives"
     );
 }
 
@@ -353,12 +434,14 @@ async fn a_hallucinated_workflow_id_reads_as_a_decline() {
 #[tokio::test]
 async fn an_authored_graph_that_does_not_validate_is_an_error_not_a_return_value() {
     // Handing it back would turn an authoring mistake into a run-time failure
-    // that reads like the work failing.
-    let llm = std::sync::Arc::new(Scripted::new(vec![json!({
+    // that reads like the work failing. The author retries with the refusal
+    // fed back, so the script holds a model that stays wrong for every round.
+    let broken = json!({
         "graph": { "schema_version": 1, "name": "empty", "nodes": [], "edges": [] },
         "why": "forgot the trigger",
         "inputs": {},
-    })]));
+    });
+    let llm = std::sync::Arc::new(Scripted::new(vec![broken.clone(), broken.clone(), broken]));
     let caps = caps_with(llm);
     let (store, _root) = empty_store("7");
     let ledger = MemoryLedger::new();
@@ -427,9 +510,16 @@ async fn a_graph_naming_a_worker_this_host_lacks_is_refused_before_it_runs() {
     };
     agent_graph.edges[0].to_node = "work".into();
 
-    let llm = std::sync::Arc::new(Scripted::new(vec![json!({
+    // Three copies: the author feeds refusals back, and this model never
+    // learns that the worker does not exist.
+    let insistent = json!({
         "graph": agent_graph, "why": "needs an agent", "inputs": {},
-    })]));
+    });
+    let llm = std::sync::Arc::new(Scripted::new(vec![
+        insistent.clone(),
+        insistent.clone(),
+        insistent,
+    ]));
     let caps = caps_with(llm);
     let (store, _root) = empty_store("gated");
     let ledger = MemoryLedger::new();

@@ -135,10 +135,40 @@ pub async fn decide(
         // `select` answers with an id; the graph and the input check come from
         // the store. Returning the choice unbound would hand the engine an
         // empty graph, which compiles to nothing and reads as the work failing.
-        return bind(chosen, store).map(|attempt| Attempt {
-            lessons_shown: shown,
-            ..attempt
-        });
+        match bind(chosen, store) {
+            Ok(attempt) => {
+                return Ok(Attempt {
+                    lessons_shown: shown,
+                    ..attempt
+                });
+            }
+            Err(refusal) => {
+                // A sound choice that failed to bind — the model asserted
+                // inputs it did not supply. That is a correctable slip, not a
+                // reason to end the episode: one more selection round with
+                // the refusal on the table, and authoring after that, because
+                // authoring can always produce something runnable.
+                let noted = format!(
+                    "{past}\n\n# A selection just failed to bind\n{refusal}\n\
+                     Supply a value for every required input this time, or \
+                     decline so a graph is written instead."
+                );
+                if let Some(retry) = select(goal, &candidates, &noted, caps, conn).await?
+                    && let Ok(attempt) = bind(retry, store)
+                {
+                    return Ok(Attempt {
+                        lessons_shown: shown,
+                        ..attempt
+                    });
+                }
+                return author(goal, facts, store.policy(), &noted, caps, conn)
+                    .await
+                    .map(|attempt| Attempt {
+                        lessons_shown: shown,
+                        ..attempt
+                    });
+            }
+        }
     }
     author(goal, facts, store.policy(), &past, caps, conn)
         .await

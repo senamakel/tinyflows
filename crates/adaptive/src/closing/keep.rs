@@ -57,7 +57,13 @@ a planner reads when deciding whether this procedure does what a NEW goal asks.
 - reusable: false when this graph only makes sense for the one goal it was
   written for, whatever its inputs say. A one-off kept in the catalogue is a row
   every future planner reads and none can use, so say so rather than reaching
-  for a description that sounds general.";
+  for a description that sounds general.
+
+  Also false when the goal's specifics — a topic, a name, a repository, a
+  value — sit inside a node's prompt or config instead of arriving through a
+  declared input. Run unchanged for the NEXT goal of its class, that graph
+  does the old goal's specific thing, which is worse than not being found:
+  it is found, run, and wrong. Reusable means reusable as-is.";
 
 /// What was kept, when anything was.
 #[derive(Debug, Clone)]
