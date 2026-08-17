@@ -1,0 +1,36 @@
+[package]
+name = "tinyflows-adaptive"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "GPL-3.0-or-later"
+description = "An adaptive loop over the tinyflows engine: select or author a workflow, run it, judge it, learn."
+
+[dependencies]
+tinyflows = { path = "../..", features = ["store"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+async-trait = "0.1"
+thiserror = "2"
+rusqlite = { version = "0.40.2", features = ["bundled"], optional = true }
+mongodb = { version = "3.6.0", optional = true }
+
+[features]
+# Persistence out of the box. The alternative — no backend unless asked — meant
+# `cargo add tinyflows-adaptive` gave you a crate whose whole value is that
+# learning accumulates, and no way to make it accumulate.
+#
+# It costs a bundled SQLite build. A deployment that only wants Mongo turns it
+# off: `default-features = false, features = ["mongo"]`.
+default = ["sqlite"]
+sqlite = ["dep:rusqlite"]
+mongo = ["dep:mongodb"]
+
+[dev-dependencies]
+tinyflows = { path = "../..", features = ["store", "mock"] }
+tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread", "sync", "time"] }
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+

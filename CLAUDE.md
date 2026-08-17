@@ -39,7 +39,7 @@ model::WorkflowGraph  →  validate  →  compiler::compile  →  engine::run
   feature. Not part of the engine: `engine::run` neither reads nor writes any of
   it. `store::HostPolicy` is where a host injects the judgements only it can
   make — which harnesses exist, which slugs resolve.
-- `bindings.rs` — reading the `={{ ... }}` bindings a graph declares: which node
+- `bindings.rs` — reading the `=expr` bindings a graph declares: which node
   an expression reads from, and whether it reads as prose rather than jq.
 - `gates/` — authoring gates: what is *guaranteed* wrong with a graph, refused
   before a write rather than surfacing as a silent null at run time. Only the

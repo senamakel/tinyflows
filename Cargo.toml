@@ -1,3 +1,10 @@
+# The adaptive loop lives beside the engine, never inside it. `crates/adaptive`
+# decides *what* graph to run and judges what came back; this package decides
+# nothing and executes one graph. Keeping them separate packages is what makes
+# a merge from upstream a merge rather than a conflict resolution.
+[workspace]
+members = ["crates/adaptive"]
+
 [package]
 name = "tinyflows"
 version = "0.8.0"
