@@ -197,11 +197,17 @@ pub async fn repair(
         .save(&record)
         .map_err(|e| IntakeError::Store(e.to_string()))?;
 
-    // Recorded after the save, so a link never points at a workflow that was
+    // Recorded after the save, so a link never points at a graph the store
     // refused. Without it the variant is just another row in the catalogue and
-    // the promotion gate has no family to compare within — the parent's score,
-    // which is the entire reason this is a variant and not an edit, would have
-    // nothing to be compared *to*.
+    // the promotion gate has no family to compare within.
+    //
+    // The converse can happen under a buffering store, and is fine: this link
+    // is durable now, while the graph lands only when the host flushes — and a
+    // host may gate that flush on the episode succeeding, so a failed episode
+    // leaves a link with no graph behind it. That degrades to "not offerable"
+    // in the catalogue rather than breaking anything, and the same failure
+    // re-derives the same repair onto the same content-derived id later, so
+    // the lineage and score recorded now reattach instead of being orphaned.
     ledger.link_variant(parent_id, &id).await?;
 
     Ok(Some(Variant {

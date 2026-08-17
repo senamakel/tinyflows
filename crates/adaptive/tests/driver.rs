@@ -703,3 +703,186 @@ async fn a_lesson_shown_before_a_failure_moves_only_its_denominator() {
     );
     assert_eq!(back.helped, 0, "and it never helped");
 }
+
+// ---------------------------------------------------------------------------
+// The success gate: a variant exists mid-episode, the device gets it after.
+// ---------------------------------------------------------------------------
+
+/// Drives the whole repair story from a script: select the parent, fail it
+/// with a node named, propose a fix, select the fix, and — depending on
+/// `satisfied_on` — let it win or keep failing until the stall rule ends it.
+struct RepairFlow {
+    judged: Mutex<usize>,
+    satisfied_on: usize,
+}
+
+impl RepairFlow {
+    fn new(satisfied_on: usize) -> Arc<Self> {
+        Arc::new(Self {
+            judged: Mutex::new(0),
+            satisfied_on,
+        })
+    }
+}
+
+#[async_trait]
+impl LlmProvider for RepairFlow {
+    async fn complete(&self, request: Value, _conn: Option<&str>) -> EngineResult<Value> {
+        let user = request["messages"][1]["content"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string();
+        Ok(match request["tier"].as_str().unwrap_or_default() {
+            "select" => {
+                // Variant ids are content-derived, so the script cannot know
+                // them ahead — it reads the listing it was shown, the way a
+                // real selector would.
+                let ids: Vec<&str> = user
+                    .lines()
+                    .filter_map(|line| line.trim().strip_prefix("- id: "))
+                    .collect();
+                let chosen = ids
+                    .iter()
+                    .find(|id| id.contains("-fix-"))
+                    .or_else(|| ids.first());
+                json!({ "workflow_id": chosen, "why": "it matches", "inputs": {} })
+            }
+            "judge" => {
+                let mut judged = self.judged.lock().expect("lock");
+                *judged += 1;
+                if *judged >= self.satisfied_on {
+                    json!({ "satisfied": true, "gap": "" })
+                } else {
+                    json!({
+                        "satisfied": false, "blocker": "goal_not_met",
+                        "gap": "the summary never landed",
+                        "attributed_to": "start", "advanced": false
+                    })
+                }
+            }
+            "repair" => json!({
+                "ops": [{ "op": "update_node_config", "id": "start",
+                          "config": { "note": "fixed" } }],
+                "why": "repointed the binding"
+            }),
+            "consolidate" => json!({ "lessons": [], "corroborate": [] }),
+            other => panic!("no `{other}` call belongs in this flow"),
+        })
+    }
+}
+
+fn permissive() -> Arc<dyn tinyflows::store::HostPolicy> {
+    #[derive(Debug, Default)]
+    struct Permissive;
+    impl tinyflows::store::HostPolicy for Permissive {}
+    Arc::new(Permissive)
+}
+
+#[tokio::test]
+async fn the_device_receives_a_variant_only_after_the_goal_run_succeeds() {
+    use tinyflows_adaptive::workflows::compat::Layered;
+    use tinyflows_adaptive::workflows::conformance::record;
+    use tinyflows_adaptive::workflows::memory::MemoryVault;
+    use tinyflows_adaptive::workflows::{Snapshot, Vault};
+
+    // The device owns the original; our writable layer starts empty.
+    let device = Arc::new(MemoryVault::new());
+    device.put(&record("pr-review")).await.expect("put");
+    let ours = Arc::new(MemoryVault::new());
+    let stacked = Layered::new(
+        vec![("device".into(), device.clone() as Arc<dyn Vault>)],
+        ours.clone(),
+    );
+
+    let snapshot = Snapshot::load(&stacked, permissive()).await.expect("load");
+    let store: Arc<dyn WorkflowStore> = Arc::new(snapshot.clone());
+    let caps = Capabilities {
+        llm: RepairFlow::new(2),
+        ..mock_capabilities()
+    };
+    let ledger = MemoryLedger::new();
+    let runner = Local {
+        caps: &caps,
+        workspace: &Unobserved,
+    };
+
+    let finished = engine_over(&ledger, &store, &caps, &runner, &HostFacts::unknown())
+        .run("ep-gate", &Goal::new("summarise the open pull requests"))
+        .await
+        .expect("run");
+
+    assert_eq!(finished.status, EpisodeStatus::Satisfied);
+    assert_eq!(
+        finished.attempts, 2,
+        "the parent failed once and its variant closed the goal"
+    );
+
+    // Mid-episode the variant lived only in the snapshot. The gate is the
+    // host's one `if`, and it is open:
+    assert_eq!(snapshot.pending(), 1);
+    snapshot.flush(&stacked).await.expect("flush");
+
+    let landed = ours.load().await.expect("load");
+    assert_eq!(landed.len(), 1);
+    assert!(
+        landed[0].id.starts_with("pr-review-fix-"),
+        "{}",
+        landed[0].id
+    );
+    assert_eq!(
+        device.load().await.expect("load").len(),
+        1,
+        "the parent's home holds exactly what it held before"
+    );
+}
+
+#[tokio::test]
+async fn a_failed_goal_run_leaves_no_residue_anywhere_durable() {
+    use tinyflows_adaptive::workflows::compat::Layered;
+    use tinyflows_adaptive::workflows::conformance::record;
+    use tinyflows_adaptive::workflows::memory::MemoryVault;
+    use tinyflows_adaptive::workflows::{Snapshot, Vault};
+
+    let device = Arc::new(MemoryVault::new());
+    device.put(&record("pr-review")).await.expect("put");
+    let ours = Arc::new(MemoryVault::new());
+    let stacked = Layered::new(
+        vec![("device".into(), device.clone() as Arc<dyn Vault>)],
+        ours.clone(),
+    );
+
+    let snapshot = Snapshot::load(&stacked, permissive()).await.expect("load");
+    let store: Arc<dyn WorkflowStore> = Arc::new(snapshot.clone());
+    let caps = Capabilities {
+        llm: RepairFlow::new(usize::MAX), // never satisfied; the stall ends it
+        ..mock_capabilities()
+    };
+    let ledger = MemoryLedger::new();
+    let runner = Local {
+        caps: &caps,
+        workspace: &Unobserved,
+    };
+
+    let finished = engine_over(&ledger, &store, &caps, &runner, &HostFacts::unknown())
+        .run(
+            "ep-no-residue",
+            &Goal::new("summarise the open pull requests"),
+        )
+        .await
+        .expect("run");
+
+    assert!(matches!(finished.status, EpisodeStatus::StoodDown(_)));
+    assert!(
+        snapshot.pending() >= 1,
+        "repairs were proposed and buffered along the way"
+    );
+
+    // The gate stays closed: no flush. The knowledge is not lost with the
+    // graphs — the ledger kept the trail, durably, on the server side.
+    assert!(ours.load().await.expect("load").is_empty());
+    assert_eq!(device.load().await.expect("load").len(), 1);
+    assert!(
+        !ledger.rows("ep-no-residue").await.expect("rows").is_empty(),
+        "the attempts are on the record even though no graph was kept"
+    );
+}

@@ -372,6 +372,29 @@ The engine's authoring surface — run records, revisions, notes, proposals —
 **refuses** rather than pretending. A run record accepted and then lost on the
 next load is worse than an error, because nothing tells the caller it vanished.
 
+### When a graph becomes durable
+
+`store.save()` inside the loop writes to the snapshot's **buffer**, which is
+what makes the persistence policy the host's. The canonical gate:
+
+```rust
+let snapshot = Snapshot::load(&vault, policy).await?;
+let finished = engine.run(&episode, &goal).await?;
+if finished.status == EpisodeStatus::Satisfied {
+    snapshot.flush(&vault).await?;   // variants + learned graphs land
+}                                    // stood down → drop the snapshot; no residue
+```
+
+A repair variant exists **mid-episode** — the retry selects it out of the
+snapshot the moment its parent is excluded — but the vault receives it only
+after the goal run succeeds. A failed episode leaves nothing behind on whatever
+the vault fronts, which matters most when it fronts somebody's device.
+
+Dropping loses nothing. The ledger's rows, lineage and scores are durable
+regardless, and a re-derived repair converges on the same content-derived id —
+so when the graph finally does land, the evidence recorded earlier reattaches
+rather than being orphaned.
+
 ## Reading a catalogue that already exists
 
 The loop's own procedures live in a `Vault`. Everyone else's live in a
