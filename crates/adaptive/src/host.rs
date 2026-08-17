@@ -87,6 +87,10 @@ impl HostFacts {
         self.default_worker.is_none()
             && self.workers.is_empty()
             && self.harnesses.is_empty()
+            && self.default_harness.is_none()
+            && self.default_model.is_none()
+            && self.max_parallel_agents.is_none()
+            && self.run_timeout_secs.is_none()
             && self.native_tools.is_empty()
             && self.tool_allowlist.is_empty()
             && self.http_allowlist.is_empty()
@@ -186,10 +190,15 @@ impl HostFacts {
         if url.starts_with('=') {
             return;
         }
+        // DNS names are case-insensitive; an allowlist that rejects
+        // `API.GitHub.com` against `github.com` costs the episode a spurious
+        // authoring round.
         let Some(host) = host_of(url) else { return };
+        let host = host.to_ascii_lowercase();
         if !self
             .http_allowlist
             .iter()
+            .map(|allowed| allowed.to_ascii_lowercase())
             .any(|allowed| host == allowed || host.ends_with(&format!(".{allowed}")))
         {
             out.push(format!(
@@ -345,6 +354,49 @@ fn host_of(url: &str) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_host_that_configured_any_rendered_fact_is_not_unknown() {
+        // `is_unknown` must test every field `render` prints: a fact it skips
+        // is one that silently never reaches the authoring prompt.
+        for facts in [
+            HostFacts {
+                default_harness: Some("codex".into()),
+                ..HostFacts::unknown()
+            },
+            HostFacts {
+                default_model: Some("gpt-5".into()),
+                ..HostFacts::unknown()
+            },
+            HostFacts {
+                max_parallel_agents: Some(2),
+                ..HostFacts::unknown()
+            },
+            HostFacts {
+                run_timeout_secs: Some(600),
+                ..HostFacts::unknown()
+            },
+        ] {
+            assert!(!facts.is_unknown(), "{facts:?}");
+            assert!(!facts.render().is_empty(), "and it renders");
+        }
+    }
+
+    #[test]
+    fn host_names_compare_case_insensitively() {
+        // DNS is case-insensitive; `API.GitHub.com` against `github.com` must
+        // not cost the episode a spurious authoring round.
+        let facts = HostFacts {
+            http_allowlist: vec!["github.com".into()],
+            ..HostFacts::unknown()
+        };
+        let graph = graph(vec![node(
+            "fetch",
+            NodeKind::HttpRequest,
+            serde_json::json!({ "url": "https://API.GitHub.com/repos/x", "method": "GET" }),
+        )]);
+        assert!(facts.check(&graph).is_empty(), "{:?}", facts.check(&graph));
+    }
     use serde_json::json;
     use tinyflows::model::Node;
 

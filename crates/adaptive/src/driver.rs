@@ -116,6 +116,14 @@ impl Loop<'_> {
     /// One pass: decide, run, judge, record — and repair the graph if that is
     /// what fell short.
     ///
+    /// **One episode, one attempt at a time.** Concurrency is across episodes —
+    /// distinct ids — never within one: two concurrent `attempt` calls for the
+    /// same episode id would read the same attempt number, append two rows
+    /// under it, and race the checkpoint write. Nothing here serializes that,
+    /// because the natural caller — [`run`](Self::run), or a worker owning an
+    /// episode — is already sequential; a host that parallelizes within one
+    /// episode owns the lock.
+    ///
     /// The attempt number comes from the episode record rather than the caller,
     /// so a process that picks up an episode it did not start continues its
     /// numbering instead of restarting at one.

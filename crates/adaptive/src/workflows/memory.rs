@@ -48,16 +48,26 @@ impl Vault for MemoryVault {
 
     async fn load(&self) -> Result<Vec<WorkflowRecord>, WorkflowError> {
         let bucket = self.bucket();
-        Ok(self
+        let inner = self
             .inner
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .iter()
-            // This bucket plus global — the ledger's rule, so a workflow shared
-            // with everyone is written by an unscoped handle and read by all.
-            .filter(|((scope, _), _)| scope == &bucket || scope.is_empty())
-            .map(|(_, record)| record.clone())
-            .collect())
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // This bucket plus global, one record per id, and the bucket's own
+        // record shadows a global one — explicitly, not as an accident of map
+        // iteration order.
+        let mut chosen: std::collections::BTreeMap<String, WorkflowRecord> =
+            std::collections::BTreeMap::new();
+        for ((scope, id), record) in inner.iter() {
+            if scope.is_empty() {
+                chosen.insert(id.clone(), record.clone());
+            }
+        }
+        for ((scope, id), record) in inner.iter() {
+            if !bucket.is_empty() && scope == &bucket {
+                chosen.insert(id.clone(), record.clone());
+            }
+        }
+        Ok(chosen.into_values().collect())
     }
 
     async fn put(&self, record: &WorkflowRecord) -> Result<(), WorkflowError> {

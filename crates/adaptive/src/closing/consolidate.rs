@@ -188,7 +188,11 @@ fn read_lesson(raw: &serde_json::Value) -> Option<Lesson> {
 
 /// Row numbers back to row ids, dropping any the model invented.
 fn cited(raw: &serde_json::Value, rows: &[LedgerRow]) -> Vec<String> {
-    let mut ids: Vec<String> = raw["evidence"]
+    // Membership, not `dedup()`: the model cites rows in the order it thought
+    // of them, so `[0, 1, 0]` is a legal answer and adjacent-only dedup would
+    // store the same row twice as evidence for one lesson.
+    let mut ids: Vec<String> = Vec::new();
+    for id in raw["evidence"]
         .as_array()
         .map(|a| {
             a.iter()
@@ -196,10 +200,14 @@ fn cited(raw: &serde_json::Value, rows: &[LedgerRow]) -> Vec<String> {
                 .filter_map(|i| usize::try_from(i).ok())
                 .filter_map(|i| rows.get(i))
                 .map(|r| r.id.clone())
-                .collect()
+                .collect::<Vec<_>>()
         })
-        .unwrap_or_default();
-    ids.dedup();
+        .unwrap_or_default()
+    {
+        if !ids.contains(&id) {
+            ids.push(id);
+        }
+    }
     ids
 }
 
@@ -249,6 +257,14 @@ mod tests {
     fn citations_resolve_row_numbers_to_row_ids() {
         let rows = vec![row("r1", "a"), row("r2", "b")];
         let raw = serde_json::json!({"evidence": [0, 1]});
+        assert_eq!(cited(&raw, &rows), vec!["r1", "r2"]);
+    }
+
+    #[test]
+    fn a_row_cited_twice_non_adjacently_is_stored_once() {
+        // `[0, 1, 0]` — Vec::dedup only removes adjacent repeats.
+        let rows = vec![row("r1", "a"), row("r2", "b")];
+        let raw = serde_json::json!({"evidence": [0, 1, 0]});
         assert_eq!(cited(&raw, &rows), vec!["r1", "r2"]);
     }
 

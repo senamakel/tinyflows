@@ -50,9 +50,13 @@ const DISTINCTIVE_CHARS: [char; 6] = ['/', '.', ':', '@', '_', '-'];
 /// to keep perfectly reusable procedures, and a gate that fires on noise is one
 /// nobody trusts.
 fn distinctive(value: &str) -> bool {
-    value.chars().count() >= LONG_ENOUGH
+    let length = value.chars().count();
+    // A digit only counts alongside some length: `"1"` proves nothing and, via
+    // the substring test, would match any config containing that character —
+    // reporting a paste and discarding a perfectly reusable procedure.
+    length >= LONG_ENOUGH
         || value.contains(DISTINCTIVE_CHARS)
-        || value.chars().any(|c| c.is_ascii_digit())
+        || (length >= 4 && value.chars().any(|c| c.is_ascii_digit()))
 }
 
 /// Input values this graph pasted into a node instead of reading.
@@ -105,17 +109,35 @@ pub fn baked_in(graph: &WorkflowGraph, inputs: &serde_json::Map<String, Value>) 
 /// a later pass may improve without making it a different procedure.
 #[must_use]
 pub fn shape_id(graph: &WorkflowGraph) -> String {
-    use std::hash::{DefaultHasher, Hash, Hasher};
-    let mut hasher = DefaultHasher::new();
-    let shape = serde_json::json!({
+    format!("learned-{}", digest_hex(&shape_bytes(graph)))
+}
+
+/// The canonical bytes an identity is derived from.
+pub(crate) fn shape_bytes(graph: &WorkflowGraph) -> Vec<u8> {
+    serde_json::to_vec(&serde_json::json!({
         "nodes": &graph.nodes,
         "edges": &graph.edges,
         "inputs": &graph.inputs,
-    });
-    serde_json::to_string(&shape)
-        .unwrap_or_default()
-        .hash(&mut hasher);
-    format!("learned-{:07x}", hasher.finish() & 0xfff_ffff)
+    }))
+    .unwrap_or_default()
+}
+
+/// FNV-1a over the bytes, 64 bits, rendered as 16 hex chars.
+///
+/// Not `DefaultHasher`: these digests become **persisted identifiers** —
+/// workflow ids, lineage keys, exclusion-list signatures — and `DefaultHasher`
+/// is explicitly unstable across Rust releases, so a toolchain upgrade would
+/// silently stop identical work converging and orphan every stored score. The
+/// old 28-bit truncation also put birthday collisions within reach of a few
+/// tens of thousands of records; 64 bits does not. FNV-1a is fixed forever,
+/// fits in six lines, and needs no dependency.
+pub(crate) fn digest_hex(bytes: &[u8]) -> String {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in bytes {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("{hash:016x}")
 }
 
 /// Every string leaf in a config, keys excluded.
@@ -206,6 +228,14 @@ mod tests {
     }
 
     #[test]
+    fn a_bare_short_digit_is_not_evidence() {
+        // "1" appears in half of all configs; treating it as a paste would
+        // refuse reusable procedures on noise.
+        let graph = graph_with(json!({ "max_items": "10", "prompt": "top 1 result" }));
+        assert!(baked_in(&graph, &inputs(&[("n", "1"), ("count", "10")])).is_empty());
+    }
+
+    #[test]
     fn a_short_value_with_structure_is_still_evidence() {
         // Short but unmistakable: nothing else in a config is `a/b` or has a
         // ticket number in it by coincidence.
@@ -233,6 +263,14 @@ mod tests {
         // given, so nothing could have been baked in.
         let graph = graph_with(json!({ "prompt": "summarise today's pull requests" }));
         assert!(baked_in(&graph, &inputs(&[])).is_empty());
+    }
+
+    #[test]
+    fn the_digest_is_the_documented_algorithm_not_a_std_implementation_detail() {
+        // Pinned to FNV-1a's published test vectors: if this fails, persisted
+        // identifiers changed and every stored score is orphaned.
+        assert_eq!(digest_hex(b""), "cbf29ce484222325");
+        assert_eq!(digest_hex(b"a"), "af63dc4c8601ec8c");
     }
 
     #[test]

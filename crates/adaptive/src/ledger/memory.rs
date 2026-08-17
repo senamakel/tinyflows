@@ -181,8 +181,19 @@ impl Ledger for MemoryLedger {
     }
 
     async fn score_lesson(&self, lesson_id: &str, helped: bool) -> Result<()> {
+        // Only what this handle can see: its bucket, or global. The ids reach
+        // here from model output (corroboration), and a tenant must not be
+        // able to move another tenant's score by naming its id.
+        let visible = |l: &&mut Lesson| {
+            l.scope_key.is_none() || l.scope_key.as_deref() == self.scope.as_deref()
+        };
         let mut inner = self.guard();
-        if let Some(lesson) = inner.lessons.iter_mut().find(|l| l.id == lesson_id) {
+        if let Some(lesson) = inner
+            .lessons
+            .iter_mut()
+            .filter(visible)
+            .find(|l| l.id == lesson_id)
+        {
             lesson.applied += 1;
             lesson.helped += u32::from(helped);
         }
@@ -271,7 +282,7 @@ impl Ledger for MemoryLedger {
     }
 
     async fn episodes(&self, running_only: bool, page: super::Page) -> Result<Vec<Episode>> {
-        let found: Vec<Episode> = self
+        let mut found: Vec<Episode> = self
             .guard()
             .episodes
             .iter()
@@ -279,6 +290,11 @@ impl Ledger for MemoryLedger {
             .filter(|e| !running_only || e.status == super::EpisodeStatus::Running)
             .cloned()
             .collect();
+        // Newest first, ids breaking ties — `Page` documents that order, the
+        // durable backends sort in the query, and this backend is the
+        // reference the conformance suite pins. Insertion order is the
+        // opposite end of the list.
+        found.sort_by(|a, b| b.updated_at.cmp(&a.updated_at).then(a.id.cmp(&b.id)));
         Ok(page.apply(found))
     }
 

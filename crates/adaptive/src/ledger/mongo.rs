@@ -106,11 +106,16 @@ impl MongoLedger {
         self.evidence()
             .create_index(IndexModel::builder().keys(doc! { "lesson_id": 1 }).build())
             .await?;
+        // The score key is (scope_key, workflow_id) since tenancy landed. The
+        // old single-field unique index would reject the same workflow id in a
+        // second tenant's bucket, so it is dropped if present — failure means
+        // it never existed, which is the ordinary case.
+        let _ = self.scores().drop_index("workflow_id_1").await;
         let unique = IndexOptions::builder().unique(true).build();
         self.scores()
             .create_index(
                 IndexModel::builder()
-                    .keys(doc! { "workflow_id": 1 })
+                    .keys(doc! { "scope_key": 1, "workflow_id": 1 })
                     .options(unique)
                     .build(),
             )
@@ -288,10 +293,11 @@ impl Ledger for MongoLedger {
 
     async fn lessons(&self, kind: Option<LessonKind>) -> Result<Vec<Lesson>> {
         // This bucket plus global. An unscoped handle's bucket is global, so
-        // the two halves coincide and it sees exactly what it wrote. A lesson
-        // written before scoping existed has no field at all, which `$in` with
-        // a null matches — those read as global, which is what they were.
-        let mine = doc! { "$in": [self.bucket(), ""] };
+        // the two halves coincide and it sees exactly what it wrote. `null` is
+        // in the set because `$in` only matches a *missing* field when the
+        // array contains null — and a lesson written before scoping existed
+        // has no field at all; those read as global, which is what they were.
+        let mine = doc! { "$in": [self.bucket(), "", mongodb::bson::Bson::Null] };
         let filter = match kind {
             Some(want) => doc! { "kind": kind_str(want), "scope_key": mine },
             None => doc! { "scope_key": mine },
@@ -343,9 +349,12 @@ impl Ledger for MongoLedger {
     }
 
     async fn score_lesson(&self, lesson_id: &str, helped: bool) -> Result<()> {
+        // Constrained to what this handle can see — the id arrives from model
+        // output, and naming another tenant's lesson must not move its score.
         self.lessons_c()
             .update_one(
-                doc! { "_id": lesson_id },
+                doc! { "_id": lesson_id,
+                "scope_key": { "$in": [self.bucket(), "", mongodb::bson::Bson::Null] } },
                 doc! { "$inc": { "applied": 1_i64, "helped": i64::from(helped) } },
             )
             .await?;
@@ -436,6 +445,11 @@ impl Ledger for MongoLedger {
     }
 
     async fn save_steps(&self, row_id: &str, steps: &[crate::execute::StepRecord]) -> Result<()> {
+        // Replace, not overlay: a shorter re-save must not leave the old tail
+        // behind it, or `steps()` returns two attempts stitched together.
+        self.steps_c()
+            .delete_many(doc! { "scope_key": self.bucket(), "row_id": row_id })
+            .await?;
         // A document per step. One per attempt would exceed the 16 MB cap on a
         // looped graph, and would do it only in production.
         for (seq, step) in steps.iter().enumerate() {

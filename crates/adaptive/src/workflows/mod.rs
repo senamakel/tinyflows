@@ -68,7 +68,13 @@ pub trait Vault: Send + Sync {
         None
     }
 
-    /// Every workflow in scope.
+    /// Every workflow in scope, **at most one record per id**: when the same
+    /// id exists in this handle's bucket and in global, the handle's own wins.
+    ///
+    /// The precedence is each backend's obligation rather than the caller's,
+    /// because the caller dedupes by id in arrival order — leaving it to
+    /// storage iteration order would make "whose record wins" an
+    /// implementation accident that differs across backends.
     ///
     /// The whole catalogue in one call, because a snapshot loads once and a
     /// tenant's procedures number in the tens, not the millions. A host that
@@ -161,7 +167,16 @@ impl Snapshot {
             }
             written += 1;
         }
-        self.guard_dirty().clear();
+        // Remove only what was flushed, and only if it has not changed since
+        // the snapshot of `pending` was taken. Clearing the whole map would
+        // drop a save that landed *during* the awaits above — the record would
+        // exist only in memory and be gone after a restart, silently.
+        let mut dirty = self.guard_dirty();
+        for (id, record) in &pending {
+            if dirty.get(id) == Some(record) {
+                dirty.remove(id);
+            }
+        }
         Ok(written)
     }
 
@@ -272,6 +287,7 @@ mod tests {
     use super::*;
     use crate::workflows::conformance::record;
     use crate::workflows::memory::MemoryVault;
+    use std::sync::Mutex;
 
     fn policy() -> Arc<dyn HostPolicy> {
         #[derive(Debug, Default)]
@@ -366,6 +382,49 @@ mod tests {
         assert_eq!(snapshot.pending(), 1, "the flusher sees the loop's write");
         snapshot.flush(&vault).await.expect("flush");
         assert_eq!(vault.load().await.expect("load").len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_save_landing_during_a_flush_is_not_dropped() {
+        // The vault's put() writes back into the snapshot through a clone —
+        // the shape of a second episode saving while the first one flushes.
+        // Clearing the whole dirty map would silently lose that record.
+        struct Reentrant {
+            inner: MemoryVault,
+            target: Mutex<Option<Snapshot>>,
+        }
+        #[async_trait]
+        impl Vault for Reentrant {
+            async fn load(&self) -> Result<Vec<WorkflowRecord>, WorkflowError> {
+                self.inner.load().await
+            }
+            async fn put(&self, incoming: &WorkflowRecord) -> Result<(), WorkflowError> {
+                if let Some(snapshot) = self.target.lock().expect("lock").take() {
+                    snapshot.save(&record("late")).expect("save mid-flush");
+                }
+                self.inner.put(incoming).await
+            }
+            async fn remove(&self, id: &str) -> Result<(), WorkflowError> {
+                self.inner.remove(id).await
+            }
+        }
+
+        let vault = Reentrant {
+            inner: MemoryVault::new(),
+            target: Mutex::new(None),
+        };
+        let snapshot = Snapshot::empty(policy());
+        snapshot.save(&record("first")).expect("save");
+        *vault.target.lock().expect("lock") = Some(snapshot.clone());
+
+        assert_eq!(snapshot.flush(&vault).await.expect("flush"), 1);
+        assert_eq!(
+            snapshot.pending(),
+            1,
+            "the save that landed mid-flush survives to the next flush"
+        );
+        assert_eq!(snapshot.flush(&vault).await.expect("flush"), 1);
+        assert_eq!(snapshot.pending(), 0);
     }
 
     #[tokio::test]

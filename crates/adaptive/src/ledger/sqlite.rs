@@ -541,8 +541,12 @@ impl Ledger for SqliteLedger {
     async fn score_lesson(&self, lesson_id: &str, helped: bool) -> Result<()> {
         let conn = self.guard()?;
         conn.execute(
-            "UPDATE lessons SET applied = applied + 1, helped = helped + ?2 WHERE id = ?1",
-            params![lesson_id, i64::from(helped)],
+            // Constrained to what this handle can see — the id arrives from
+            // model output, and naming another tenant's lesson must not move
+            // its score.
+            "UPDATE lessons SET applied = applied + 1, helped = helped + ?2
+             WHERE id = ?1 AND (scope_key = ?3 OR scope_key = '')",
+            params![lesson_id, i64::from(helped), self.bucket()],
         )?;
         Ok(())
     }
@@ -639,6 +643,13 @@ impl Ledger for SqliteLedger {
 
     async fn save_steps(&self, row_id: &str, steps: &[crate::execute::StepRecord]) -> Result<()> {
         let conn = self.guard()?;
+        // Replace, not overlay: `INSERT OR REPLACE` only touches the sequence
+        // numbers present in `steps`, so a shorter re-save would leave the old
+        // tail behind and `steps()` would stitch two attempts together.
+        conn.execute(
+            "DELETE FROM attempt_steps WHERE scope_key = ?1 AND row_id = ?2",
+            params![self.bucket(), row_id],
+        )?;
         for (seq, step) in steps.iter().enumerate() {
             conn.execute(
                 "INSERT OR REPLACE INTO attempt_steps(scope_key, row_id, seq, node_id, status,

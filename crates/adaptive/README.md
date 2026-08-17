@@ -159,7 +159,7 @@ row). `satisfied` is a field too — it used to be recoverable only by matching
 ## Inference: the crate names the job, the host picks the model
 
 Every request carries a `tier` — `select`, `author`, `judge`, `consolidate`,
-`repair`. The crate never names a model, a vendor or a URL, which is the
+`repair`, `generalise`. The crate never names a model, a vendor or a URL, which is the
 host-agnostic rule it inherits; only the host knows what a job maps to.
 
 That is what makes a tier sweep a config change rather than a code change.
@@ -168,7 +168,7 @@ episode — and selecting is a cheap one; without a name on the request a host
 cannot route them differently.
 
 Called `tier` and not `role` because a chat request already has `role` on every
-message. Five rather than medulla-v2's three: a host maps several tiers to one
+message. Six rather than medulla-v2's three: a host maps several tiers to one
 model in a line of config and cannot split one tier into two at all.
 
 ## Where the engine runs

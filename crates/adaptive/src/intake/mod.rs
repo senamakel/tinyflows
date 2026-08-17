@@ -323,7 +323,14 @@ fn from_text(text: &str) -> Option<Value> {
 
 fn peek(value: &Value) -> String {
     let mut text = value.to_string();
-    text.truncate(200);
+    // Floor to a char boundary: `truncate` panics mid-codepoint, and this runs
+    // on exactly the path that should become an `Inference` error — a provider
+    // reply with a multi-byte character at byte 200 must not abort the task.
+    let mut end = text.len().min(200);
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    text.truncate(end);
     text
 }
 

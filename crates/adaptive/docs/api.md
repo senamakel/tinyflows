@@ -158,7 +158,7 @@ What a service configures, and who consumes it:
 |---|---|---|
 | storage string | `storage::Config::parse`, or `Config::from_env()` / `Storage::from_env()` reading **`TINYFLOWS_ADAPTIVE_STORAGE`** | table above; unset = boot error naming the variable, never a default |
 | `TINYFLOWS_ADAPTIVE_DB` env | `SqliteLedger::from_env_or` / `at_default_location` | overrides the sqlite path without a rebuild |
-| `Budget { attempts, min_attempts, stall_limit, tokens }` | the loop, per `Loop` (per tenant if you like) | `12 / 3 / 2 / 0` — `tokens: 0` means **uncapped**, not zero |
+| `Budget { attempts, min_attempts, stall_limit }` | the loop, per `Loop` (per tenant if you like) | `12 / 3 / 2` |
 | `conn` | passed verbatim to your `LlmProvider` | opaque tenant credential *reference*, never a secret |
 | tier → model map | **your** `LlmProvider`, off the request's `tier` | e.g. select→flash, author/judge→strong, consolidate→mid |
 | relay deadline | **your** `Relay` | example uses 30 s; size to your longest workflow |
@@ -225,7 +225,7 @@ pub struct Loop<'a> {
     pub facts:  &'a HostFacts,
     pub runner: &'a dyn Runner,        // Local { caps, workspace } | Remote { relay, attempt_id }
     pub clock:  &'a dyn Clock,
-    pub budget: Budget,                // default: 12 attempts, min 3, stall 2, tokens 0 = uncapped
+    pub budget: Budget,                // default: 12 attempts, min 3, stall 2
     pub conn:   Option<&'a str>,
 }
 ```

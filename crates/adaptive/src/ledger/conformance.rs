@@ -219,6 +219,53 @@ pub async fn run_tenants(global: &dyn Ledger, a: &dyn Ledger, b: &dyn Ledger) {
     workflow_scores_do_not_bleed_between_tenants(a, b).await;
     a_tenant_writing_does_not_move_the_global_score(global, a).await;
     an_episode_id_alone_does_not_reach_another_tenants_attempts(a, b).await;
+    naming_another_tenants_lesson_id_does_not_move_its_score(global, a, b).await;
+}
+
+async fn naming_another_tenants_lesson_id_does_not_move_its_score(
+    global: &dyn Ledger,
+    a: &dyn Ledger,
+    b: &dyn Ledger,
+) {
+    // The ids reaching `score_lesson` come from model output (corroboration),
+    // so this is a hole a prompt injection walks through if the backend
+    // updates by id alone.
+    let private = a
+        .promote(&lesson("a private class of situation"), &[])
+        .await
+        .expect("promote");
+    b.score_lesson(&private, true)
+        .await
+        .expect("no-op, not error");
+    let untouched = a
+        .lessons(None)
+        .await
+        .expect("lessons")
+        .into_iter()
+        .find(|l| l.id == private)
+        .expect("still there");
+    assert_eq!(
+        (untouched.applied, untouched.helped),
+        (0, 0),
+        "tenant {:?} moved tenant {:?}'s score by naming its id",
+        b.scope(),
+        a.scope()
+    );
+
+    // A global lesson is visible to every tenant, so scoring it is legitimate.
+    let shared = global
+        .promote(&lesson("a class anyone can hit"), &[])
+        .await
+        .expect("promote");
+    b.score_lesson(&shared, true).await.expect("score");
+    let moved = b
+        .lessons(None)
+        .await
+        .expect("lessons")
+        .into_iter()
+        .find(|l| l.id == shared)
+        .expect("visible");
+    assert_eq!((moved.applied, moved.helped), (1, 1));
 }
 
 async fn an_episode_id_alone_does_not_reach_another_tenants_attempts(
@@ -424,6 +471,35 @@ pub async fn run_episodes(store: &dyn Ledger) {
     saving_twice_updates_rather_than_duplicating(store).await;
     running_only_filters_to_the_recovery_list(store).await;
     a_rows_verdict_survives_as_fields_not_as_prose(store).await;
+    the_episode_list_is_newest_first_on_every_backend(store).await;
+}
+
+async fn the_episode_list_is_newest_first_on_every_backend(store: &dyn Ledger) {
+    // `Page` documents newest-first, and paging an unordered list returns
+    // opposite ends on different backends — `Page::first(1)` must mean the
+    // same episode everywhere.
+    for (id, at) in [
+        ("ep-ord-old", "2026-02-01T00:00:01Z"),
+        ("ep-ord-new", "2026-02-01T00:00:03Z"),
+        ("ep-ord-mid", "2026-02-01T00:00:02Z"),
+    ] {
+        let mut e = episode(id, EpisodeStatus::Running, 1, 0);
+        e.updated_at = at.to_string();
+        store.save_episode(&e).await.expect("save");
+    }
+    let ordered: Vec<String> = store
+        .episodes(false, super::Page::ALL)
+        .await
+        .expect("episodes")
+        .into_iter()
+        .map(|e| e.id)
+        .filter(|id| id.starts_with("ep-ord-"))
+        .collect();
+    assert_eq!(
+        ordered,
+        ["ep-ord-new", "ep-ord-mid", "ep-ord-old"],
+        "newest first, on this backend as on every other"
+    );
 }
 
 fn episode(id: &str, status: EpisodeStatus, attempt: u32, stalled: u32) -> Episode {
@@ -615,6 +691,20 @@ async fn saving_a_transcript_twice_replaces_rather_than_appends(store: &dyn Ledg
         .await
         .expect("save");
     assert_eq!(store.steps("ldg_twice").await.expect("steps").len(), 2);
+
+    // And a SHORTER re-save must not leave the old tail behind — an upsert
+    // keyed by sequence replaces only the sequences present, and the stitched
+    // result would read as one transcript mixing two attempts.
+    store
+        .save_steps("ldg_twice", &[step("a", 9)])
+        .await
+        .expect("save");
+    let back = store.steps("ldg_twice").await.expect("steps");
+    assert_eq!(back.len(), 1, "{back:?}");
+    assert_eq!(
+        back[0].duration_ms, 9,
+        "and it is the new save, not the old"
+    );
 }
 
 async fn a_page_windows_the_episode_list(store: &dyn Ledger) {

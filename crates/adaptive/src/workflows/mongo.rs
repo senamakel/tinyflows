@@ -25,13 +25,38 @@ impl MongoVault {
         let client = Client::with_uri_str(uri)
             .await
             .map_err(|e| WorkflowError::Engine(e.to_string()))?;
-        Ok(Self::with_database(client.database(database)))
+        Self::with_database(client.database(database)).await
     }
 
     /// Use an already-connected database, for a host managing its own pool.
-    #[must_use]
-    pub fn with_database(db: Database) -> Self {
-        Self { db, scope: None }
+    ///
+    /// Async because it creates the unique `(scope_key, workflow_id)` index —
+    /// without it, two replicas upserting the same workflow at once can insert
+    /// duplicate documents, and `load` would return whichever the cursor met
+    /// first.
+    ///
+    /// # Errors
+    /// When the index cannot be created.
+    pub async fn with_database(db: Database) -> Result<Self, WorkflowError> {
+        let vault = Self { db, scope: None };
+        vault.ensure_indexes().await?;
+        Ok(vault)
+    }
+
+    async fn ensure_indexes(&self) -> Result<(), WorkflowError> {
+        let unique = mongodb::options::IndexOptions::builder()
+            .unique(true)
+            .build();
+        self.workflows()
+            .create_index(
+                mongodb::IndexModel::builder()
+                    .keys(doc! { "scope_key": 1, "workflow_id": 1 })
+                    .options(unique)
+                    .build(),
+            )
+            .await
+            .map_err(mongo)?;
+        Ok(())
     }
 
     /// A handle onto the same database, scoped to one tenant.
@@ -68,22 +93,27 @@ impl Vault for MongoVault {
         // This bucket plus global. A record written before scoping existed has
         // no field at all, which `$in` with "" does not match — but nothing
         // wrote one, because this collection is new.
+        // Global first, then this bucket, so the bucket's own record shadows a
+        // global one with the same id — precedence by construction, not by
+        // whatever order the cursor happens to walk.
         let mut cursor = self
             .workflows()
             .find(doc! { "scope_key": { "$in": [self.bucket(), ""] } })
-            .sort(doc! { "_id": 1 })
+            .sort(doc! { "scope_key": 1, "workflow_id": 1 })
             .await
             .map_err(mongo)?;
 
-        let mut out = Vec::new();
+        let mut chosen: std::collections::BTreeMap<String, WorkflowRecord> =
+            std::collections::BTreeMap::new();
         while cursor.advance().await.map_err(mongo)? {
             let document = cursor.deserialize_current().map_err(mongo)?;
             let raw = document.get_str("document").unwrap_or_default();
-            out.push(serde_json::from_str(raw).map_err(|e| {
+            let record: WorkflowRecord = serde_json::from_str(raw).map_err(|e| {
                 WorkflowError::Engine(format!("stored workflow no longer parses: {e}"))
-            })?);
+            })?;
+            chosen.insert(record.id.clone(), record);
         }
-        Ok(out)
+        Ok(chosen.into_values().collect())
     }
 
     async fn put(&self, record: &WorkflowRecord) -> Result<(), WorkflowError> {
@@ -92,15 +122,26 @@ impl Vault for MongoVault {
         // Stored as a JSON string rather than a BSON subdocument: a node config
         // is arbitrary JSON, and BSON refuses keys containing a dot — which a
         // config keyed by a filename or a version has.
-        self.workflows()
-            .update_one(
-                doc! { "scope_key": self.bucket(), "workflow_id": &record.id },
-                doc! { "$set": { "document": document } },
-            )
-            .upsert(true)
-            .await
-            .map_err(mongo)?;
-        Ok(())
+        //
+        // One retry on a duplicate-key race: the unique index stops two
+        // concurrent upserts both inserting, but the loser errors rather than
+        // updating — its second pass finds the document and updates it.
+        for attempt in 0..2 {
+            let outcome = self
+                .workflows()
+                .update_one(
+                    doc! { "scope_key": self.bucket(), "workflow_id": &record.id },
+                    doc! { "$set": { "document": &document } },
+                )
+                .upsert(true)
+                .await;
+            match outcome {
+                Ok(_) => return Ok(()),
+                Err(e) if attempt == 0 && e.to_string().contains("E11000") => continue,
+                Err(e) => return Err(mongo(e)),
+            }
+        }
+        unreachable!("the loop returns on every branch of its final pass")
     }
 
     async fn remove(&self, id: &str) -> Result<(), WorkflowError> {

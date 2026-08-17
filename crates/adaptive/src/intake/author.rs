@@ -162,17 +162,10 @@ pub async fn author(
 /// graph that requires a value behaves differently from one that does not,
 /// even when every node matches.
 fn fingerprint(graph: &WorkflowGraph) -> String {
-    use std::hash::{DefaultHasher, Hash, Hasher};
-    let mut hasher = DefaultHasher::new();
-    let shape = serde_json::json!({
-        "nodes": &graph.nodes,
-        "edges": &graph.edges,
-        "inputs": &graph.inputs,
-    });
-    serde_json::to_string(&shape)
-        .unwrap_or_default()
-        .hash(&mut hasher);
-    format!("{:07x}", hasher.finish() & 0xfff_ffff)
+    // The stable digest, because this string is persisted in ledger rows as
+    // the exclusion-list signature — see `reuse::digest_hex` on why not
+    // `DefaultHasher`.
+    crate::reuse::digest_hex(&crate::reuse::shape_bytes(graph))
 }
 
 /// The node catalogue, rendered for a prompt.

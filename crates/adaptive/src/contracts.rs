@@ -132,10 +132,6 @@ pub struct Budget {
     pub min_attempts: u32,
     /// Consecutive non-advancing attempts that end a run.
     pub stall_limit: u32,
-    /// 0 means *no cap*, not a cap of zero. The other reading makes a run
-    /// exhausted before it starts, and the only symptom is a stand-down after
-    /// one attempt that blames the budget.
-    pub tokens: u64,
 }
 
 impl Default for Budget {
@@ -144,7 +140,6 @@ impl Default for Budget {
             attempts: 12,
             min_attempts: 3,
             stall_limit: 2,
-            tokens: 0,
         }
     }
 }
@@ -172,7 +167,7 @@ impl Budget {
 /// has `role` on every message, and two meanings of one key in one payload is a
 /// bug waiting for a hurried reader.
 ///
-/// Five, not medulla-v2's three: a host can map several tiers to one model in a
+/// Six, not medulla-v2's three: a host can map several tiers to one model in a
 /// line of config, and cannot split one tier into two at all.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -364,13 +359,6 @@ mod tests {
         let mut v = verdict(false, Blocker::GoalNotMet);
         v.advanced = true;
         assert!(!v.should_retry(12, 0, &budget));
-    }
-
-    #[test]
-    fn a_token_cap_of_zero_means_no_cap() {
-        // The other reading makes a run exhausted before it starts.
-        assert_eq!(Budget::default().tokens, 0);
-        assert!(!Budget::default().exhausted(0));
     }
 
     #[test]

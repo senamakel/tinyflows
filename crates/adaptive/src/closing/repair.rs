@@ -248,12 +248,12 @@ fn read_ops(answer: &serde_json::Value) -> Result<Vec<GraphOp>> {
 /// exists, and so the same repair proposed twice converges on one variant
 /// instead of filling the store with near-identical copies.
 fn variant_id(parent_id: &str, ops: &[GraphOp]) -> String {
-    use std::hash::{DefaultHasher, Hash, Hasher};
-    let mut hasher = DefaultHasher::new();
-    serde_json::to_string(ops)
-        .unwrap_or_default()
-        .hash(&mut hasher);
-    format!("{parent_id}-fix-{:07x}", hasher.finish() & 0xfff_ffff)
+    // The stable digest — this id keys workflow records, scores and lineage,
+    // so it must survive toolchain upgrades. See `reuse::digest_hex`.
+    format!(
+        "{parent_id}-fix-{}",
+        crate::reuse::digest_hex(&serde_json::to_vec(ops).unwrap_or_default())
+    )
 }
 
 #[cfg(test)]
