@@ -142,7 +142,7 @@ pub async fn decide(
                     ..attempt
                 });
             }
-            Err(refusal) => {
+            Err(refusal @ IntakeError::Unbindable { .. }) => {
                 // A sound choice that failed to bind — the model asserted
                 // inputs it did not supply. That is a correctable slip, not a
                 // reason to end the episode: one more selection round with
@@ -153,13 +153,20 @@ pub async fn decide(
                      Supply a value for every required input this time, or \
                      decline so a graph is written instead."
                 );
-                if let Some(retry) = select(goal, &candidates, &noted, caps, conn).await?
-                    && let Ok(attempt) = bind(retry, store)
-                {
-                    return Ok(Attempt {
-                        lessons_shown: shown,
-                        ..attempt
-                    });
+                if let Some(retry) = select(goal, &candidates, &noted, caps, conn).await? {
+                    match bind(retry, store) {
+                        Ok(attempt) => {
+                            return Ok(Attempt {
+                                lessons_shown: shown,
+                                ..attempt
+                            });
+                        }
+                        // Still the model's slip: authoring takes over below.
+                        Err(IntakeError::Unbindable { .. }) => {}
+                        // The store failing mid-decision is not something
+                        // another model call can talk its way around.
+                        Err(err) => return Err(err),
+                    }
                 }
                 return author(goal, facts, store.policy(), &noted, caps, conn)
                     .await
@@ -168,6 +175,11 @@ pub async fn decide(
                         ..attempt
                     });
             }
+            // Everything else — a store read failure, a vanished record — is
+            // infrastructure, not a refusal: retrying selection would spend
+            // model calls to run an authored graph against a store that is
+            // not answering.
+            Err(err) => return Err(err),
         }
     }
     author(goal, facts, store.policy(), &past, caps, conn)

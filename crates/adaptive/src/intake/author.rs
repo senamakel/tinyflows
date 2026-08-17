@@ -220,7 +220,7 @@ fn gated(answer: &Value, facts: &HostFacts, policy: &dyn HostPolicy) -> Result<A
 /// (leading `=`) are exempt: `="about \(.run.inputs.topic)"` legitimately
 /// contains the path.
 fn prose_bindings(graph: &WorkflowGraph) -> Vec<String> {
-    const PATHS: [&str; 4] = ["run.inputs.", "run.trigger.", "=run.", "=nodes."];
+    const PATHS: [&str; 5] = ["run.inputs.", "run.trigger.", "=run.", "=nodes.", ".nodes."];
 
     fn scan(node: &str, field: &str, value: &Value, out: &mut Vec<String>) {
         match value {
@@ -464,6 +464,12 @@ mod tests {
         let found = prose_bindings(&graph);
         assert_eq!(found.len(), 1, "{found:?}");
         assert!(found[0].contains("poet"), "names the node: {}", found[0]);
+
+        // A node path in prose is the same mistake with a different root.
+        let mut node_path = graph.clone();
+        node_path.nodes[1].config =
+            serde_json::json!({ "prompt": "Summarise .nodes.fetch.item.json.body" });
+        assert_eq!(prose_bindings(&node_path).len(), 1);
 
         // The legitimate form is exempt: the whole string is an expression.
         let mut fixed = graph;
