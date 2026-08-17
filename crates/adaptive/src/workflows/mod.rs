@@ -49,6 +49,7 @@ pub mod mongo;
 #[cfg(feature = "sqlite")]
 pub mod sqlite;
 
+pub mod compat;
 pub mod conformance;
 
 /// Durable workflow storage, in whatever the host configured.

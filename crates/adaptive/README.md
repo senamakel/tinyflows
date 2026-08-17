@@ -372,6 +372,36 @@ The engine's authoring surface — run records, revisions, notes, proposals —
 **refuses** rather than pretending. A run record accepted and then lost on the
 next load is worse than an error, because nothing tells the caller it vanished.
 
+## Reading a catalogue that already exists
+
+The loop's own procedures live in a `Vault`. Everyone else's live in a
+`WorkflowStore` — the engine's file store, a host's own, a device's local
+catalogue. Same records, different way in, and without one the loop can only
+select what it wrote itself.
+
+```rust
+let theirs = Arc::new(StoreVault::new(device_store));       // read-only
+let ours   = Arc::new(MongoVault::….for_tenant(&user));     // writable
+let vault  = Layered::new(vec![theirs], ours);
+```
+
+`StoreVault` makes any `WorkflowStore` a `Vault` — nothing is migrated or
+rewritten to become selectable.
+
+`Layered` reads several and writes one, and that is what makes importing safe.
+A device's workflow can be selected, judged and scored; when it falls short the
+repaired variant lands in **our** layer with its own id, and their copy is never
+touched. No second master, no question of whose version is current, and a
+`delete` can never reach a machine that did not ask for it.
+
+Later layers shadow earlier ones by id, so order the writable one last: a copy
+we have taken ownership of wins over the original it came from.
+
+One caveat worth reading twice: `StoreVault` is **unscoped**, because the
+engine's store has no tenant concept to filter on. Scoping is by construction —
+build one per tenant over that tenant's own store, or its records read as global
+and every tenant sees them.
+
 ## Tenancy
 
 The scope lives on the **handle**, not on every method, because the failure it
