@@ -199,13 +199,37 @@ fn gated(answer: &Value, facts: &HostFacts, policy: &dyn HostPolicy) -> Result<A
         return Err(IntakeError::Unsupported(err.to_string()));
     }
 
+    // The same both-direction input check a *selection* gets in `bind`, for
+    // the author's own declarations. A model that declares a required input
+    // and supplies no value has written a graph that dies at the engine's
+    // door — the failure this gate turns into a feedback round cost a whole
+    // attempt (harness sessions included) every time it slipped through.
+    let mut inputs = answer["inputs"].as_object().cloned().unwrap_or_default();
+    for declared in &graph.inputs {
+        if !declared.required {
+            continue;
+        }
+        let filled = inputs
+            .get(&declared.name)
+            .is_some_and(|value| !value.is_null() && value.as_str() != Some(""));
+        if !filled {
+            return Err(IntakeError::Invalid(format!(
+                "the graph declares required input `{}` but the reply's `inputs`                  supplies no value for it — supply one, or make it optional, or                  drop the declaration",
+                declared.name
+            )));
+        }
+    }
+    // The other direction is a trim, not a refusal, exactly as in `bind`:
+    // the engine rejects undeclared keys before any node executes.
+    inputs.retain(|name, _| graph.inputs.iter().any(|d| d.name == *name));
+
     Ok(Attempt {
         approach: Approach::Authored {
             why: answer["why"].as_str().unwrap_or_default().to_string(),
             fingerprint: fingerprint(&graph),
         },
         graph,
-        inputs: answer["inputs"].as_object().cloned().unwrap_or_default(),
+        inputs,
         // Filled by `decide`, which is what knows what the planner was shown.
         lessons_shown: Vec::new(),
     })
@@ -420,6 +444,84 @@ mod tests {
         .await
         .expect("the corrected graph must land");
         assert_eq!(attempt.graph.name, "fixed");
+        assert_eq!(provider.prompts.lock().expect("prompt log").len(), 2);
+    }
+
+    #[tokio::test]
+    async fn an_unsupplied_required_input_goes_back_to_the_model() {
+        use std::sync::Mutex;
+
+        use tinyflows::caps::LlmProvider;
+        use tinyflows::caps::mock::mock_capabilities;
+
+        /// Declares a required `topic` both times; supplies a value only when
+        /// the follow-up prompt carries the refusal.
+        struct Forgetful {
+            prompts: Mutex<Vec<String>>,
+        }
+
+        #[async_trait::async_trait]
+        impl LlmProvider for Forgetful {
+            async fn complete(
+                &self,
+                request: Value,
+                _conn: Option<&str>,
+            ) -> tinyflows::error::Result<Value> {
+                let shown = request["messages"][1]["content"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string();
+                let mut prompts = self.prompts.lock().expect("prompt log");
+                prompts.push(shown.clone());
+                let graph = serde_json::json!({
+                    "schema_version": 1, "name": "needs-topic",
+                    "inputs": [{ "name": "topic", "type": "string", "required": true }],
+                    "nodes": [{
+                        "id": "start", "kind": "trigger", "name": "manual",
+                        "config": { "trigger_kind": "manual" }
+                    }],
+                    "edges": []
+                });
+                let inputs = if prompts.len() == 1 {
+                    serde_json::json!({ "extraneous": "trimmed anyway" })
+                } else {
+                    assert!(
+                        shown.contains("topic"),
+                        "the retry names the unsupplied input: {shown}"
+                    );
+                    serde_json::json!({ "topic": "flash models", "extraneous": "still here" })
+                };
+                Ok(serde_json::json!({ "graph": graph, "why": "test", "inputs": inputs }))
+            }
+        }
+
+        #[derive(Debug, Default)]
+        struct Permissive;
+        impl HostPolicy for Permissive {}
+
+        let provider = std::sync::Arc::new(Forgetful {
+            prompts: Mutex::new(Vec::new()),
+        });
+        let caps = Capabilities {
+            llm: provider.clone(),
+            ..mock_capabilities()
+        };
+        let attempt = author(
+            &Goal::new("do the thing"),
+            &HostFacts::unknown(),
+            &Permissive,
+            "",
+            &caps,
+            None,
+        )
+        .await
+        .expect("the corrected inputs must land");
+        assert_eq!(attempt.inputs["topic"], "flash models");
+        assert!(
+            !attempt.inputs.contains_key("extraneous"),
+            "undeclared inputs are trimmed: {:?}",
+            attempt.inputs
+        );
         assert_eq!(provider.prompts.lock().expect("prompt log").len(), 2);
     }
 
