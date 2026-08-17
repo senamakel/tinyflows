@@ -6,6 +6,7 @@
 //! curated Composio tools, `HttpRequestTool`, and sandboxed code runtimes.
 
 pub mod agent;
+pub mod approval;
 #[cfg(any(test, feature = "host-caps"))]
 pub mod host;
 #[cfg(any(test, feature = "mock"))]
@@ -24,6 +25,9 @@ use crate::error::Result;
 pub use self::agent::{
     AgentInput, AgentModelSelection, AgentRunIdentity, AgentRunOutcome, AgentRunRequest,
     AgentRunner, AgentUsage, ContextBlock, StopReason, ToolDescriptor,
+};
+pub use self::approval::{
+    ApprovalDecision, ApprovalOutcome, ApprovalProvider, ApprovalRequest, ApprovalSubject,
 };
 pub use self::schema::sample_for_schema;
 pub use self::shell::{ShellInterpreter, ShellOutcome, ShellRequest, ShellRunner, ShellScript};
@@ -199,8 +203,8 @@ pub trait StateStore: Send + Sync {
 /// Construct one per run from the host's concrete implementations. It carries
 /// every host-injected capability: the always-present [`LlmProvider`],
 /// [`ToolInvoker`], [`HttpClient`], [`CodeRunner`], [`StateStore`], and
-/// [`WorkflowResolver`], plus the optional [`AgentRunner`] and
-/// [`MemoryProvider`]. Nodes reach each one through `ctx.caps` during
+/// [`WorkflowResolver`], plus the optional [`AgentRunner`], [`MemoryProvider`],
+/// and [`ApprovalProvider`]. Nodes reach each one through `ctx.caps` during
 /// execution.
 #[derive(Clone)]
 pub struct Capabilities {
@@ -249,6 +253,13 @@ pub struct Capabilities {
     /// rather than a correctness one, which is exactly why it is worth saying
     /// out loud here and in the node catalog.
     pub tasks: Option<Arc<dyn TaskRunner>>,
+    /// Optional human-review surface for `approval` nodes. `None` on hosts
+    /// without one, in which case an `approval` node falls back to pausing the
+    /// run and letting the host settle it through
+    /// [`engine::resume`](crate::engine::resume) — so the node still works, it
+    /// just has no way to *push* the request at anybody. See
+    /// [`ApprovalProvider`] for the create-or-fetch contract.
+    pub approvals: Option<Arc<dyn ApprovalProvider>>,
 }
 
 #[cfg(test)]

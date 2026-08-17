@@ -96,6 +96,34 @@ fn intercepted(
     })
 }
 
+/// Removes scheduler observations that may differ when interception adds an
+/// await point without changing the workflow's data or routing.
+fn semantic_result(result: Result<Value, String>) -> Result<Value, String> {
+    fn strip_scheduler_fields(value: &mut Value) {
+        match value {
+            Value::Object(map) => {
+                map.remove("_activation_step");
+                map.remove("started_at_step");
+                map.remove("polls");
+                for child in map.values_mut() {
+                    strip_scheduler_fields(child);
+                }
+            }
+            Value::Array(items) => {
+                for item in items {
+                    strip_scheduler_fields(item);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    result.map(|mut output| {
+        strip_scheduler_fields(&mut output);
+        output
+    })
+}
+
 proptest! {
     #![proptest_config(ProptestConfig { cases: 48, ..ProptestConfig::default() })]
 
@@ -103,8 +131,8 @@ proptest! {
     #[test]
     fn an_inert_interceptor_never_changes_the_result(shape in arb_shape(3)) {
         let graph = graph_of(&shape);
-        let expected = plain(&graph);
-        let actual = intercepted(&graph, Arc::new(Inert));
+        let expected = semantic_result(plain(&graph));
+        let actual = semantic_result(intercepted(&graph, Arc::new(Inert)));
         prop_assert_eq!(
             expected,
             actual,
@@ -117,8 +145,8 @@ proptest! {
     #[test]
     fn inspecting_every_frame_never_changes_the_result(shape in arb_shape(3)) {
         let graph = graph_of(&shape);
-        let expected = plain(&graph);
-        let actual = intercepted(&graph, Arc::new(Reads(Mutex::new(0))));
+        let expected = semantic_result(plain(&graph));
+        let actual = semantic_result(intercepted(&graph, Arc::new(Reads(Mutex::new(0)))));
         prop_assert_eq!(
             expected,
             actual,
@@ -131,7 +159,7 @@ proptest! {
     #[test]
     fn tracing_never_changes_the_result(shape in arb_shape(3)) {
         let graph = graph_of(&shape);
-        let expected = plain(&graph);
+        let expected = semantic_result(plain(&graph));
 
         let compiled = match compile(&graph) {
             Ok(compiled) => compiled,
@@ -141,7 +169,7 @@ proptest! {
             }
         };
         let tracer = Arc::new(RunTracer::new(Some(graph.clone())));
-        let actual = runtime().block_on(async {
+        let actual = semantic_result(runtime().block_on(async {
             run_intercepted(
                 &compiled,
                 json!({ "seed": 1 }),
@@ -153,7 +181,7 @@ proptest! {
             .await
             .map(|(outcome, _resumable)| outcome.output)
             .map_err(|e| e.to_string())
-        });
+        }));
 
         prop_assert_eq!(expected, actual, "tracing changed the run");
 

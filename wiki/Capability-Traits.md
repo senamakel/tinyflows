@@ -21,6 +21,7 @@ examples without any real backend.
 | `CodeRunner` | `code` | Executes sandboxed user code (`CodeLanguage::JavaScript` / `Python`) with a JSON input. |
 | `ShellRunner` | `shell` | Runs a shell script (inline or by path) with a working directory and environment, returning its exit code, stdout, and stderr. Optional: `None` refuses `shell` nodes. |
 | `StateStore` | resumable / stateful workflows | Durable key/value state (`load` / `store`) for a run. |
+| `ApprovalProvider` | `approval` | Puts a subject (a URL, a draft, a payload) in front of a human and reports their approve/reject. Optional: with `None`, an `approval` node pauses the run instead and the host settles it via `engine::resume`. |
 
 ## Connection references
 
@@ -42,10 +43,31 @@ parameters (e.g. `args: { "text": "=item.name" }`). Values that do not start wit
 ## The `Capabilities` bundle
 
 The engine receives a `Capabilities` struct — the per-run bundle of host
-implementations. It bundles all five host capabilities: `llm`, `tools`, `http`,
-`code`, and `state` (each an `Arc<dyn Trait>`). Nodes reach each one through
-`ctx.caps` during execution — for example, durable key/value state via
-`ctx.caps.state`.
+implementations. It bundles six host capabilities: `llm`, `tools`, `http`,
+`code`, `state`, and the optional `approvals` (`Option<Arc<dyn
+ApprovalProvider>>`) each an `Arc<dyn Trait>` (or `Option` of one, for
+`approvals`). Nodes reach each one through `ctx.caps` during execution — for
+example, durable key/value state via `ctx.caps.state`, and a human review via
+`ctx.caps.approvals`. A host that builds `Capabilities` with a struct literal
+must add an `approvals` field (`None` if it wires no provider) to keep
+compiling.
+
+An `approval` node needs an identity for its review: either an explicit
+`request_id` in its own config, or — the common case, since a graph is
+authored once and run many times — `RunInput::with_run_id("...")` on the run,
+which the node falls back to as `"<run id>:<node id>"`. A node with neither
+has nothing stable to key the review on and refuses to run rather than
+guessing; it does not silently fall back to the bare node id, which would let
+a later run of the same graph reuse an earlier run's decision. Use a
+**server-generated** run id, never a caller-supplied field — it is the key
+reviews are de-duplicated on.
+
+`ApprovalProvider::decide` is **create-or-fetch**, keyed on
+`ApprovalRequest::request_id`: the first call with an id creates the review, and
+every later call with that id reports where *that* review stands. This matters
+because an interrupt discards the activation's state update, so the node re-asks
+after every resume and on every poll — a provider that created a fresh review per
+call would notify the reviewer once per call.
 
 Durable, cross-process human-in-the-loop resume is available by implementing
 `Checkpointer<serde_json::Value>` and driving the run via

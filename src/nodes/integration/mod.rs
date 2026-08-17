@@ -6,6 +6,7 @@
 
 pub mod agent;
 pub(crate) mod agent_request;
+pub mod approval;
 pub mod code;
 pub(crate) mod envelope;
 pub mod gate;
@@ -19,6 +20,7 @@ pub mod sub_workflow;
 pub mod tool_call;
 
 pub use agent::AgentNode;
+pub use approval::ApprovalNode;
 pub use code::CodeNode;
 pub use gate::GateNode;
 pub use http_request::HttpRequestNode;

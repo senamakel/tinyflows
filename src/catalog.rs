@@ -33,7 +33,7 @@ use group_03::*;
 
 /// The node kinds, in the canonical order used wherever the DSL is enumerated
 /// (matches [`NodeKind`](crate::model::NodeKind)'s serde discriminators).
-pub const NODE_KINDS: [&str; 21] = [
+pub const NODE_KINDS: [&str; 22] = [
     "trigger",
     "agent",
     "tool_call",
@@ -54,6 +54,7 @@ pub const NODE_KINDS: [&str; 21] = [
     "gate",
     "scatter",
     "gather",
+    "approval",
     "void",
 ];
 
@@ -205,6 +206,7 @@ pub fn contract_for(kind: &str) -> Option<NodeKindContract> {
         "gate" => contract_gate(),
         "scatter" => contract_scatter(),
         "gather" => contract_gather(),
+        "approval" => contract_approval(),
         "void" => contract_void(),
         _ => return None,
     };
