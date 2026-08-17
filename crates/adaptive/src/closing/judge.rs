@@ -30,12 +30,24 @@ Return JSON: {\"satisfied\": bool, \"blocker\": str, \"gap\": str,
 - satisfied: did the run achieve the goal. Not \"did it finish\" — a run can
   complete every node and achieve nothing.
 - blocker: when not satisfied, one of
-    goal_not_met     it tried and fell short. The ordinary case.
+    goal_not_met     it tried and fell short. The ordinary case — INCLUDING a
+                     run that died on its own mechanics: a miswired binding, a
+                     bad command flag, a refused tool call. The graph can be
+                     changed, so the episode can continue; say what broke in
+                     the gap.
     unverified       something was produced but the evidence does not show it
                      working.
-    missing_evidence nothing was produced and there is nothing to judge.
-    needs_input      a person has to answer something first.
+    missing_evidence nothing was produced AND another attempt would meet the
+                     same nothing — the goal itself offers no evidence to
+                     collect. NOT for mechanical failures; those are
+                     goal_not_met.
+    needs_input      a person has to answer something first — not \"the graph
+                     failed to supply a value\", which is goal_not_met.
     external_wait    waiting on something outside this system.
+
+  goal_not_met and unverified let the loop try again with a changed approach;
+  the other three end the episode. Choose the terminal ones only when another
+  attempt genuinely cannot help.
 - gap: one line on what is still missing. It is read by whoever plans the next
   attempt, so name the missing thing, not the feeling.
 - attributed_to: the node id that fell short, when the evidence says which.
