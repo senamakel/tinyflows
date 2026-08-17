@@ -1,94 +1,21 @@
-//! Writing a graph when nothing stored fits.
+//! Authoring when nothing stored fits: a recipe in, a lowered graph out.
 //!
-//! Two things make the difference between a graph that runs and one that
-//! validates and then does nothing, and both are here rather than in the
-//! prompt's good intentions:
-//!
-//! * the node catalogue is **generated from the engine**, not described from
-//!   memory, so a config field cannot be invented; and
-//! * the result is **validated before it is returned**, so an authoring mistake
-//!   is an error from intake rather than a run-time failure that reads like the
-//!   work failing.
+//! The model never writes graph syntax — see [`super::recipe`] for why and
+//! for the surface it writes instead. What stays here is the conversation:
+//! bounded feedback rounds, and the gates every candidate walks before it
+//! may become an attempt. The gates run on the LOWERED graph; by
+//! construction they should all pass, and a construction bug surfacing as a
+//! refusal rather than a run-time null is exactly why they still run.
 
 use serde_json::Value;
 use tinyflows::caps::Capabilities;
-use tinyflows::catalog::{NodeKindContract, all_contracts};
 use tinyflows::model::WorkflowGraph;
 use tinyflows::store::HostPolicy;
 use tinyflows::validate::validate_all;
 
-use super::{Attempt, IntakeError, Result, ask};
+use super::{Attempt, IntakeError, Result, ask, recipe};
 use crate::contracts::{Approach, Goal, Tier};
 use crate::host::HostFacts;
-
-const SYSTEM: &str = "\
-You write a workflow graph that achieves a goal.
-
-Return JSON: {\"graph\": <WorkflowGraph>, \"why\": str, \"inputs\": {name: value}}
-
-The graph is the engine's own format:
-{\"schema_version\": 1, \"name\": str, \"inputs\": [{\"name\", \"required\", \"description\"}],
- \"nodes\": [{\"id\", \"kind\", \"name\", \"config\": {...}}],
- \"edges\": [{\"from_node\", \"from_port\", \"to_node\", \"to_port\"}]}
-
-Rules that are checked, not requested:
-
-- Exactly one `trigger` node, and it is where the graph starts.
-- Every node kind and every config field must come from the catalogue below.
-  It is generated from the engine, so it is the truth; a field you remember
-  from elsewhere is a field that resolves to null at run time.
-- Ports default to `main` on both ends. Name one only where the catalogue says
-  a node has others (a `condition` emits `true`/`false`; a `loop` emits `body`
-  and `done`).
-- Declare in `inputs` anything the goal supplies as data — a repository, a path,
-  an id — and read it in config rather than pasting the literal. A graph with
-  the value baked in is a graph that works once.
-
-How one node reads another. A config string starting with `=` is an expression;
-everything else is a literal.
-
-    =item.name                     a field of the direct predecessor's output
-    =nodes.fetch.item.json.body    a field of any completed node, by node id
-    =run.trigger.payload           what the trigger carried
-    =run.inputs.topic              a declared workflow input, by its name
-    =.items | length               a leading dot makes the rest a jq program
-
-There are no braces. `={{ ... }}` is not a binding — it is a jq program that
-fails to compile, and a failed program is null, so the step runs with an empty
-value and reports success.
-
-An `=` anywhere but the FIRST character is literal text, not a binding:
-`\"about: =run.inputs.topic\"` sends those exact characters to the model. To
-put a value inside prose — an agent prompt, a message — the whole string is
-one expression, jq with explicit dots:
-
-    =\"Write a poem about \\(.run.inputs.topic)\"
-    =\"Summarise \" + .run.inputs.repo
-
-`agent`, `tool_call` and `http_request` wrap their output in
-`{json, text, raw}`. Their fields are under `.json`: write
-`=nodes.fetch.item.json.body`, never `=nodes.fetch.item.body`. The second form
-validates, dry-runs green, and resolves to null every time.
-
-Design guidance, which is judgement rather than a check:
-
-- Fewer nodes is better. An `agent` node is a whole coding-agent session on some
-  hosts — minutes, not seconds — so a graph of eight is usually a worse answer
-  than a graph of three.
-- Use `agent` for work that cannot be specified, and the determined kinds for
-  everything else. Fetching, reshaping and branching are not agent work.
-- Say what a step is for, concretely. The agent running it sees the goal and
-  that instruction and nothing else — not the other nodes, not what they found.
-
-Where a section below states what this host permits, it is the machine's own
-configuration and is enforced when the graph runs. A graph that ignores it saves
-cleanly, validates cleanly, and fails the first time it matters.
-
-Where a section lists what this episode already tried, write something
-DIFFERENT. Not the same graph with a reworded prompt — a different shape: other
-nodes, another order, a step that checks what the last attempt assumed. If every
-approach you can think of is already on that list, say so in `why` and write the
-smallest graph that would establish which assumption is wrong.";
 
 /// Write a graph for `goal`, grounded on the engine's own node catalogue.
 ///
@@ -107,9 +34,8 @@ pub async fn author(
 ) -> Result<Attempt> {
     let permitted = facts.render();
     let user = format!(
-        "# Goal\n{}\n\n# Node catalogue — the only kinds and fields that exist\n{}{}{past}",
+        "# Goal\n{}{}{past}",
         goal.text.trim(),
-        catalogue(),
         if permitted.is_empty() {
             String::new()
         } else {
@@ -129,7 +55,7 @@ pub async fn author(
     let mut prompt = user;
     let mut last: Option<IntakeError> = None;
     for _ in 0..ROUNDS {
-        let answer = match ask(caps, conn, Tier::Author, SYSTEM, &prompt).await {
+        let answer = match ask(caps, conn, Tier::Author, recipe::SYSTEM, &prompt).await {
             Ok(answer) => answer,
             Err(err) => {
                 last = Some(err);
@@ -155,13 +81,7 @@ const ROUNDS: usize = 3;
 
 /// One reply through every gate, or why it was refused.
 fn gated(answer: &Value, facts: &HostFacts, policy: &dyn HostPolicy) -> Result<Attempt> {
-    let raw = answer
-        .get("graph")
-        .cloned()
-        .ok_or_else(|| IntakeError::Inference("the reply has no `graph` key".to_string()))?;
-
-    let graph: WorkflowGraph = serde_json::from_value(raw)
-        .map_err(|e| IntakeError::Invalid(format!("not a workflow graph: {e}")))?;
+    let (graph, mut inputs, why) = recipe::lower(answer)?;
 
     // Every failure at once, not the first. A model handed one error fixes it
     // and returns with the next; handed all four it fixes all four.
@@ -204,7 +124,6 @@ fn gated(answer: &Value, facts: &HostFacts, policy: &dyn HostPolicy) -> Result<A
     // and supplies no value has written a graph that dies at the engine's
     // door — the failure this gate turns into a feedback round cost a whole
     // attempt (harness sessions included) every time it slipped through.
-    let mut inputs = answer["inputs"].as_object().cloned().unwrap_or_default();
     for declared in &graph.inputs {
         if !declared.required {
             continue;
@@ -225,7 +144,7 @@ fn gated(answer: &Value, facts: &HostFacts, policy: &dyn HostPolicy) -> Result<A
 
     Ok(Attempt {
         approach: Approach::Authored {
-            why: answer["why"].as_str().unwrap_or_default().to_string(),
+            why,
             fingerprint: fingerprint(&graph),
         },
         graph,
@@ -294,83 +213,9 @@ fn fingerprint(graph: &WorkflowGraph) -> String {
     crate::reuse::digest_hex(&crate::reuse::shape_bytes(graph))
 }
 
-/// The node catalogue, rendered for a prompt.
-///
-/// Generated from [`all_contracts`] rather than written out here, so a node
-/// kind the engine gains appears without this file being touched — and a field
-/// this file could describe wrongly cannot exist.
-fn catalogue() -> String {
-    all_contracts()
-        .iter()
-        .map(render)
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-fn render(contract: &NodeKindContract) -> String {
-    let fields = contract
-        .config_fields
-        .iter()
-        .map(|field| {
-            let mark = if field.required { "*" } else { " " };
-            let allowed = match field.enum_values.as_ref() {
-                Some(values) if !values.is_empty() => format!(" [{}]", values.join("|")),
-                _ => String::new(),
-            };
-            format!("    {mark}{}: {}{allowed}", field.name, field.value_type)
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    // Only the outputs, and only when they are not the default. `from_port` is
-    // the field an author gets wrong; inputs are almost always `main` and
-    // listing them on every kind is noise that hides the one that matters.
-    let outputs = &contract.ports.outputs;
-    let ports = if outputs.as_slice() == ["main".to_string()] || outputs.is_empty() {
-        String::new()
-    } else {
-        format!("  out ports: {}\n", outputs.join(", "))
-    };
-
-    format!("{}: {}\n{ports}{fields}", contract.kind, contract.summary)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn the_catalogue_is_generated_from_the_engine() {
-        // If this list were written by hand it would already be wrong: it is
-        // the thing the prompt calls the truth.
-        let rendered = catalogue();
-        for kind in [
-            "trigger",
-            "agent",
-            "tool_call",
-            "http_request",
-            "condition",
-            "loop",
-        ] {
-            assert!(rendered.contains(kind), "catalogue is missing {kind}");
-        }
-    }
-
-    #[test]
-    fn required_fields_are_marked() {
-        let rendered = catalogue();
-        // `trigger_kind` is required on a trigger; a model that misses it
-        // authors a graph that cannot start.
-        assert!(rendered.contains("*trigger_kind"), "{rendered}");
-    }
-
-    #[test]
-    fn enum_fields_show_their_allowed_values() {
-        assert!(
-            catalogue().contains("manual"),
-            "trigger_kind's values must be listed"
-        );
-    }
 
     #[tokio::test]
     async fn a_refused_graph_goes_back_to_the_model_with_the_refusal() {
@@ -398,27 +243,19 @@ mod tests {
                     .to_string();
                 let mut prompts = self.prompts.lock().expect("prompt log");
                 prompts.push(shown.clone());
-                let graph = if prompts.len() == 1 {
-                    // No trigger: fails `validate_all`, must come back.
-                    serde_json::json!({
-                        "schema_version": 1, "name": "broken",
-                        "inputs": [], "nodes": [], "edges": []
-                    })
-                } else {
-                    assert!(
-                        shown.contains("refused"),
-                        "the retry prompt must carry the refusal, got: {shown}"
-                    );
-                    serde_json::json!({
-                        "schema_version": 1, "name": "fixed", "inputs": [],
-                        "nodes": [{
-                            "id": "start", "kind": "trigger", "name": "manual",
-                            "config": { "trigger_kind": "manual" }
-                        }],
-                        "edges": []
-                    })
-                };
-                Ok(serde_json::json!({ "graph": graph, "why": "test", "inputs": {} }))
+                if prompts.len() == 1 {
+                    // No steps: refused by the lowering, must come back.
+                    return Ok(serde_json::json!({ "why": "broken", "inputs": {} }));
+                }
+                assert!(
+                    shown.contains("refused"),
+                    "the retry prompt must carry the refusal, got: {shown}"
+                );
+                Ok(serde_json::json!({
+                    "why": "fixed",
+                    "inputs": {},
+                    "steps": [{ "id": "do_it", "ask": "Do the thing directly." }]
+                }))
             }
         }
 
@@ -444,6 +281,7 @@ mod tests {
         .await
         .expect("the corrected graph must land");
         assert_eq!(attempt.graph.name, "fixed");
+        assert_eq!(attempt.graph.nodes[1].id, "do_it");
         assert_eq!(provider.prompts.lock().expect("prompt log").len(), 2);
     }
 
@@ -473,15 +311,6 @@ mod tests {
                     .to_string();
                 let mut prompts = self.prompts.lock().expect("prompt log");
                 prompts.push(shown.clone());
-                let graph = serde_json::json!({
-                    "schema_version": 1, "name": "needs-topic",
-                    "inputs": [{ "name": "topic", "type": "string", "required": true }],
-                    "nodes": [{
-                        "id": "start", "kind": "trigger", "name": "manual",
-                        "config": { "trigger_kind": "manual" }
-                    }],
-                    "edges": []
-                });
                 let inputs = if prompts.len() == 1 {
                     serde_json::json!({ "extraneous": "trimmed anyway" })
                 } else {
@@ -491,7 +320,12 @@ mod tests {
                     );
                     serde_json::json!({ "topic": "flash models", "extraneous": "still here" })
                 };
-                Ok(serde_json::json!({ "graph": graph, "why": "test", "inputs": inputs }))
+                Ok(serde_json::json!({
+                    "why": "test",
+                    "declared": [{ "name": "topic", "description": "what about", "required": true }],
+                    "inputs": inputs,
+                    "steps": [{ "id": "write", "ask": "Write it." }]
+                }))
             }
         }
 

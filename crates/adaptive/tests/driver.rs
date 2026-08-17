@@ -12,7 +12,6 @@ use serde_json::{Value, json};
 use tinyflows::caps::mock::mock_capabilities;
 use tinyflows::caps::{Capabilities, LlmProvider};
 use tinyflows::error::Result as EngineResult;
-use tinyflows::model::{Edge, Node, NodeKind, WorkflowGraph};
 use tinyflows::store::{FileWorkflowStore, WorkflowStore};
 use tinyflows_adaptive::contracts::Goal;
 use tinyflows_adaptive::driver::{Clock, Loop};
@@ -75,42 +74,6 @@ fn caps_with(llm: Arc<Always>) -> Capabilities {
     }
 }
 
-fn tiny(name: &str) -> WorkflowGraph {
-    WorkflowGraph {
-        schema_version: 1,
-        id: Some(name.into()),
-        name: name.into(),
-        inputs: Vec::new(),
-        agents: Vec::new(),
-        nodes: vec![
-            Node {
-                id: "start".into(),
-                kind: NodeKind::Trigger,
-                type_version: 1,
-                name: "manual".into(),
-                config: json!({ "trigger_kind": "manual" }),
-                ports: Vec::new(),
-                position: None,
-            },
-            Node {
-                id: "done".into(),
-                kind: NodeKind::Transform,
-                type_version: 1,
-                name: "done".into(),
-                config: json!({ "set": { "ok": true } }),
-                ports: Vec::new(),
-                position: None,
-            },
-        ],
-        edges: vec![Edge {
-            from_node: "start".into(),
-            from_port: "main".into(),
-            to_node: "done".into(),
-            to_port: "main".into(),
-        }],
-    }
-}
-
 fn store(tag: &str) -> Arc<dyn WorkflowStore> {
     let root = std::env::temp_dir().join(format!("adaptive-driver-{}-{tag}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
@@ -123,9 +86,9 @@ fn store(tag: &str) -> Arc<dyn WorkflowStore> {
 
 fn authoring() -> Arc<Always> {
     Always::new(json!({
-        "graph": tiny("attempt"),
         "why": "nothing stored fits",
         "inputs": {},
+        "steps": [{ "id": "attempt", "run": "echo attempt-done" }],
     }))
 }
 
@@ -335,19 +298,21 @@ async fn a_run_drives_to_a_stand_down_and_consolidates_once() {
 
 /// A graph parameterised by a declared input, which is what the authoring
 /// prompt asks for and what makes a procedure worth keeping.
-fn parameterised() -> WorkflowGraph {
-    let mut g = tiny("review");
-    g.inputs = vec![
-        tinyflows::model::WorkflowInput::new("repo", tinyflows::model::InputType::String)
-            .required(),
-    ];
-    g.nodes[1].config = json!({ "set": { "target": "=run.inputs.repo" } });
-    g
+fn parameterised() -> Value {
+    json!({
+        "why": "review",
+        "declared": [{ "name": "repo", "description": "the repository", "required": true }],
+        "inputs": { "repo": "acme/thing" },
+        "steps": [{
+            "id": "review",
+            "ask": "Review the open pull requests and summarise them directly."
+        }],
+    })
 }
 
 /// Authors `graph`, judges every run satisfied, and answers the naming call.
 struct Succeeds {
-    graph: WorkflowGraph,
+    authored: Value,
     reusable: bool,
     seen: Mutex<Vec<Value>>,
 }
@@ -365,18 +330,14 @@ impl LlmProvider for Succeeds {
                 "description": "Reviews the open pull requests on a repository. Takes the repository as an input.",
                 "reusable": self.reusable,
             }),
-            _ => json!({
-                "graph": self.graph,
-                "why": "nothing stored fits",
-                "inputs": { "repo": "acme/thing" },
-            }),
+            _ => self.authored.clone(),
         })
     }
 }
 
-fn succeeding(graph: WorkflowGraph, reusable: bool) -> Arc<Succeeds> {
+fn succeeding(authored: Value, reusable: bool) -> Arc<Succeeds> {
     Arc::new(Succeeds {
-        graph,
+        authored,
         reusable,
         seen: Mutex::new(Vec::new()),
     })
@@ -443,10 +404,11 @@ async fn a_graph_that_was_authored_and_worked_becomes_a_stored_procedure() {
 
 #[tokio::test]
 async fn a_graph_that_pasted_its_inputs_is_not_kept() {
-    // Same run, same success — but the goal's specifics are welded into a node,
-    // so it matches one task and never another. No model is asked.
+    // Same run, same success — but the goal's specifics are welded into a
+    // step, so it matches one task and never another. No model is asked.
     let mut baked = parameterised();
-    baked.nodes[1].config = json!({ "set": { "target": "acme/thing" } });
+    baked["steps"][0]["ask"] =
+        json!("Review the open pull requests on acme/thing and summarise them.");
 
     let llm = succeeding(baked, true);
     let caps = Capabilities {
