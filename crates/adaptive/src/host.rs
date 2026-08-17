@@ -25,6 +25,22 @@ use tinyflows::model::{NodeKind, WorkflowGraph};
 /// What a host permits. Read from that host's configuration, never guessed.
 ///
 /// Construct it with [`HostFacts::unknown`] and fill in what is actually known:
+/// One callable tool, with the argument shape a `tool_call` node must send.
+///
+/// The engine's tool capability takes `args` as an opaque value, so the only
+/// place an author can learn a tool's argument names is here. A slug listed
+/// without a fact is a tool the model can only misuse — observed in the
+/// field as an author inventing `args.command` for a shell tool, twice,
+/// spending the whole episode on a key name it was never shown.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ToolFact {
+    /// The slug a `tool_call` node's config names.
+    pub slug: String,
+    /// The arguments it takes, in prose an author can follow: key names,
+    /// which are required, and what each means.
+    pub args: String,
+}
+
 /// every collection left empty and every `Option` left `None` disables its own
 /// check rather than failing it.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -47,6 +63,13 @@ pub struct HostFacts {
     /// Slugs permitted beyond the native ones. Empty *and* `native_tools`
     /// empty means slugs are unchecked.
     pub tool_allowlist: Vec<String>,
+    /// Argument documentation for the tools worth documenting.
+    ///
+    /// Additive: a slug may appear in `native_tools` without a fact here —
+    /// that is "callable, shape unknown", which is what every host said
+    /// before this field existed.
+    #[serde(default)]
+    pub tools: Vec<ToolFact>,
     /// Hosts `http_request` may reach. Empty means unchecked.
     pub http_allowlist: Vec<String>,
     /// Whether `code` nodes run at all. `None` means unknown.
@@ -93,6 +116,7 @@ impl HostFacts {
             && self.run_timeout_secs.is_none()
             && self.native_tools.is_empty()
             && self.tool_allowlist.is_empty()
+            && self.tools.is_empty()
             && self.http_allowlist.is_empty()
             && self.allow_code.is_none()
             && self.shell_available.is_none()
@@ -293,6 +317,9 @@ impl HostFacts {
         );
         say("tool slugs that resolve", render_list(&self.native_tools));
         say("tool slugs also allowed", render_list(&self.tool_allowlist));
+        for tool in &self.tools {
+            say(&format!("tool `{}` args", tool.slug), tool.args.clone());
+        }
         say("http hosts reachable", render_list(&self.http_allowlist));
         if let Some(allowed) = self.allow_code {
             say(
@@ -374,6 +401,13 @@ mod tests {
             },
             HostFacts {
                 run_timeout_secs: Some(600),
+                ..HostFacts::unknown()
+            },
+            HostFacts {
+                tools: vec![ToolFact {
+                    slug: "host:shell".into(),
+                    args: "`script` (inline) or `script_path`".into(),
+                }],
                 ..HostFacts::unknown()
             },
         ] {
@@ -598,6 +632,23 @@ mod tests {
         let problems = facts.check(&g);
         assert_eq!(problems.len(), 1);
         assert!(problems[0].contains("never dispatched"), "{problems:?}");
+    }
+
+    #[test]
+    fn a_tool_fact_renders_its_argument_shape_into_the_prompt() {
+        let facts = HostFacts {
+            native_tools: vec!["host:shell".into()],
+            tools: vec![ToolFact {
+                slug: "host:shell".into(),
+                args: "`script` (inline text) or `script_path` (a file); NOT `command`".into(),
+            }],
+            ..HostFacts::unknown()
+        };
+        let rendered = facts.render();
+        assert!(
+            rendered.contains("tool `host:shell` args:") && rendered.contains("script_path"),
+            "{rendered}"
+        );
     }
 
     #[test]
