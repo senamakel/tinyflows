@@ -131,7 +131,46 @@ lacks. A permissive default impl is two lines.
 
 ---
 
-## 3 · Storage construction
+## 3 · Configuration — every knob in one place
+
+**One storage setting drives both halves** (`storage::Config::parse` +
+`Storage::open`), and `Storage::for_tenant` scopes ledger *and* vault in one
+call — the two-handle scoping mistake cannot be made:
+
+```rust
+let storage = Storage::open(&Config::parse(&cfg.storage)?).await?;   // once, at boot
+let tenant  = storage.for_tenant(&user_id);                          // per request
+// tenant.ledger() → &impl Ledger      tenant.vault() → &impl Vault
+```
+
+| `storage` value | meaning |
+|---|---|
+| `memory` / `:memory:` | forgets on restart — must be asked for by name, never a fallback |
+| `adaptive.db` or any path, `sqlite:<path>` | one SQLite file holding ledger **and** vault |
+| `mongodb://host:27017/adaptive` | one Mongo database, both halves; db name from the URI path, default `tinyflows_adaptive` |
+
+A URI for a backend the build lacks fails **at parse time**, naming the missing
+feature.
+
+What a service configures, and who consumes it:
+
+| setting | consumed by | values / default |
+|---|---|---|
+| storage string | `storage::Config::parse` | table above |
+| `TINYFLOWS_ADAPTIVE_DB` env | `SqliteLedger::from_env_or` / `at_default_location` | overrides the sqlite path without a rebuild |
+| `Budget { attempts, min_attempts, stall_limit, tokens }` | the loop, per `Loop` (per tenant if you like) | `12 / 3 / 2 / 0` — `tokens: 0` means **uncapped**, not zero |
+| `conn` | passed verbatim to your `LlmProvider` | opaque tenant credential *reference*, never a secret |
+| tier → model map | **your** `LlmProvider`, off the request's `tier` | e.g. select→flash, author/judge→strong, consolidate→mid |
+| relay deadline | **your** `Relay` | example uses 30 s; size to your longest workflow |
+| `HostFacts` | authoring prompt + post-author check | 15 fields describing the executing machine; `unknown()` forbids nothing |
+| `HostPolicy` | store saves + authored graphs | your veto for harnesses/slugs this deployment lacks |
+| Cargo features | build | `default = ["sqlite"]`; `mongo`; `default-features = false` for memory-only |
+
+**Deliberately not configurable** (behaviour, not policy): `MIN_TRIALS` = 3
+runs before a variant can take a family's slot; `RECALL_LIMIT` = all lessons in
+scope; `RECORD_BUDGET`/`PROMPT_BUDGET` = 256 KiB / 4 KiB per node.
+
+## 3b · Storage construction (by hand)
 
 ### Ledger
 
