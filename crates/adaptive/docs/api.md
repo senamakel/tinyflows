@@ -156,7 +156,7 @@ What a service configures, and who consumes it:
 
 | setting | consumed by | values / default |
 |---|---|---|
-| storage string | `storage::Config::parse` | table above |
+| storage string | `storage::Config::parse`, or `Config::from_env()` / `Storage::from_env()` reading **`TINYFLOWS_ADAPTIVE_STORAGE`** | table above; unset = boot error naming the variable, never a default |
 | `TINYFLOWS_ADAPTIVE_DB` env | `SqliteLedger::from_env_or` / `at_default_location` | overrides the sqlite path without a rebuild |
 | `Budget { attempts, min_attempts, stall_limit, tokens }` | the loop, per `Loop` (per tenant if you like) | `12 / 3 / 2 / 0` — `tokens: 0` means **uncapped**, not zero |
 | `conn` | passed verbatim to your `LlmProvider` | opaque tenant credential *reference*, never a secret |

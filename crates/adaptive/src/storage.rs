@@ -46,6 +46,9 @@ pub enum StorageError {
     Vault(#[from] WorkflowError),
 }
 
+/// Where the storage setting is read from, when the environment supplies it.
+pub const STORAGE_VAR: &str = "TINYFLOWS_ADAPTIVE_STORAGE";
+
 /// Where everything durable goes, parsed from one setting.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Config {
@@ -74,6 +77,31 @@ impl Config {
     /// * `sqlite:<path>` — SQLite at that path;
     /// * anything else — treated as a filesystem path, SQLite.
     ///
+    /// Read the setting from the environment: [`STORAGE_VAR`].
+    ///
+    /// An unset variable is an **error naming the variable**, never a default.
+    /// The tempting fallbacks are both wrong: defaulting to a disk location
+    /// invents a path on the operator's machine nobody named, and defaulting
+    /// to memory is a service that runs perfectly and learns nothing — the
+    /// failure shape this crate is built to refuse.
+    ///
+    /// # Errors
+    /// When the variable is unset, or its value fails [`parse`](Self::parse).
+    pub fn from_env() -> Result<Self, StorageError> {
+        Self::from_setting(std::env::var(STORAGE_VAR).ok().as_deref())
+    }
+
+    /// [`from_env`](Self::from_env) with the read made explicit, so the rule is
+    /// testable without any test mutating process-wide state.
+    pub fn from_setting(value: Option<&str>) -> Result<Self, StorageError> {
+        match value.map(str::trim).filter(|v| !v.is_empty()) {
+            Some(value) => Self::parse(value),
+            None => Err(StorageError::Config(format!(
+                "{STORAGE_VAR} is not set; expected `memory`, a sqlite path, or a mongodb:// URI"
+            ))),
+        }
+    }
+
     /// # Errors
     /// When the value names a backend this build was compiled without — caught
     /// here so it fails at boot with the feature named, not at first use.
@@ -134,6 +162,15 @@ pub struct Storage {
 }
 
 impl Storage {
+    /// [`Config::from_env`] and [`open`](Self::open) in one call — the whole
+    /// persistence stack from the environment.
+    ///
+    /// # Errors
+    /// As both halves.
+    pub async fn from_env() -> Result<Self, StorageError> {
+        Self::open(&Config::from_env()?).await
+    }
+
     /// Open both halves of the configured backend.
     ///
     /// SQLite puts them in **one file** — their schemas share no table — so a
@@ -373,6 +410,24 @@ mod tests {
             Config::Mongo { database, .. } => assert_eq!(database, "tinyflows_adaptive"),
             other => panic!("{other:?}"),
         }
+    }
+
+    #[test]
+    fn an_unset_variable_errors_naming_the_variable_rather_than_defaulting() {
+        // Defaulting to a path invents a location nobody named; defaulting to
+        // memory is a service that runs perfectly and learns nothing.
+        let err = Config::from_setting(None).expect_err("unset");
+        assert!(err.to_string().contains(STORAGE_VAR), "{err}");
+        let err = Config::from_setting(Some("  ")).expect_err("blank is unset");
+        assert!(err.to_string().contains(STORAGE_VAR), "{err}");
+    }
+
+    #[test]
+    fn a_set_variable_goes_through_the_same_parse() {
+        assert_eq!(
+            Config::from_setting(Some("memory")).expect("parse"),
+            Config::Memory
+        );
     }
 
     #[test]
