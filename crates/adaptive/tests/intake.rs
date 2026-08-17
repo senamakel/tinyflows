@@ -81,6 +81,21 @@ fn empty_store(tag: &str) -> (FileWorkflowStore, std::path::PathBuf) {
 }
 
 /// A minimal graph that validates: one trigger, one transform.
+/// An author reply in the recipe surface, with `label` distinguishing its
+/// lowered shape (and so its fingerprint) from any other reply's.
+fn authored_reply(label: &str, required_input: Option<&str>) -> Value {
+    let mut reply = json!({
+        "why": label,
+        "inputs": {},
+        "steps": [{ "id": "work", "ask": format!("Do the {label} work directly.") }],
+    });
+    if let Some(name) = required_input {
+        reply["declared"] = json!([{ "name": name, "description": "", "required": true }]);
+        reply["inputs"] = json!({ name: "acme/thing" });
+    }
+    reply
+}
+
 fn tiny_graph(name: &str, required_input: Option<&str>) -> WorkflowGraph {
     WorkflowGraph {
         schema_version: 1,
@@ -135,11 +150,7 @@ fn stored(id: &str, description: &str, required_input: Option<&str>) -> Workflow
 async fn an_empty_store_authors_without_asking_whether_to_select() {
     // With nothing to choose from the answer can only be "none". Spending a
     // call to be told so is the cost of every cold start.
-    let llm = std::sync::Arc::new(Scripted::new(vec![json!({
-        "graph": tiny_graph("fresh", None),
-        "why": "nothing stored",
-        "inputs": {},
-    })]));
+    let llm = std::sync::Arc::new(Scripted::new(vec![authored_reply("fresh", None)]));
     let caps = caps_with(llm.clone());
     let (store, _root) = empty_store("1");
     let ledger = MemoryLedger::new();
@@ -163,8 +174,8 @@ async fn an_empty_store_authors_without_asking_whether_to_select() {
         "exactly one call: the authoring one"
     );
     assert!(
-        llm.prompts()[0].contains("Node catalogue"),
-        "authoring must be grounded on the catalogue"
+        llm.prompts()[0].contains("You plan how to achieve a goal"),
+        "authoring must speak the recipe surface, not graph syntax"
     );
 }
 
@@ -212,7 +223,7 @@ async fn a_matching_workflow_is_selected_and_its_graph_is_loaded() {
 async fn declining_falls_through_to_authoring() {
     let llm = std::sync::Arc::new(Scripted::new(vec![
         json!({ "workflow_id": null, "why": "none of these fetch anything" }),
-        json!({ "graph": tiny_graph("written", None), "why": "had to write one", "inputs": {} }),
+        authored_reply("written", None),
     ]));
     let caps = caps_with(llm.clone());
     let (store, _root) = empty_store("3");
@@ -246,11 +257,7 @@ async fn a_workflow_already_tried_this_episode_is_not_offered_again() {
     // The property the whole retry edge rests on. Without it attempt two
     // re-selects what attempt one already failed on, and the episode pays
     // twice for one dead end.
-    let llm = std::sync::Arc::new(Scripted::new(vec![json!({
-        "graph": tiny_graph("written", None),
-        "why": "the only candidate was already spent",
-        "inputs": {},
-    })]));
+    let llm = std::sync::Arc::new(Scripted::new(vec![authored_reply("written", None)]));
     let caps = caps_with(llm.clone());
     let (store, _root) = empty_store("4");
     store
@@ -335,7 +342,7 @@ async fn a_selection_that_still_cannot_bind_falls_back_to_authoring() {
     let llm = std::sync::Arc::new(Scripted::new(vec![
         json!({ "workflow_id": "needs-repo", "why": "matches", "inputs": {} }),
         json!({ "workflow_id": "needs-repo", "why": "still sure", "inputs": {} }),
-        json!({ "graph": tiny_graph("fresh", None), "why": "wrote one instead", "inputs": {} }),
+        authored_reply("fresh", None),
     ]));
     let caps = caps_with(llm.clone());
     let (store, _root) = empty_store("5b");
@@ -404,7 +411,7 @@ async fn inputs_the_graph_never_declared_are_trimmed_before_the_engine_sees_them
 async fn a_hallucinated_workflow_id_reads_as_a_decline() {
     let llm = std::sync::Arc::new(Scripted::new(vec![
         json!({ "workflow_id": "pr-reviewer", "why": "close, but no such id" }),
-        json!({ "graph": tiny_graph("written", None), "why": "wrote one", "inputs": {} }),
+        authored_reply("written", None),
     ]));
     let caps = caps_with(llm.clone());
     let (store, _root) = empty_store("6");
@@ -437,8 +444,7 @@ async fn an_authored_graph_that_does_not_validate_is_an_error_not_a_return_value
     // that reads like the work failing. The author retries with the refusal
     // fed back, so the script holds a model that stays wrong for every round.
     let broken = json!({
-        "graph": { "schema_version": 1, "name": "empty", "nodes": [], "edges": [] },
-        "why": "forgot the trigger",
+        "why": "forgot the steps",
         "inputs": {},
     });
     let llm = std::sync::Arc::new(Scripted::new(vec![broken.clone(), broken.clone(), broken]));
@@ -462,11 +468,7 @@ async fn an_authored_graph_that_does_not_validate_is_an_error_not_a_return_value
 
 #[tokio::test]
 async fn a_disabled_workflow_is_never_offered() {
-    let llm = std::sync::Arc::new(Scripted::new(vec![json!({
-        "graph": tiny_graph("written", None),
-        "why": "the only one was disabled",
-        "inputs": {},
-    })]));
+    let llm = std::sync::Arc::new(Scripted::new(vec![authored_reply("written", None)]));
     let caps = caps_with(llm.clone());
     let (store, _root) = empty_store("8");
     let mut off = stored("switched-off", "would have matched", None);
@@ -498,22 +500,13 @@ async fn a_graph_naming_a_worker_this_host_lacks_is_refused_before_it_runs() {
     // The whole point of collecting host facts. Without this the graph saves
     // cleanly, validates cleanly, and fails at run time — usually overnight,
     // to nobody watching.
-    let mut agent_graph = tiny_graph("uses-an-agent", None);
-    agent_graph.nodes[1] = Node {
-        id: "work".into(),
-        kind: NodeKind::Agent,
-        type_version: 1,
-        name: "do it".into(),
-        config: json!({ "prompt": "do the thing", "agent_ref": "desktop" }),
-        ports: Vec::new(),
-        position: None,
-    };
-    agent_graph.edges[0].to_node = "work".into();
-
+    //
     // Three copies: the author feeds refusals back, and this model never
     // learns that the worker does not exist.
     let insistent = json!({
-        "graph": agent_graph, "why": "needs an agent", "inputs": {},
+        "why": "needs an agent",
+        "inputs": {},
+        "steps": [{ "id": "work", "ask": "do the thing", "worker": "desktop" }],
     });
     let llm = std::sync::Arc::new(Scripted::new(vec![
         insistent.clone(),
@@ -554,8 +547,12 @@ async fn a_graph_naming_a_worker_this_host_lacks_is_refused_before_it_runs() {
 
 #[tokio::test]
 async fn the_authoring_prompt_carries_what_the_host_permits() {
+    // The facts below say agent work must name a worker, so the reply's ask
+    // step names one — the same gate this test exists to see rendered.
     let llm = std::sync::Arc::new(Scripted::new(vec![json!({
-        "graph": tiny_graph("fine", None), "why": "ok", "inputs": {},
+        "why": "fine",
+        "inputs": {},
+        "steps": [{ "id": "work", "ask": "Do it directly.", "worker": "laptop" }],
     })]));
     let caps = caps_with(llm.clone());
     let (store, _root) = empty_store("facts-rendered");
@@ -626,11 +623,7 @@ async fn repaired_family(
 async fn offered(store: &FileWorkflowStore, ledger: &MemoryLedger) -> String {
     let llm = std::sync::Arc::new(Scripted::new(vec![
         json!({"workflow_id": "none"}),
-        json!({
-            "graph": tiny_graph("fallback", None),
-            "why": "declined",
-            "inputs": {},
-        }),
+        authored_reply("fallback", None),
     ]));
     let caps = caps_with(llm.clone());
     let _ = decide(
@@ -759,11 +752,7 @@ async fn the_author_is_shown_what_this_episode_already_tried() {
     // because nothing told it otherwise. The exclusion list only guards
     // *selection*; authoring has no structural guard at all.
     let (store, ledger, _root) = with_history("retry-1").await;
-    let llm = std::sync::Arc::new(Scripted::new(vec![json!({
-        "graph": tiny_graph("third-idea", None),
-        "why": "the first two both trusted the model for figures",
-        "inputs": {},
-    })]));
+    let llm = std::sync::Arc::new(Scripted::new(vec![authored_reply("third-idea", None)]));
     let caps = caps_with(llm.clone());
 
     decide(
@@ -785,7 +774,7 @@ async fn the_author_is_shown_what_this_episode_already_tried() {
         "{prompt}"
     );
     assert!(prompt.contains("it invented the figures"), "{prompt}");
-    assert!(prompt.contains("write something\nDIFFERENT"), "{prompt}");
+    assert!(prompt.contains("DIFFERENT plan"), "{prompt}");
 }
 
 #[tokio::test]
@@ -843,11 +832,7 @@ async fn lessons_from_other_episodes_reach_the_planner() {
         .await
         .expect("promote");
 
-    let llm = std::sync::Arc::new(Scripted::new(vec![json!({
-        "graph": tiny_graph("informed", None),
-        "why": "nothing stored",
-        "inputs": {},
-    })]));
+    let llm = std::sync::Arc::new(Scripted::new(vec![authored_reply("informed", None)]));
     let caps = caps_with(llm.clone());
 
     decide(
@@ -873,11 +858,7 @@ async fn a_first_attempt_is_told_nothing_it_would_have_to_ignore() {
     // empty "already tried" heading reads as a claim that something was.
     let (store, _root) = empty_store("retry-4");
     let ledger = MemoryLedger::new();
-    let llm = std::sync::Arc::new(Scripted::new(vec![json!({
-        "graph": tiny_graph("first", None),
-        "why": "nothing stored",
-        "inputs": {},
-    })]));
+    let llm = std::sync::Arc::new(Scripted::new(vec![authored_reply("first", None)]));
     let caps = caps_with(llm.clone());
 
     decide(
@@ -906,11 +887,10 @@ async fn two_authored_attempts_leave_two_distinct_signatures() {
 
     let mut signatures = Vec::new();
     for (n, name) in [(0, "shape-one"), (1, "shape-two")] {
-        let llm = std::sync::Arc::new(Scripted::new(vec![json!({
-            "graph": tiny_graph(name, if n == 1 { Some("repo") } else { None }),
-            "why": "nothing stored",
-            "inputs": { "repo": "acme/thing" },
-        })]));
+        let llm = std::sync::Arc::new(Scripted::new(vec![authored_reply(
+            name,
+            if n == 1 { Some("repo") } else { None },
+        )]));
         let attempt = decide(
             &Goal::new("write the weekly report"),
             "ep-sigs",

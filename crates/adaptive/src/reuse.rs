@@ -84,12 +84,18 @@ pub fn baked_in(graph: &WorkflowGraph, inputs: &serde_json::Map<String, Value>) 
         collect_strings(&node.config, &mut leaves);
         for leaf in leaves {
             for value in &distinctive {
-                // An expression that happens to mention the value is still
-                // reading it from somewhere; a literal is not.
-                if leaf.starts_with('=') {
-                    continue;
-                }
-                if leaf.contains(value) && !found.iter().any(|f| f == value) {
+                // Expressions are scanned too, but only their QUOTED
+                // literals: `=.run.inputs.repo` reads the value from the
+                // run and is fine; `="review acme/thing"` welded it in —
+                // and since generated prompts are all expressions now, an
+                // expression-shaped paste is the common shape, not the
+                // exception.
+                let pasted = if leaf.starts_with('=') {
+                    quoted_literals(&leaf).iter().any(|lit| lit.contains(value))
+                } else {
+                    leaf.contains(value)
+                };
+                if pasted && !found.iter().any(|f| f == value) {
                     found.push((*value).to_string());
                 }
             }
@@ -131,6 +137,38 @@ pub(crate) fn shape_bytes(graph: &WorkflowGraph) -> Vec<u8> {
 /// old 28-bit truncation also put birthday collisions within reach of a few
 /// tens of thousands of records; 64 bits does not. FNV-1a is fixed forever,
 /// fits in six lines, and needs no dependency.
+/// The quoted string literals of a jq expression, unescaped enough to
+/// substring-search: `="a \"b\"" + .x` yields `a "b"`.
+fn quoted_literals(expression: &str) -> Vec<String> {
+    let mut literals = Vec::new();
+    let mut current: Option<String> = None;
+    let mut chars = expression.chars();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '"' => match current.take() {
+                Some(literal) => literals.push(literal),
+                None => current = Some(String::new()),
+            },
+            '\\' if current.is_some() => {
+                if let (Some(literal), Some(escaped)) = (current.as_mut(), chars.next()) {
+                    literal.push(match escaped {
+                        'n' => '\n',
+                        't' => '\t',
+                        'r' => '\r',
+                        other => other,
+                    });
+                }
+            }
+            other => {
+                if let Some(literal) = current.as_mut() {
+                    literal.push(other);
+                }
+            }
+        }
+    }
+    literals
+}
+
 pub(crate) fn digest_hex(bytes: &[u8]) -> String {
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
     for byte in bytes {
@@ -210,12 +248,24 @@ mod tests {
     }
 
     #[test]
-    fn an_expression_mentioning_the_value_is_still_reading_it() {
-        // `=run.inputs.repo | ascii_downcase` names nothing literally, but a jq
-        // program can contain the text and still be a binding rather than a
-        // paste. Anything starting with `=` is resolved at run time.
-        let graph = graph_with(json!({ "prompt": "=\"acme/thing\" " }));
+    fn an_expression_reading_the_value_by_path_is_not_a_paste() {
+        // `=run.inputs.repo | ascii_downcase` resolves the value at run time —
+        // the graph works for the next repo too.
+        let graph = graph_with(json!({ "prompt": "=run.inputs.repo | ascii_downcase" }));
         assert!(baked_in(&graph, &inputs(&[("repo", "acme/thing")])).is_empty());
+    }
+
+    #[test]
+    fn a_value_welded_into_an_expressions_quoted_literal_is_a_paste() {
+        // `="acme/thing"` evaluates to exactly the pasted text: expression
+        // syntax around a literal changes nothing about its reusability. Since
+        // recipe lowering made every generated prompt an expression, this is
+        // the common shape of a paste, not an edge case.
+        let graph = graph_with(json!({ "prompt": "=\"review acme/thing directly\"" }));
+        assert_eq!(
+            baked_in(&graph, &inputs(&[("repo", "acme/thing")])),
+            vec!["acme/thing".to_string()]
+        );
     }
 
     #[test]

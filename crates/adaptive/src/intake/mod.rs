@@ -15,6 +15,7 @@
 //! A graph leaves here compilable or not at all.
 
 mod author;
+pub mod recipe;
 mod select;
 
 pub use author::author;
