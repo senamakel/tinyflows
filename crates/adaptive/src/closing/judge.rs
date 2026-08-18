@@ -74,6 +74,14 @@ pub struct Evidence<'a> {
     /// diff, a list of files, whatever the host counts as proof. Empty is
     /// honest; a fabricated summary is not.
     pub changed: String,
+    /// The runner's own report that the run broke — a node that errored, a
+    /// script that exited nonzero, a deadline. `None` when the run completed
+    /// on its own terms, whatever it achieved.
+    ///
+    /// Carried separately from the outcome because it decides something the
+    /// model may not: whether another attempt is worth making. See
+    /// [`judge`]'s downgrade.
+    pub failed: Option<String>,
 }
 
 impl Evidence<'_> {
@@ -183,15 +191,35 @@ pub async fn judge(
 
     let answer = ask(caps, conn, Tier::Judge, SYSTEM, &user).await?;
     let satisfied = answer["satisfied"].as_bool().unwrap_or(false);
-    Ok(Verdict {
-        satisfied,
+    let blocker = if satisfied {
         // A satisfied verdict has no blocker whatever the model wrote in the
         // field; the two disagreeing is a state nothing downstream can read.
-        blocker: if satisfied {
-            Blocker::None
+        Blocker::None
+    } else {
+        let claimed = Blocker::parse(answer["blocker"].as_str().unwrap_or_default());
+        // The one place the loop overrules the judge, and it does so on a
+        // fact rather than an opinion: the RUNNER said the run broke. A
+        // mechanical break is the most fixable thing an episode can hit —
+        // rewrite the script, correct the flag — so calling it terminal
+        // spends the remaining attempts on nothing. The prompt says this
+        // too; saying it is not enough, because a model that misreads it
+        // ends the episode and no later round can undo that.
+        //
+        // Needs-input and external-wait survive: both are terminal because
+        // something OUTSIDE the loop must move, which a broken run does not
+        // change.
+        if evidence.failed.is_some()
+            && !claimed.continuable()
+            && !matches!(claimed, Blocker::NeedsInput | Blocker::ExternalWait)
+        {
+            Blocker::GoalNotMet
         } else {
-            Blocker::parse(answer["blocker"].as_str().unwrap_or_default())
-        },
+            claimed
+        }
+    };
+    Ok(Verdict {
+        satisfied,
+        blocker,
         gap: answer["gap"].as_str().unwrap_or_default().to_string(),
         attributed_to: answer["attributed_to"]
             .as_str()
@@ -263,6 +291,79 @@ fn without_a_model(evidence: &Evidence<'_>) -> Option<Verdict> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A provider that answers the judge with a fixed blocker.
+    struct Says(&'static str);
+
+    #[async_trait::async_trait]
+    impl tinyflows::caps::LlmProvider for Says {
+        async fn complete(
+            &self,
+            _request: serde_json::Value,
+            _conn: Option<&str>,
+        ) -> tinyflows::error::Result<serde_json::Value> {
+            Ok(serde_json::json!({
+                "satisfied": false,
+                "blocker": self.0,
+                "gap": "nothing was fetched",
+            }))
+        }
+    }
+
+    async fn verdict_for(blocker: &'static str, failed: Option<String>) -> Verdict {
+        let outcome = tinyflows::engine::RunOutcome {
+            // Non-empty: the mechanical pre-judge must not settle this one,
+            // because the point is what the MODEL's answer becomes.
+            output: serde_json::json!({ "nodes": { "fetch": { "json": 1 } } }),
+            pending_approvals: Vec::new(),
+            cancelled: false,
+        };
+        let diagnosis = Diagnosis::default();
+        let evidence = Evidence {
+            outcome: &outcome,
+            diagnosis: &diagnosis,
+            changed: String::new(),
+            failed,
+        };
+        let caps = tinyflows::caps::Capabilities {
+            llm: std::sync::Arc::new(Says(blocker)),
+            ..tinyflows::caps::mock::mock_capabilities()
+        };
+        judge(&Goal::new("do the thing"), &evidence, &caps, None)
+            .await
+            .expect("judged")
+    }
+
+    #[tokio::test]
+    async fn a_mechanically_broken_run_cannot_be_called_terminal() {
+        // Field observation: a shell step exited nonzero, the judge answered
+        // `missing_evidence`, and the episode ended with two of its three
+        // attempts unused — when rewriting the script was the whole fix.
+        // The prompt says mechanical failures are goal_not_met; a model that
+        // misreads it must not get to end the episode anyway.
+        let verdict = verdict_for("missing_evidence", Some("script exited 5".into())).await;
+        assert_eq!(verdict.blocker, Blocker::GoalNotMet);
+        assert!(verdict.blocker.continuable());
+    }
+
+    #[tokio::test]
+    async fn a_run_that_completed_keeps_the_judges_terminal_verdict() {
+        // No mechanical failure: the judge is the authority on whether
+        // another attempt could help, and this downgrade must not become a
+        // blanket refusal to ever stand down.
+        let verdict = verdict_for("missing_evidence", None).await;
+        assert_eq!(verdict.blocker, Blocker::MissingEvidence);
+    }
+
+    #[tokio::test]
+    async fn a_broken_run_still_waiting_on_a_person_stays_terminal() {
+        // NeedsInput and ExternalWait survive the downgrade: both mean
+        // something OUTSIDE the loop must move, which a broken run does not
+        // change.
+        let verdict = verdict_for("needs_input", Some("script exited 5".into())).await;
+        assert_eq!(verdict.blocker, Blocker::NeedsInput);
+    }
+
     use serde_json::json;
     use tinyflows::diagnostics::{HiddenError, NeverRan, NullBinding};
 
@@ -279,6 +380,7 @@ mod tests {
             outcome: o,
             diagnosis: d,
             changed: String::new(),
+            failed: None,
         }
     }
 
