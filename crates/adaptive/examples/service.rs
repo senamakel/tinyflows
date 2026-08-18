@@ -268,9 +268,12 @@ enum VaultFrame {
         records: Vec<WorkflowRecord>,
     },
     /// Service → device: write this record into YOUR store.
+    ///
+    /// Boxed: a record dwarfs every other variant, and the frame travels
+    /// through queues sized for the small ones.
     Put {
         wire_id: String,
-        record: WorkflowRecord,
+        record: Box<WorkflowRecord>,
     },
     /// Service → device: remove this id from your store.
     Remove { wire_id: String, id: String },
@@ -391,7 +394,7 @@ impl Vault for DeviceVault {
         match self
             .exchange(VaultFrame::Put {
                 wire_id: String::new(),
-                record: record.clone(),
+                record: Box::new(record.clone()),
             })
             .await?
         {
