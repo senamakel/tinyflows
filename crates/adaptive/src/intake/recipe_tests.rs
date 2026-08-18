@@ -110,6 +110,53 @@ fn every_structural_problem_is_reported_at_once_with_the_fix() {
 }
 
 #[test]
+fn a_declared_value_pasted_into_an_ask_is_refused_with_the_remedy() {
+    // Observed on a live host: the author declared `topic` AND wrote
+    // "about the topic 'warm caches'" in the ask. The lowering attaches the
+    // value anyway, so the paste is redundant now — and poisonous later:
+    // selected for a different topic, the prompt carries both, and the keep
+    // gate rightly refuses to file the plan. Caught here, the feedback
+    // round fixes it before anything runs.
+    let recipe = json!({
+        "why": "poem",
+        "declared": [{ "name": "topic", "description": "", "required": true }],
+        "inputs": { "topic": "warm caches" },
+        "steps": [
+            { "id": "write", "ask": "Write a two-line poem about the topic 'warm caches'." }
+        ]
+    });
+    let err = lower(&recipe).expect_err("refused").to_string();
+    assert!(err.contains("pastes the value"), "{err}");
+    assert!(err.contains("attached automatically"), "{err}");
+
+    // The same plan without the paste is exactly what should be written.
+    let clean = json!({
+        "why": "poem",
+        "declared": [{ "name": "topic", "description": "", "required": true }],
+        "inputs": { "topic": "warm caches" },
+        "steps": [
+            { "id": "write", "ask": "Write a two-line poem about the given topic." }
+        ]
+    });
+    lower(&clean).expect("keepable");
+}
+
+#[test]
+fn an_indistinct_input_value_in_an_ask_is_not_a_paste() {
+    // "on" appears in half of all prose; refusing on it would block
+    // perfectly reusable plans. Only distinctive values count.
+    let recipe = json!({
+        "why": "toggle",
+        "declared": [{ "name": "mode", "description": "", "required": true }],
+        "inputs": { "mode": "on" },
+        "steps": [
+            { "id": "flip", "ask": "Turn the feature on if the mode input says so." }
+        ]
+    });
+    lower(&recipe).expect("not a paste");
+}
+
+#[test]
 fn a_reply_with_no_steps_says_what_to_return() {
     let err = lower(&json!({ "why": "empty" }))
         .expect_err("refused")
