@@ -442,14 +442,20 @@ fn child_run_state() -> serde_json::Value {
     json!({
         "run": { "trigger": [], "inputs": { "repo": "acme/thing" } },
         "nodes": {
+            // The trigger slot, verbatim from a real run: its payload is the
+            // seeded item ARRAY, not an object. Every child has one, and it is
+            // what made the first spelling of the projection fail — a
+            // fixture whose slots were all objects passed while the real
+            // thing resolved the whole prompt to null.
+            "start": { "items": [{ "json": [{ "json": {} }] }] },
             "fetch_pr": { "items": [{ "json": {
                 "json": { "exit_code": 0, "stdout": "3 files changed" },
                 "text": null, "raw": {}
             } }] },
             "verdict": { "items": [{ "json": {
-                "json": "Requesting changes.",
+                "json": { "text": "Requesting changes.", "worker": "local" },
                 "text": "Requesting changes.",
-                "raw": "Requesting changes."
+                "raw": { "text": "Requesting changes." }
             } }] }
         }
     })

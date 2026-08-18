@@ -354,8 +354,18 @@ fn output_of(id: &str, action: Option<&Action>) -> String {
 ///
 /// Written defensively at every hop — a slot with no `items`, an empty array,
 /// an item whose payload is not an object — because this walks a *child's*
-/// state, whose shape this graph did not choose. A jq error here would fail
-/// the parent node rather than the step that actually produced nothing.
+/// state, whose shape this graph did not choose. A failure here would take
+/// down the parent node rather than report the step that produced nothing,
+/// and a child always has at least one payload that is not an object: its
+/// trigger slot holds the seeded item **array**.
+///
+/// Guarded with an explicit `type == "object"` rather than the `?` operator,
+/// which does not do what it looks like it does here. In `jaq`, `.a?` over a
+/// non-object yields no output as expected, but a two-hop `.a.b?` fails the
+/// whole enclosing expression instead — so the "defensive" spelling of this
+/// projection resolved the entire prompt to null, and every composed plan
+/// reached its combining agent with nothing. Found by evaluating against a
+/// real child run state; a synthetic one whose slots were all objects passed.
 fn child_answer(id: &str) -> String {
     // Two different shapes in one expression, which is the whole hazard here.
     // `.nodes.{id}.item` is the *scope* projection — the child's final run
@@ -367,7 +377,9 @@ fn child_answer(id: &str) -> String {
         "([((.nodes.{id}.item.nodes // {{}}) | to_entries[]) \
          | . as $step \
          | ((.value.items // []) | .[-1] | .json) as $out \
-         | ($out.text? // $out.stdout? // $out.json.stdout? // empty) as $said \
+         | (($out | if type == \"object\" then \
+              (.text // .stdout // (.json | if type == \"object\" then .stdout else null end)) \
+            else null end) // empty) as $said \
          | \"## \" + $step.key + \"\\n\" + ($said | tostring)] \
          | join(\"\\n\\n\") \
          | if . == \"\" then null else . end)"
