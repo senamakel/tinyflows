@@ -115,7 +115,10 @@ pub fn lower(answer: &Value) -> Result<(WorkflowGraph, Map<String, Value>, Strin
                 kind: NodeKind::Shell,
                 type_version: 1,
                 name: step.id.clone(),
-                config: json!({ "script": script }),
+                // `source`, not `script`: the engine's shell node reads
+                // config.source — the drift test below ties this key to the
+                // engine's own contract so it cannot silently rot again.
+                config: json!({ "source": script }),
                 ports: Vec::new(),
                 position: None,
             },
