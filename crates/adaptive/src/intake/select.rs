@@ -33,6 +33,13 @@ pub struct Candidate {
     pub applied: u32,
     /// Times that ended satisfied.
     pub helped: u32,
+    /// Its declared inputs: name and whether it is required.
+    ///
+    /// Listed because the chooser is asked to supply values for them. It was
+    /// being asked to fill inputs it had never been shown, which is a guess
+    /// dressed as a binding — and a required input guessed wrong is a run
+    /// that fails after the choice has already been made.
+    pub inputs: Vec<(String, bool)>,
 }
 
 impl Candidate {
@@ -54,8 +61,24 @@ impl Candidate {
             0 => "never run".to_string(),
             applied => format!("run {applied}×, satisfied {}×", self.helped),
         };
+        let inputs = if self.inputs.is_empty() {
+            String::new()
+        } else {
+            let listed: Vec<String> = self
+                .inputs
+                .iter()
+                .map(|(name, required)| {
+                    if *required {
+                        name.clone()
+                    } else {
+                        format!("{name} (optional)")
+                    }
+                })
+                .collect();
+            format!("\n  inputs: {}", listed.join(", "))
+        };
         format!(
-            "- id: {}\n  name: {name}\n  steps: {}, {record}\n  {description}",
+            "- id: {}\n  name: {name}\n  steps: {}, {record}{inputs}\n  {description}",
             self.id, self.node_count
         )
     }
@@ -210,6 +233,7 @@ mod tests {
             node_count: 4,
             applied,
             helped,
+            inputs: vec![("repo".to_string(), true)],
         }
     }
 

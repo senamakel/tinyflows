@@ -19,6 +19,7 @@ pub mod recipe;
 mod select;
 
 pub use author::author;
+pub use recipe::{Callable, render_callables};
 pub use select::{Candidate, bind, select};
 
 use serde_json::{Map, Value};
@@ -113,6 +114,12 @@ pub async fn decide(
     let rows = ledger.rows(episode).await?;
     let tried = crate::ledger::signatures(&rows);
     let candidates = catalogue(store, ledger, &tried).await?;
+    // Two views of the same shelf, and the difference is the point. The
+    // chooser sees what it has not already tried, because repeating a
+    // selection cannot teach the episode anything. The author sees the WHOLE
+    // shelf, because a workflow that fell short as the entire answer is
+    // exactly the one worth calling as one step of a bigger plan.
+    let callables = callables(store)?;
 
     // Both planners see the same past, in the same words. The exclusion list
     // stops a *selection* being repeated, but nothing structural stops the
@@ -169,7 +176,7 @@ pub async fn decide(
                         Err(err) => return Err(err),
                     }
                 }
-                return author(goal, facts, store.policy(), &noted, caps, conn)
+                return author(goal, facts, &callables, store.policy(), &noted, caps, conn)
                     .await
                     .map(|attempt| Attempt {
                         lessons_shown: shown,
@@ -183,7 +190,7 @@ pub async fn decide(
             Err(err) => return Err(err),
         }
     }
-    author(goal, facts, store.policy(), &past, caps, conn)
+    author(goal, facts, &callables, store.policy(), &past, caps, conn)
         .await
         .map(|attempt| Attempt {
             lessons_shown: shown,
@@ -210,6 +217,31 @@ pub async fn decide(
 /// clause is not a choice, it is noise, and a planner asked to make it is being
 /// asked to guess. Which member survives is decided on score, never on being
 /// the newest — see [`crate::promotion`].
+/// Every enabled workflow, as something a plan may call.
+///
+/// Unfiltered on purpose — see the note at the call site. Built from the same
+/// listing the chooser's catalogue reads, so composition costs no extra store
+/// traffic: `WorkflowSummary` already carries the declared inputs, precisely
+/// so a caller need not fetch a whole graph to learn what it takes.
+fn callables(store: &dyn WorkflowStore) -> Result<Vec<Callable>> {
+    Ok(store
+        .list()
+        .map_err(|e| IntakeError::Store(e.to_string()))?
+        .into_iter()
+        .filter(|summary| summary.enabled)
+        .map(|summary| Callable {
+            id: summary.id,
+            name: summary.name,
+            description: summary.description,
+            inputs: summary
+                .inputs
+                .into_iter()
+                .map(|input| (input.name, input.required))
+                .collect(),
+        })
+        .collect())
+}
+
 async fn catalogue(
     store: &dyn WorkflowStore,
     ledger: &dyn Ledger,
@@ -236,6 +268,11 @@ async fn catalogue(
             node_count: summary.node_count,
             applied: score.applied,
             helped: score.helped,
+            inputs: summary
+                .inputs
+                .into_iter()
+                .map(|input| (input.name, input.required))
+                .collect(),
         });
     }
     collapse_families(out, ledger).await
