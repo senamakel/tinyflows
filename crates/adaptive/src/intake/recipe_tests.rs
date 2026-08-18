@@ -142,6 +142,20 @@ fn a_declared_value_pasted_into_an_ask_is_refused_with_the_remedy() {
 }
 
 #[test]
+fn an_undeclared_input_value_in_an_ask_is_not_a_paste() {
+    // Undeclared entries never attach to an ask — the author gate trims
+    // them — so their values appearing in prose prove nothing about reuse.
+    let recipe = json!({
+        "why": "poem",
+        "inputs": { "stray": "warm caches" },
+        "steps": [
+            { "id": "write", "ask": "Write a two-line poem about warm caches." }
+        ]
+    });
+    lower(&recipe).expect("not a paste — nothing declared");
+}
+
+#[test]
 fn an_indistinct_input_value_in_an_ask_is_not_a_paste() {
     // "on" appears in half of all prose; refusing on it would block
     // perfectly reusable plans. Only distinctive values count.

@@ -104,7 +104,7 @@ pub fn lower(answer: &Value) -> Result<(WorkflowGraph, Map<String, Value>, Strin
     // carry BOTH, and the keep gate would rightly refuse to file the plan.
     // Refused here, where the feedback round can fix it, rather than
     // discovered as an unkeepable graph after a satisfied run.
-    let pasted = pasted_values(&steps, &inputs);
+    let pasted = pasted_values(&steps, &declared, &inputs);
     if !pasted.is_empty() {
         return Err(IntakeError::Invalid(pasted.join("; ")));
     }
@@ -181,15 +181,21 @@ pub fn lower(answer: &Value) -> Result<(WorkflowGraph, Map<String, Value>, Strin
 
 /// Ask steps that restate a declared value instead of relying on the
 /// attachment. Only distinctive values count — refusing a plan because an
-/// ask contains the word "on" would block perfectly reusable recipes.
-fn pasted_values(steps: &[Step], inputs: &Map<String, Value>) -> Vec<String> {
+/// ask contains the word "on" would block perfectly reusable recipes — and
+/// only DECLARED inputs: undeclared entries are trimmed by the author gate
+/// and never attached, so their values in an ask are just prose.
+fn pasted_values(
+    steps: &[Step],
+    declared: &[(String, String, bool)],
+    inputs: &Map<String, Value>,
+) -> Vec<String> {
     let mut problems = Vec::new();
     for step in steps {
         let Action::Ask { prompt, .. } = &step.action else {
             continue;
         };
-        for (name, value) in inputs {
-            let Some(value) = value.as_str().map(str::trim) else {
+        for (name, _, _) in declared {
+            let Some(value) = inputs.get(name).and_then(Value::as_str).map(str::trim) else {
                 continue;
             };
             if crate::reuse::distinctive(value) && prompt.contains(value) {
