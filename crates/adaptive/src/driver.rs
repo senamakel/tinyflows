@@ -152,6 +152,7 @@ impl Loop<'_> {
             episode,
             attempt,
             &planned.approach,
+            &planned.graph,
             &ran,
             &self.budget,
             self.ledger,
