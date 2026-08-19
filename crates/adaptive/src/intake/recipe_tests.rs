@@ -31,6 +31,11 @@ fn a_recipe_lowers_to_a_graph_that_validates() {
     );
     assert_eq!(graph.nodes.len(), 3, "trigger + two steps");
     assert_eq!(graph.nodes[1].kind, NodeKind::Shell);
+    assert_eq!(
+        graph.nodes[1].config["source"], "gh issue list --json number,title",
+        "the engine's shell node reads config.source — a lowered run step \
+         under any other key is born broken, and the model cannot fix it"
+    );
     assert_eq!(graph.nodes[2].kind, NodeKind::Agent);
     assert_eq!(inputs["repo"], "acme/thing");
     assert_eq!(why, "fetch then review");
@@ -176,6 +181,48 @@ fn a_reply_with_no_steps_says_what_to_return() {
         .expect_err("refused")
         .to_string();
     assert!(err.contains("at least one step"), "{err}");
+}
+
+#[test]
+fn the_lowered_shell_config_satisfies_the_engines_own_contract() {
+    // Field observation, three attempts of one episode: every run step
+    // failed with "shell node missing inline script or script_path" while
+    // the author rationally iterated on the only thing the feedback named —
+    // a config key it does not write. The lowering emitted `script`; the
+    // engine reads `source`. This test asks the ENGINE which required
+    // fields its shell contract has and asserts the lowering fills one, so
+    // the two cannot drift apart silently again.
+    let recipe = json!({
+        "why": "fetch",
+        "steps": [{ "id": "fetch", "run": "echo hi" }]
+    });
+    let (graph, _, _) = lower(&recipe).expect("lowers");
+    let shell = tinyflows::catalog::all_contracts()
+        .iter()
+        .find(|contract| contract.kind == "shell")
+        .expect("the engine has a shell contract")
+        .clone();
+    let required: Vec<&str> = shell
+        .config_fields
+        .iter()
+        .filter(|field| field.required)
+        .map(|field| field.name.as_str())
+        .collect();
+    let config = &graph.nodes[1].config;
+    // The shell contract's requirement is one-of (source | script_path), so
+    // required may be empty — assert on the actual read keys instead when so.
+    if required.is_empty() {
+        assert!(
+            config.get("source").is_some() || config.get("script_path").is_some(),
+            "a lowered run step must fill config.source or config.script_path: {config}"
+        );
+    } else {
+        assert!(
+            required.iter().any(|name| config.get(*name).is_some()),
+            "the lowering fills none of the engine's required shell fields \
+             {required:?}: {config}"
+        );
+    }
 }
 
 #[test]
