@@ -114,24 +114,39 @@ impl Callable {
         let inputs = if self.inputs.is_empty() {
             "takes no inputs".to_string()
         } else {
-            let listed: Vec<String> = self
-                .inputs
-                .iter()
-                .map(|(name, required)| {
-                    if *required {
-                        name.clone()
-                    } else {
-                        format!("{name} (optional)")
-                    }
-                })
-                .collect();
-            format!("with: {}", listed.join(", "))
+            format!("with: {}", render_inputs(&self.inputs))
         };
         format!(
             "- id: {}\n  name: {name}\n  {inputs}\n  {description}",
             self.id
         )
     }
+}
+
+/// Declared inputs as one comma-separated listing: `repo, depth (optional)`.
+///
+/// A required input is named bare and an optional one is marked, because the
+/// only thing a planner does with this line is decide what it must supply. Both
+/// prompts that carry it — the chooser's candidate listing and the author's
+/// callable listing — render it here rather than each spelling the rule out,
+/// since two copies of a convention a model is being asked to obey drift the
+/// first time the wording changes and then teach two different things.
+///
+/// The prefix and the empty-list wording stay with each caller: the chooser
+/// says nothing at all when there are no inputs, the author says "takes no
+/// inputs", and that difference is deliberate.
+pub(super) fn render_inputs(inputs: &[(String, bool)]) -> String {
+    inputs
+        .iter()
+        .map(|(name, required)| {
+            if *required {
+                name.clone()
+            } else {
+                format!("{name} (optional)")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// The prompt section listing what a `use` step may name.
@@ -290,8 +305,9 @@ fn ask_expression(
     let mut program = format!("={}", jq_quote(prompt));
     for (name, _, _) in declared {
         program.push_str(&format!(
-            " + {} + ((.run.inputs.{name} // \"(not provided)\") | tostring)",
-            jq_quote(&format!("\n\n# Input `{name}`\n"))
+            " + {} + ((.run.inputs{} // \"(not provided)\") | tostring)",
+            jq_quote(&format!("\n\n# Input `{name}`\n")),
+            jq_field(name)
         ));
     }
     for read in reads {
@@ -343,10 +359,11 @@ fn kind_of<'a>(id: &str, steps: &'a [Step]) -> Option<&'a Action> {
 /// ordinary child whose one agent step writes the deliverable, it is exactly
 /// that deliverable.
 fn output_of(id: &str, action: Option<&Action>) -> String {
+    let slot = jq_field(id);
     match action {
-        Some(Action::Run(_)) => format!(".nodes.{id}.item.json.stdout"),
+        Some(Action::Run(_)) => format!(".nodes{slot}.item.json.stdout"),
         Some(Action::Use { .. }) => child_answer(id),
-        _ => format!(".nodes.{id}.item.text"),
+        _ => format!(".nodes{slot}.item.text"),
     }
 }
 
@@ -373,8 +390,9 @@ fn child_answer(id: &str) -> String {
     // serialized items (`{"json": …}`) rather than the bare payloads the scope
     // exposes. So the outer hop drops `items`/`json` and the inner one needs
     // both.
+    let slot = jq_field(id);
     format!(
-        "([((.nodes.{id}.item.nodes // {{}}) | to_entries[]) \
+        "([((.nodes{slot}.item.nodes // {{}}) | to_entries[]) \
          | . as $step \
          | ((.value.items // []) | .[-1] | .json) as $out \
          | (($out | if type == \"object\" then \
@@ -384,6 +402,19 @@ fn child_answer(id: &str) -> String {
          | join(\"\\n\\n\") \
          | if . == \"\" then null else . end)"
     )
+}
+
+/// One object key as a jq path step: `["fetch_pr"]`, never `.fetch_pr`.
+///
+/// `sanitize_id` keeps `[a-z0-9_]`, which is *not* the same set as the
+/// identifiers jq's dot syntax accepts: it permits a leading digit, and nothing
+/// upstream rejects a step id such as `2024_report`. `.nodes.2024_report` does
+/// not compile, so the whole prompt expression fails at run time — a plan
+/// refused by the evaluator for the way its author spelled an id. Bracket
+/// access takes any key, so this is the only spelling used for an interpolated
+/// name.
+fn jq_field(name: &str) -> String {
+    format!("[{}]", jq_quote(name))
 }
 
 /// A string as a jq literal: quoted, with the characters jq treats specially
@@ -559,7 +590,15 @@ fn call(
     };
 
     for (name, _) in callable.inputs.iter().filter(|(_, required)| *required) {
-        if !given.contains_key(name) {
+        // Present-but-empty is not supplied. `"repo": null` and `"repo": ""`
+        // pass a `contains_key` check and are then forwarded unchanged, so the
+        // child fails its own declaration check mid-run — the exact failure
+        // this refusal exists to move to intake. `gated` in `author.rs` already
+        // reads unfilled the same way; the two must not disagree.
+        let filled = given
+            .get(name)
+            .is_some_and(|value| !value.is_null() && value.as_str() != Some(""));
+        if !filled {
             return Err(format!(
                 "step `{id}`: `{workflow_id}` requires the input `{name}` and `with` does \
                  not supply it"
@@ -615,7 +654,7 @@ fn forward(
                 "`@input.{name}` names an input you did not declare — add it to `declared`"
             ));
         }
-        return Ok(Value::String(format!("=.run.inputs.{name}")));
+        return Ok(Value::String(format!("=.run.inputs{}", jq_field(&name))));
     }
     if let Some(step) = reference.strip_prefix("step.") {
         let step = sanitize_id(step);

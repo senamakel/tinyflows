@@ -64,18 +64,7 @@ impl Candidate {
         let inputs = if self.inputs.is_empty() {
             String::new()
         } else {
-            let listed: Vec<String> = self
-                .inputs
-                .iter()
-                .map(|(name, required)| {
-                    if *required {
-                        name.clone()
-                    } else {
-                        format!("{name} (optional)")
-                    }
-                })
-                .collect();
-            format!("\n  inputs: {}", listed.join(", "))
+            format!("\n  inputs: {}", super::recipe::render_inputs(&self.inputs))
         };
         format!(
             "- id: {}\n  name: {name}\n  steps: {}, {record}{inputs}\n  {description}",

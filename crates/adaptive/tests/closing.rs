@@ -655,3 +655,57 @@ async fn a_called_workflow_earns_nothing_from_an_attempt_that_fell_short() {
         "the child ran cleanly, but nothing it was part of was satisfied"
     );
 }
+
+#[tokio::test]
+async fn every_activation_of_a_looped_call_is_scored_not_just_the_first() {
+    // A node inside a loop produces one `StepRecord` per iteration. Reading
+    // only the first record credits the workflow once for work it did three
+    // times — and, worse, lets an early success hide a later error, so a child
+    // that failed a pass reads as clean. The counters are the only evidence the
+    // chooser and the promotion gate have; they have to count what happened.
+    let llm = Scripted::new(vec![json!({
+        "satisfied": true, "blocker": "none", "gap": "", "advanced": true
+    })]);
+    let ledger = MemoryLedger::new();
+    let diagnosis = Diagnosis::default();
+    let outcome = RunOutcome {
+        output: json!({}),
+        pending_approvals: Vec::new(),
+        cancelled: false,
+    };
+    let mut finished = ran(&outcome, &diagnosis, "wrote three haiku");
+    // One node, three passes, mixed outcomes — the first one succeeding is
+    // exactly the arrangement that made the old reading look correct.
+    finished.steps = vec![
+        step("write_haiku", true),
+        step("write_haiku", false),
+        step("write_haiku", true),
+    ];
+
+    close(
+        &Goal::new("three haiku"),
+        "ep-loop",
+        1,
+        &Approach::Authored {
+            why: "call the writer once per subject".into(),
+            fingerprint: "abc1234".into(),
+        },
+        &composed(),
+        &finished,
+        &Budget::default(),
+        &ledger,
+        &caps_with(llm),
+        None,
+        "2026-01-01T00:00:00Z",
+    )
+    .await
+    .expect("closes");
+
+    let haiku = ledger.workflow_score("haiku-writer").await.expect("scored");
+    assert_eq!(
+        (haiku.applied, haiku.helped),
+        (3, 2),
+        "three activations, and the one that errored is not vindicated by the \
+         two that did not"
+    );
+}

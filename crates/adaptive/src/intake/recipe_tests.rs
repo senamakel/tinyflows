@@ -50,9 +50,12 @@ fn the_generated_prompt_is_one_expression_with_the_right_envelope_paths() {
     assert!(prompt.starts_with('='), "{prompt}");
     // A shell upstream is read through `stdout`, the field its kind emits —
     // the exact path a blind author guessed wrong three runs straight.
-    assert!(prompt.contains(".nodes.fetch.item.json.stdout"), "{prompt}");
+    assert!(
+        prompt.contains(".nodes[\"fetch\"].item.json.stdout"),
+        "{prompt}"
+    );
     // Declared inputs are attached without the model writing any binding.
-    assert!(prompt.contains(".run.inputs.repo"), "{prompt}");
+    assert!(prompt.contains(".run.inputs[\"repo\"]"), "{prompt}");
     // Absent values surface as markers, not silent nothing.
     assert!(prompt.contains("(no output)"), "{prompt}");
 }
@@ -68,7 +71,7 @@ fn an_agent_upstream_is_read_through_text_not_stdout() {
     });
     let (graph, _, _) = lower(&recipe, &[]).expect("lowers");
     let prompt = graph.nodes[2].config["prompt"].as_str().expect("prompt");
-    assert!(prompt.contains(".nodes.draft.item.text"), "{prompt}");
+    assert!(prompt.contains(".nodes[\"draft\"].item.text"), "{prompt}");
 }
 
 #[test]
@@ -176,7 +179,41 @@ fn ids_are_sanitized_into_engine_and_jq_safe_names() {
     let (graph, _, _) = lower(&recipe, &[]).expect("lowers");
     assert_eq!(graph.nodes[1].id, "fetch_issues");
     let prompt = graph.nodes[2].config["prompt"].as_str().expect("prompt");
-    assert!(prompt.contains(".nodes.fetch_issues.item"), "{prompt}");
+    assert!(prompt.contains(".nodes[\"fetch_issues\"].item"), "{prompt}");
+}
+
+#[test]
+fn a_step_id_starting_with_a_digit_still_compiles_as_jq() {
+    // `sanitize_id` keeps `[a-z0-9_]`, which is a wider set than the
+    // identifiers jq's dot syntax accepts, and nothing upstream rejects an id
+    // beginning with a digit. Spelled `.nodes.2024_report` the whole prompt
+    // fails to compile — a plan refused by the evaluator over how its author
+    // happened to name a step. Evaluated, not string-matched: asserting the
+    // spelling is what let the previous path bug ship.
+    let recipe = json!({
+        "why": "read a numerically named step",
+        "declared": [
+            { "name": "repo", "description": "owner/name", "required": true }
+        ],
+        "inputs": { "repo": "acme/thing" },
+        "steps": [
+            { "id": "2024 report", "run": "cat report" },
+            { "id": "summary", "ask": "Summarise it.", "reads": ["2024 report"] }
+        ]
+    });
+    let (graph, _, _) = lower(&recipe, &[]).expect("lowers");
+    assert_eq!(graph.nodes[1].id, "2024_report");
+    let prompt = graph.nodes[2].config["prompt"].as_str().expect("prompt");
+    let scope = json!({
+        "run": { "inputs": { "repo": "acme/thing" } },
+        "nodes": { "2024_report": { "item": { "json": { "stdout": "12 findings" } } } }
+    });
+    let rendered = tinyflows::expr::resolve(&json!(prompt), &scope);
+    let rendered = rendered.as_str().unwrap_or_default();
+    assert!(
+        rendered.contains("12 findings"),
+        "a digit-leading step id must produce a compilable path: {prompt} -> {rendered}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -231,7 +268,56 @@ fn a_use_step_lowers_to_a_sub_workflow_node_that_references_the_callee() {
         "an inlined child would fork the callee at authoring time"
     );
     // `@input.repo` became the expression that reads the parent's run input.
-    assert_eq!(node.config["inputs"]["repo"], json!("=.run.inputs.repo"));
+    assert_eq!(
+        node.config["inputs"]["repo"],
+        json!("=.run.inputs[\"repo\"]")
+    );
+}
+
+#[test]
+fn the_lowered_sub_workflow_config_satisfies_the_engines_own_contract() {
+    // The same drift guard the shell lowering has, for the same reason: the
+    // `use` step's whole value is that the engine already knows how to run a
+    // child, and it knows it by reading `workflow_id` and `inputs`. A rename on
+    // either side would surface as a capability error mid-run, attributed to
+    // the work rather than to the plan.
+    let (graph, _, _) = lower(&compose_recipe(), &[audit()]).expect("lowers");
+    let config = &graph
+        .nodes
+        .iter()
+        .find(|node| node.id == "audit")
+        .expect("the use step became a node")
+        .config;
+    let contract = tinyflows::catalog::all_contracts()
+        .iter()
+        .find(|contract| contract.kind == "sub_workflow")
+        .expect("the engine has a sub_workflow contract")
+        .clone();
+    let fields: Vec<&str> = contract
+        .config_fields
+        .iter()
+        .map(|field| field.name.as_str())
+        .collect();
+    for key in ["workflow_id", "inputs"] {
+        assert!(
+            fields.contains(&key),
+            "the engine's sub_workflow contract no longer declares `{key}`: {fields:?}"
+        );
+        assert!(
+            config.get(key).is_some(),
+            "a lowered use step must fill config.{key}: {config}"
+        );
+    }
+    // Required fields are the engine's own list; filling one is not enough if
+    // it grows another.
+    for field in contract.config_fields.iter().filter(|field| field.required) {
+        assert!(
+            config.get(&field.name).is_some(),
+            "the lowering fills none of the engine's required sub_workflow field \
+             `{}`: {config}",
+            field.name
+        );
+    }
 }
 
 #[test]
@@ -260,8 +346,31 @@ fn a_step_reference_in_with_reads_the_earlier_step_the_way_its_kind_produces() {
     // the model having to.
     assert_eq!(
         node.config["inputs"]["patch"],
-        json!("=.nodes.diff.item.json.stdout")
+        json!("=.nodes[\"diff\"].item.json.stdout")
     );
+}
+
+#[test]
+fn a_required_input_present_but_empty_is_refused_the_way_an_absent_one_is() {
+    // `contains_key` accepts `null` and `""`, which `forward` then passes
+    // through unchanged — so the child fails its OWN declaration check
+    // mid-run, which is the failure this refusal exists to move to intake.
+    // `gated` in `author.rs` already reads unfilled this way; the two checks
+    // disagreeing is what let the value through.
+    for empty in [json!(null), json!("")] {
+        let recipe = json!({
+            "why": "audit the PR",
+            "declared": [],
+            "steps": [
+                { "id": "audit", "use": "pr-audit-review", "with": { "repo": empty } }
+            ]
+        });
+        let err = lower(&recipe, &[audit()]).expect_err("refused").to_string();
+        assert!(
+            err.contains("requires the input `repo`"),
+            "an empty value is not a supplied value ({empty}): {err}"
+        );
+    }
 }
 
 #[test]

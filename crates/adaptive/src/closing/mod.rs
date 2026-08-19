@@ -24,6 +24,7 @@ use crate::contracts::{Approach, Budget, Goal, Verdict};
 use crate::execute::StepRecord;
 use crate::intake::Result;
 use crate::ledger::{Episode, EpisodeStatus, Ledger, LedgerRow};
+use std::collections::HashMap;
 use tinyflows::caps::Capabilities;
 use tinyflows::model::{NodeKind, WorkflowGraph};
 
@@ -39,9 +40,15 @@ use tinyflows::model::{NodeKind, WorkflowGraph};
 /// it, and scoring the literal text would move counters on a workflow that
 /// does not exist.
 ///
+/// **One entry per activation, not per node.** A node inside a loop produces
+/// one [`StepRecord`] per iteration, so the walk is over the *records* with the
+/// graph as a lookup, not over the nodes taking the first record each. Reading
+/// only the first would drop every later call and — worse — let an early
+/// success hide a later error, crediting a workflow for a run that failed.
+///
 /// [`Runner`]: crate::execute::Runner
 fn called_workflows(graph: &WorkflowGraph, steps: &[StepRecord]) -> Vec<(String, bool)> {
-    graph
+    let calls: HashMap<&str, &str> = graph
         .nodes
         .iter()
         .filter(|node| node.kind == NodeKind::SubWorkflow)
@@ -52,9 +59,16 @@ fn called_workflows(graph: &WorkflowGraph, steps: &[StepRecord]) -> Vec<(String,
                 .and_then(serde_json::Value::as_str)
                 .map(str::trim)
                 .filter(|id| !id.is_empty() && !id.starts_with('='))?;
-            let step = steps.iter().find(|step| step.node_id == node.id)?;
+            Some((node.id.as_str(), called))
+        })
+        .collect();
+
+    steps
+        .iter()
+        .filter_map(|step| {
+            let called = calls.get(step.node_id.as_str())?;
             Some((
-                called.to_string(),
+                (*called).to_string(),
                 step.status == crate::execute::StepOutcome::Success,
             ))
         })
