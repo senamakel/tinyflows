@@ -148,6 +148,7 @@ impl Ran {
             outcome: &self.outcome,
             diagnosis: &self.diagnosis,
             changed: self.changed.clone(),
+            failed: self.failed.clone(),
         }
     }
 }

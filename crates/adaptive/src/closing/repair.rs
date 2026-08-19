@@ -290,6 +290,7 @@ mod tests {
             outcome: &out,
             diagnosis: &d,
             changed: "wrote report.md".into(),
+            failed: None,
         };
         assert!(!graph_is_suspect(&verdict(""), &evidence));
     }
@@ -302,6 +303,7 @@ mod tests {
             outcome: &out,
             diagnosis: &d,
             changed: String::new(),
+            failed: None,
         };
         assert!(graph_is_suspect(&verdict("summarise"), &evidence));
     }
@@ -320,6 +322,7 @@ mod tests {
             outcome: &out,
             diagnosis: &d,
             changed: String::new(),
+            failed: None,
         };
         assert!(graph_is_suspect(&verdict(""), &evidence));
     }
@@ -345,6 +348,7 @@ mod tests {
             outcome: &out,
             diagnosis: &d,
             changed: String::new(),
+            failed: None,
         };
         assert!(!graph_is_suspect(&verdict(""), &evidence));
     }
