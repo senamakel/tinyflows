@@ -158,7 +158,10 @@ pub async fn close(
         // scoring its parent instead would leave the two indistinguishable and
         // the promotion gate with nothing to compare.
         Approach::Selected { workflow_id, .. } => Some(workflow_id.clone()),
-        Approach::Authored { .. } => None,
+        // Neither has a stored procedure behind it, so there is no counter to
+        // move. An errand additionally has nothing to *become* one: the row it
+        // leaves is the whole record of it.
+        Approach::Authored { .. } | Approach::Errand { .. } => None,
     };
     let row_id = ledger
         .append(&LedgerRow {
@@ -265,7 +268,9 @@ fn decide_next(verdict: &Verdict, attempt: u32, stalled: u32, budget: &Budget) -
 
 fn why(approach: &Approach) -> String {
     match approach {
-        Approach::Selected { why, .. } | Approach::Authored { why, .. } => why.clone(),
+        Approach::Selected { why, .. }
+        | Approach::Authored { why, .. }
+        | Approach::Errand { why } => why.clone(),
     }
 }
 

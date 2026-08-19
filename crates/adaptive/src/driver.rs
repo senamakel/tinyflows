@@ -341,7 +341,12 @@ impl Loop<'_> {
             // and the next attempt writes another, seeing why this one fell
             // short. A variant of a one-off is a stored procedure nobody asked
             // for.
-            Approach::Authored { .. } => return None,
+            //
+            // An errand is the same argument at its limit — there is no
+            // procedure at all, only a turn that did not land. What it needs is
+            // a plan, and `decide` will write one: the errand is spent, so the
+            // next attempt cannot choose it again.
+            Approach::Authored { .. } | Approach::Errand { .. } => return None,
         };
         let evidence = ran.evidence();
         if !graph_is_suspect(&closed.verdict, &evidence) {

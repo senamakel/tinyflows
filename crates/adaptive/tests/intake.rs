@@ -146,11 +146,36 @@ fn stored(id: &str, description: &str, required_input: Option<&str>) -> Workflow
     }
 }
 
+/// A selection call that declines, scripted ahead of an authoring reply.
+///
+/// Needed since the errand triage landed: `select` now has a third answer, so
+/// it is asked even when the shelf is empty — the old short-circuit assumed the
+/// answer could only be "none", and that stopped being true. Written into each
+/// script rather than defaulted inside the harness, so a test still shows every
+/// call its path makes instead of hiding one behind a lenient double.
+fn select_declines() -> Value {
+    json!({ "workflow_id": null, "errand": false, "why": "nothing stored fits" })
+}
+
+/// The authoring prompt, found by what it says rather than by its position.
+///
+/// Positional indexing broke the moment a call was added in front of it, and
+/// would break again; the authoring system prompt is self-identifying.
+fn authoring_prompt(llm: &std::sync::Arc<Scripted>) -> String {
+    llm.prompts()
+        .into_iter()
+        .find(|p| p.contains("You plan how to achieve a goal"))
+        .expect("the author was asked")
+}
+
 #[tokio::test]
 async fn an_empty_store_authors_without_asking_whether_to_select() {
     // With nothing to choose from the answer can only be "none". Spending a
     // call to be told so is the cost of every cold start.
-    let llm = std::sync::Arc::new(Scripted::new(vec![authored_reply("fresh", None)]));
+    let llm = std::sync::Arc::new(Scripted::new(vec![
+        select_declines(),
+        authored_reply("fresh", None),
+    ]));
     let caps = caps_with(llm.clone());
     let (store, _root) = empty_store("1");
     let ledger = MemoryLedger::new();
@@ -168,13 +193,19 @@ async fn an_empty_store_authors_without_asking_whether_to_select() {
     .expect("decide");
 
     assert!(matches!(attempt.approach, Approach::Authored { .. }));
-    assert_eq!(
-        llm.prompts().len(),
-        1,
-        "exactly one call: the authoring one"
+    // Two calls, and the first one is new: a triage that costs a small call to
+    // ask whether this is an errand at all. It used to be one, on the reasoning
+    // that with nothing to choose from the answer could only be "none" — true
+    // until `select` gained a third answer. The trade is deliberate: a cold
+    // shelf is exactly where a trivial goal would otherwise pay the full
+    // authoring call and get a one-step graph filed for it.
+    assert_eq!(llm.prompts().len(), 2, "a triage call, then authoring");
+    assert!(
+        llm.prompts()[0].contains("whether a saved workflow already does"),
+        "the first call is the triage"
     );
     assert!(
-        llm.prompts()[0].contains("You plan how to achieve a goal"),
+        authoring_prompt(&llm).contains("You plan how to achieve a goal"),
         "authoring must speak the recipe surface, not graph syntax"
     );
 }
@@ -257,7 +288,10 @@ async fn a_workflow_already_tried_this_episode_is_not_offered_again() {
     // The property the whole retry edge rests on. Without it attempt two
     // re-selects what attempt one already failed on, and the episode pays
     // twice for one dead end.
-    let llm = std::sync::Arc::new(Scripted::new(vec![authored_reply("written", None)]));
+    let llm = std::sync::Arc::new(Scripted::new(vec![
+        select_declines(),
+        authored_reply("written", None),
+    ]));
     let caps = caps_with(llm.clone());
     let (store, _root) = empty_store("4");
     store
@@ -285,10 +319,22 @@ async fn a_workflow_already_tried_this_episode_is_not_offered_again() {
         matches!(attempt.approach, Approach::Authored { .. }),
         "the only stored workflow was excluded, so authoring is the only path left"
     );
-    assert_eq!(
-        llm.prompts().len(),
-        1,
-        "with every candidate excluded the list is empty and selection is skipped entirely"
+    // The triage still runs — a goal can be an errand whatever the shelf holds
+    // — but the excluded workflow must not appear in front of it. Asserting on
+    // what the chooser was *shown* is the claim this test is named for;
+    // asserting the call never happened only ever stood in for it.
+    // Precisely: absent from the *shelf*. It still appears further down, in the
+    // rendered history — that is the exclusion list doing its job, and asserting
+    // the id is absent altogether would forbid the very thing that tells the
+    // planner not to repeat it.
+    let shown = &llm.prompts()[0];
+    assert!(
+        shown.contains("(none yet"),
+        "with every candidate excluded the shelf is empty: {shown}"
+    );
+    assert!(
+        shown.contains("[selected:pr-review]"),
+        "and the history still says what was tried: {shown}"
     );
 }
 
@@ -447,7 +493,12 @@ async fn an_authored_graph_that_does_not_validate_is_an_error_not_a_return_value
         "why": "forgot the steps",
         "inputs": {},
     });
-    let llm = std::sync::Arc::new(Scripted::new(vec![broken.clone(), broken.clone(), broken]));
+    let llm = std::sync::Arc::new(Scripted::new(vec![
+        select_declines(),
+        broken.clone(),
+        broken.clone(),
+        broken,
+    ]));
     let caps = caps_with(llm);
     let (store, _root) = empty_store("7");
     let ledger = MemoryLedger::new();
@@ -468,7 +519,10 @@ async fn an_authored_graph_that_does_not_validate_is_an_error_not_a_return_value
 
 #[tokio::test]
 async fn a_disabled_workflow_is_never_offered() {
-    let llm = std::sync::Arc::new(Scripted::new(vec![authored_reply("written", None)]));
+    let llm = std::sync::Arc::new(Scripted::new(vec![
+        select_declines(),
+        authored_reply("written", None),
+    ]));
     let caps = caps_with(llm.clone());
     let (store, _root) = empty_store("8");
     let mut off = stored("switched-off", "would have matched", None);
@@ -488,10 +542,10 @@ async fn a_disabled_workflow_is_never_offered() {
     .await
     .expect("decide");
 
-    assert_eq!(
-        llm.prompts().len(),
-        1,
-        "offering a disabled workflow invites a choice that cannot be honoured"
+    assert!(
+        !llm.prompts()[0].contains("switched-off"),
+        "offering a disabled workflow invites a choice that cannot be honoured: {}",
+        llm.prompts()[0]
     );
 }
 
@@ -509,6 +563,7 @@ async fn a_graph_naming_a_worker_this_host_lacks_is_refused_before_it_runs() {
         "steps": [{ "id": "work", "ask": "do the thing", "worker": "desktop" }],
     });
     let llm = std::sync::Arc::new(Scripted::new(vec![
+        select_declines(),
         insistent.clone(),
         insistent.clone(),
         insistent,
@@ -549,11 +604,14 @@ async fn a_graph_naming_a_worker_this_host_lacks_is_refused_before_it_runs() {
 async fn the_authoring_prompt_carries_what_the_host_permits() {
     // The facts below say agent work must name a worker, so the reply's ask
     // step names one — the same gate this test exists to see rendered.
-    let llm = std::sync::Arc::new(Scripted::new(vec![json!({
-        "why": "fine",
-        "inputs": {},
-        "steps": [{ "id": "work", "ask": "Do it directly.", "worker": "laptop" }],
-    })]));
+    let llm = std::sync::Arc::new(Scripted::new(vec![
+        select_declines(),
+        json!({
+            "why": "fine",
+            "inputs": {},
+            "steps": [{ "id": "work", "ask": "Do it directly.", "worker": "laptop" }],
+        }),
+    ]));
     let caps = caps_with(llm.clone());
     let (store, _root) = empty_store("facts-rendered");
     let ledger = MemoryLedger::new();
@@ -578,7 +636,7 @@ async fn the_authoring_prompt_carries_what_the_host_permits() {
     .await
     .expect("decide");
 
-    let prompt = &llm.prompts()[0];
+    let prompt = &authoring_prompt(&llm);
     assert!(prompt.contains("What this host permits"), "{prompt}");
     assert!(prompt.contains("every agent node must name config.agent_ref"));
     assert!(prompt.contains("Only manual triggers fire here."));
@@ -752,7 +810,10 @@ async fn the_author_is_shown_what_this_episode_already_tried() {
     // because nothing told it otherwise. The exclusion list only guards
     // *selection*; authoring has no structural guard at all.
     let (store, ledger, _root) = with_history("retry-1").await;
-    let llm = std::sync::Arc::new(Scripted::new(vec![authored_reply("third-idea", None)]));
+    let llm = std::sync::Arc::new(Scripted::new(vec![
+        select_declines(),
+        authored_reply("third-idea", None),
+    ]));
     let caps = caps_with(llm.clone());
 
     decide(
@@ -767,7 +828,7 @@ async fn the_author_is_shown_what_this_episode_already_tried() {
     .await
     .expect("decide");
 
-    let prompt = &llm.prompts()[0];
+    let prompt = &authoring_prompt(&llm);
     assert!(prompt.contains("Already tried this episode"), "{prompt}");
     assert!(
         prompt.contains("asked an agent to write it from memory"),
@@ -832,7 +893,10 @@ async fn lessons_from_other_episodes_reach_the_planner() {
         .await
         .expect("promote");
 
-    let llm = std::sync::Arc::new(Scripted::new(vec![authored_reply("informed", None)]));
+    let llm = std::sync::Arc::new(Scripted::new(vec![
+        select_declines(),
+        authored_reply("informed", None),
+    ]));
     let caps = caps_with(llm.clone());
 
     decide(
@@ -847,7 +911,7 @@ async fn lessons_from_other_episodes_reach_the_planner() {
     .await
     .expect("decide");
 
-    let prompt = &llm.prompts()[0];
+    let prompt = &authoring_prompt(&llm);
     assert!(prompt.contains("Learned from earlier episodes"), "{prompt}");
     assert!(prompt.contains("read them from the source"), "{prompt}");
 }
@@ -858,7 +922,10 @@ async fn a_first_attempt_is_told_nothing_it_would_have_to_ignore() {
     // empty "already tried" heading reads as a claim that something was.
     let (store, _root) = empty_store("retry-4");
     let ledger = MemoryLedger::new();
-    let llm = std::sync::Arc::new(Scripted::new(vec![authored_reply("first", None)]));
+    let llm = std::sync::Arc::new(Scripted::new(vec![
+        select_declines(),
+        authored_reply("first", None),
+    ]));
     let caps = caps_with(llm.clone());
 
     decide(
@@ -873,9 +940,12 @@ async fn a_first_attempt_is_told_nothing_it_would_have_to_ignore() {
     .await
     .expect("decide");
 
-    let prompt = &llm.prompts()[0];
-    assert!(!prompt.contains("Already tried"), "{prompt}");
-    assert!(!prompt.contains("Learned from earlier"), "{prompt}");
+    // Every prompt, not just one: an empty heading is noise whichever planner
+    // reads it, and the triage call sees the same rendered past the author does.
+    for prompt in llm.prompts() {
+        assert!(!prompt.contains("Already tried"), "{prompt}");
+        assert!(!prompt.contains("Learned from earlier"), "{prompt}");
+    }
 }
 
 #[tokio::test]
@@ -887,10 +957,10 @@ async fn two_authored_attempts_leave_two_distinct_signatures() {
 
     let mut signatures = Vec::new();
     for (n, name) in [(0, "shape-one"), (1, "shape-two")] {
-        let llm = std::sync::Arc::new(Scripted::new(vec![authored_reply(
-            name,
-            if n == 1 { Some("repo") } else { None },
-        )]));
+        let llm = std::sync::Arc::new(Scripted::new(vec![
+            select_declines(),
+            authored_reply(name, if n == 1 { Some("repo") } else { None }),
+        ]));
         let attempt = decide(
             &Goal::new("write the weekly report"),
             "ep-sigs",

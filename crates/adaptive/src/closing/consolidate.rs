@@ -77,6 +77,9 @@ pub async fn consolidate(
     if rows.is_empty() {
         return Vec::new();
     }
+    if was_a_plain_errand(satisfied, &rows) {
+        return Vec::new();
+    }
     // Everything already stored, not a retrieval view. Retrieval answers "what
     // applies to this task" and cuts by help rate, so a lesson written moments
     // ago — nothing has had the chance to apply it — sorts last and is dropped.
@@ -119,6 +122,24 @@ pub async fn consolidate(
     }
 
     kept
+}
+
+/// An episode that was one errand, and worked.
+///
+/// The only shape worth skipping, and the test is deliberately narrow. An
+/// errand is a goal with no procedure in it, answered in a turn — there is
+/// nothing there for a different task to act on, and asking costs a call to be
+/// told so. That is the whole economic case for the errand path, and paying a
+/// consolidation call on every trivial goal would give most of it straight back.
+///
+/// Every other shape still consolidates, including the two that look similar:
+///
+/// * **an errand that failed** — the most informative errand there is. Something
+///   read as one turn of work and was not, and *that* generalises.
+/// * **an errand followed by a plan** — more than one row, so the trail is a
+///   real one and worth reading whole.
+fn was_a_plain_errand(satisfied: bool, rows: &[LedgerRow]) -> bool {
+    satisfied && rows.len() == 1 && rows[0].approach_sig == "errand"
 }
 
 /// One line per attempt, numbered, because the model cites rows by number.
@@ -308,5 +329,37 @@ mod tests {
         let rendered = render(&goal, true, &[row("r1", "a")], &existing);
         assert!(rendered.contains("- L7:"), "{rendered}");
         assert!(rendered.contains("corroborate by id"), "{rendered}");
+    }
+
+    #[test]
+    fn a_satisfied_one_turn_errand_is_not_worth_a_consolidation_call() {
+        // The economics the errand path exists for. Three calls become four if
+        // every trivial goal still pays a consolidator to be told there was
+        // nothing in it.
+        assert!(was_a_plain_errand(true, &[row("r1", "errand")]));
+    }
+
+    #[test]
+    fn an_errand_that_failed_is_the_most_informative_kind_there_is() {
+        // Something read as one turn of work and was not. That generalises,
+        // and it is exactly what the triage needs told back to it.
+        assert!(!was_a_plain_errand(false, &[row("r1", "errand")]));
+    }
+
+    #[test]
+    fn an_errand_followed_by_a_real_plan_still_consolidates() {
+        // More than one row means a real trail, whatever the first row was.
+        assert!(!was_a_plain_errand(
+            true,
+            &[row("r1", "errand"), row("r2", "authored:abc")]
+        ));
+    }
+
+    #[test]
+    fn an_ordinary_satisfied_episode_is_untouched_by_the_gate() {
+        // The gate must be narrow: one wrong `true` here silently stops the
+        // whole loop learning, and nothing downstream would report it.
+        assert!(!was_a_plain_errand(true, &[row("r1", "selected:weekly")]));
+        assert!(!was_a_plain_errand(true, &[row("r1", "authored:abc")]));
     }
 }

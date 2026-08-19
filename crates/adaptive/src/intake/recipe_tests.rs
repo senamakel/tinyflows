@@ -691,3 +691,86 @@ fn a_scripts_stdout_is_read_from_inside_its_json_because_that_is_where_it_is() {
         "declared inputs too: {rendered}"
     );
 }
+
+#[test]
+fn an_errand_lowers_to_one_agent_turn_that_validates() {
+    let graph = super::errand("how much disk is this directory using").expect("lowers");
+
+    assert!(
+        validate_all(&graph).is_empty(),
+        "the engine must accept it: {:?}",
+        validate_all(&graph)
+    );
+    // A trigger and exactly one agent node. Anything more means the errand
+    // grew a procedure, which is the one thing it is defined as not having.
+    assert_eq!(graph.nodes.len(), 2, "{:?}", graph.nodes);
+    assert_eq!(graph.nodes[0].kind, NodeKind::Trigger);
+    assert_eq!(graph.nodes[1].kind, NodeKind::Agent);
+    assert!(
+        graph.inputs.is_empty(),
+        "an errand declares nothing: it is answered from the goal alone"
+    );
+}
+
+#[test]
+fn an_errands_prompt_actually_carries_the_goal() {
+    // Evaluated, not string-matched. The `item.json.text` defect shipped past a
+    // reviewer *and* a test because both read the expression instead of running
+    // it — a prompt that resolves to nothing looks fine as source.
+    let graph = super::errand("  how much disk is this directory using  ").expect("lowers");
+    let prompt = graph.nodes[1].config["prompt"]
+        .as_str()
+        .expect("the agent node carries a prompt");
+    let scope = json!({
+        "run": { "inputs": {} }, "inputs": {},
+        "item": null, "items": [], "nodes": {}
+    });
+    let rendered = tinyflows::expr::resolve(&json!(prompt), &scope);
+    let rendered = rendered.as_str().expect("resolves to a string");
+    assert_eq!(
+        rendered, "how much disk is this directory using",
+        "the goal, trimmed, and nothing else bolted on"
+    );
+}
+
+#[test]
+fn an_errand_is_the_same_lowering_an_authored_ask_gets() {
+    // Why `errand` goes through `lower` rather than building two nodes by hand:
+    // a second definition of what an `ask` compiles to would drift silently the
+    // first time the envelope path changed.
+    let errand = super::errand("say something").expect("lowers");
+    let (authored, _, _) = lower(
+        &json!({
+            "why": "one turn of work, no procedure in it",
+            "declared": [], "inputs": {},
+            "steps": [{ "id": "errand", "ask": "say something" }]
+        }),
+        &[],
+    )
+    .expect("lowers");
+    assert_eq!(errand.nodes[1].config, authored.nodes[1].config);
+}
+
+#[test]
+fn every_control_character_in_a_goal_survives_as_a_valid_jq_literal() {
+    let scope = json!({ "run": { "inputs": {} }, "inputs": {}, "item": null,
+                        "items": [], "nodes": {} });
+    let mut broke = Vec::new();
+    for code in 0u32..0x20 {
+        let ch = char::from_u32(code).expect("control char");
+        let goal = format!("disk{ch}usage");
+        let Ok(graph) = super::errand(&goal) else {
+            broke.push(format!("U+{code:04X}: lowering refused it"));
+            continue;
+        };
+        let prompt = graph.nodes[1].config["prompt"].as_str().expect("prompt");
+        let rendered = tinyflows::expr::resolve(&json!(prompt), &scope);
+        if rendered.as_str().is_none() {
+            broke.push(format!("U+{code:04X}: {rendered:?}"));
+        }
+    }
+    assert!(
+        broke.is_empty(),
+        "control characters that broke the prompt: {broke:?}"
+    );
+}
