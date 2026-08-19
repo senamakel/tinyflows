@@ -859,11 +859,15 @@ async fn a_failed_goal_run_leaves_no_residue_anywhere_durable() {
 async fn an_errand_answers_the_goal_without_leaving_a_procedure_behind() {
     // The whole claim of the errand path, end to end: a goal with no procedure
     // in it is answered in one turn, and the shelf is exactly as it was.
-    struct Triage;
+    struct Triage {
+        tiers: Mutex<Vec<String>>,
+    }
     #[async_trait]
     impl LlmProvider for Triage {
         async fn complete(&self, request: Value, _conn: Option<&str>) -> EngineResult<Value> {
-            Ok(match request["tier"].as_str().unwrap_or_default() {
+            let tier = request["tier"].as_str().unwrap_or_default().to_string();
+            self.tiers.lock().expect("lock").push(tier.clone());
+            Ok(match tier.as_str() {
                 "select" => json!({
                     "workflow_id": null, "errand": true,
                     "why": "one turn of work, no procedure in it"
@@ -878,8 +882,11 @@ async fn an_errand_answers_the_goal_without_leaving_a_procedure_behind() {
         }
     }
 
+    let provider = Arc::new(Triage {
+        tiers: Mutex::new(Vec::new()),
+    });
     let caps = Capabilities {
-        llm: Arc::new(Triage),
+        llm: provider.clone(),
         ..mock_capabilities()
     };
     let ledger = MemoryLedger::new();
@@ -931,10 +938,19 @@ async fn an_errand_answers_the_goal_without_leaving_a_procedure_behind() {
         seeded,
         "an errand must not be kept"
     );
+    // Asserted on the *calls*, not on the result. An empty lesson list is also
+    // what a consolidator that ran and found nothing returns, so the weaker
+    // assertion would pass with the gate removed entirely.
+    let tiers = provider.tiers.lock().expect("lock").clone();
     assert!(
-        finished.lessons.is_empty(),
-        "and a plain errand skips consolidation entirely"
+        !tiers.iter().any(|t| t == "consolidate"),
+        "a plain errand must not pay a consolidation call: {tiers:?}"
     );
+    assert!(
+        !tiers.iter().any(|t| t == "author"),
+        "nor an authoring one: {tiers:?}"
+    );
+    assert!(finished.lessons.is_empty());
 }
 
 #[tokio::test]

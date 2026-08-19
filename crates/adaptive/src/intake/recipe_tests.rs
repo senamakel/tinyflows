@@ -750,3 +750,27 @@ fn an_errand_is_the_same_lowering_an_authored_ask_gets() {
     .expect("lowers");
     assert_eq!(errand.nodes[1].config, authored.nodes[1].config);
 }
+
+#[test]
+fn every_control_character_in_a_goal_survives_as_a_valid_jq_literal() {
+    let scope = json!({ "run": { "inputs": {} }, "inputs": {}, "item": null,
+                        "items": [], "nodes": {} });
+    let mut broke = Vec::new();
+    for code in 0u32..0x20 {
+        let ch = char::from_u32(code).expect("control char");
+        let goal = format!("disk{ch}usage");
+        let Ok(graph) = super::errand(&goal) else {
+            broke.push(format!("U+{code:04X}: lowering refused it"));
+            continue;
+        };
+        let prompt = graph.nodes[1].config["prompt"].as_str().expect("prompt");
+        let rendered = tinyflows::expr::resolve(&json!(prompt), &scope);
+        if rendered.as_str().is_none() {
+            broke.push(format!("U+{code:04X}: {rendered:?}"));
+        }
+    }
+    assert!(
+        broke.is_empty(),
+        "control characters that broke the prompt: {broke:?}"
+    );
+}
