@@ -56,7 +56,9 @@ Return JSON:
 - `declared`: the workflow's inputs — anything the goal supplies as data (a
   repository, a topic, an id), so the plan works for the NEXT goal of its
   kind with different values. `inputs` supplies this run's value for every
-  required one. Declared values are attached to ask steps automatically.
+  required one. Declared values are attached to ask steps automatically —
+  NEVER also paste a value into an ask: a pasted value makes the plan
+  single-use, so it cannot be kept for future goals, and it is refused.
 - The LAST step's output is the run's answer: make it the step that produces
   the deliverable.
 
@@ -95,6 +97,17 @@ pub fn lower(answer: &Value) -> Result<(WorkflowGraph, Map<String, Value>, Strin
     let steps = parse_steps(answer)?;
     let declared = parse_declared(answer);
     let inputs = answer["inputs"].as_object().cloned().unwrap_or_default();
+
+    // A declared value pasted into an ask defeats the declaration: the
+    // lowering attaches the value anyway, so the paste is redundant now and
+    // poisonous later — selected for a different value, the prompt would
+    // carry BOTH, and the keep gate would rightly refuse to file the plan.
+    // Refused here, where the feedback round can fix it, rather than
+    // discovered as an unkeepable graph after a satisfied run.
+    let pasted = pasted_values(&steps, &declared, &inputs);
+    if !pasted.is_empty() {
+        return Err(IntakeError::Invalid(pasted.join("; ")));
+    }
 
     let mut nodes = vec![Node {
         id: "start".into(),
@@ -164,6 +177,38 @@ pub fn lower(answer: &Value) -> Result<(WorkflowGraph, Map<String, Value>, Strin
         edges,
     };
     Ok((graph, inputs, why))
+}
+
+/// Ask steps that restate a declared value instead of relying on the
+/// attachment. Only distinctive values count — refusing a plan because an
+/// ask contains the word "on" would block perfectly reusable recipes — and
+/// only DECLARED inputs: undeclared entries are trimmed by the author gate
+/// and never attached, so their values in an ask are just prose.
+fn pasted_values(
+    steps: &[Step],
+    declared: &[(String, String, bool)],
+    inputs: &Map<String, Value>,
+) -> Vec<String> {
+    let mut problems = Vec::new();
+    for step in steps {
+        let Action::Ask { prompt, .. } = &step.action else {
+            continue;
+        };
+        for (name, _, _) in declared {
+            let Some(value) = inputs.get(name).and_then(Value::as_str).map(str::trim) else {
+                continue;
+            };
+            if crate::reuse::distinctive(value) && prompt.contains(value) {
+                problems.push(format!(
+                    "step `{}` pastes the value of input `{name}` into its ask — remove \
+                     it; declared values are attached automatically, and a pasted value \
+                     makes the plan single-use",
+                    step.id
+                ));
+            }
+        }
+    }
+    problems
 }
 
 /// The generated prompt expression for an ask step.

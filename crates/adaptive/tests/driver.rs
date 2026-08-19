@@ -406,9 +406,15 @@ async fn a_graph_that_was_authored_and_worked_becomes_a_stored_procedure() {
 async fn a_graph_that_pasted_its_inputs_is_not_kept() {
     // Same run, same success — but the goal's specifics are welded into a
     // step, so it matches one task and never another. No model is asked.
+    //
+    // The paste sits in a `run` script, not an ask: the intake gate refuses
+    // ask-pastes outright now, and this test is about the layer BEHIND it —
+    // keep's own refusal, which still guards every path intake cannot see.
     let mut baked = parameterised();
-    baked["steps"][0]["ask"] =
-        json!("Review the open pull requests on acme/thing and summarise them.");
+    baked["steps"] = json!([
+        { "id": "review", "run": "gh pr list -R acme/thing" },
+        { "id": "report", "ask": "Summarise the review output.", "reads": ["review"] }
+    ]);
 
     let llm = succeeding(baked, true);
     let caps = Capabilities {

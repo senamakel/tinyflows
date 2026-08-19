@@ -49,7 +49,7 @@ const DISTINCTIVE_CHARS: [char; 6] = ['/', '.', ':', '@', '_', '-'];
 /// port name on every edge in the graph. Treating those as pasted would refuse
 /// to keep perfectly reusable procedures, and a gate that fires on noise is one
 /// nobody trusts.
-fn distinctive(value: &str) -> bool {
+pub(crate) fn distinctive(value: &str) -> bool {
     let length = value.chars().count();
     // A digit only counts alongside some length: `"1"` proves nothing and, via
     // the substring test, would match any config containing that character —
