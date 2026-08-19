@@ -68,6 +68,7 @@ fn graph(nodes: Vec<Node>, edges: Vec<Edge>) -> WorkflowGraph {
 
 fn attempt(graph: WorkflowGraph) -> Attempt {
     Attempt {
+        resume: None,
         approach: Approach::Authored {
             why: "for the test".into(),
             fingerprint: "0000000".into(),

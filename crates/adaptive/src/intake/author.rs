@@ -159,6 +159,8 @@ fn gated(
     inputs.retain(|name, _| graph.inputs.iter().any(|d| d.name == *name));
 
     Ok(Attempt {
+        // See `select`: continuing is the loop's call, not intake's.
+        resume: None,
         approach: Approach::Authored {
             why,
             fingerprint: fingerprint(&graph),

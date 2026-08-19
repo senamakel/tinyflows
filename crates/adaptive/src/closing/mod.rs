@@ -14,11 +14,13 @@ mod consolidate;
 mod judge;
 mod keep;
 mod repair;
+mod resume;
 
 pub use consolidate::consolidate;
 pub use judge::{Evidence, judge};
 pub use keep::{Kept, keep};
 pub use repair::{Variant, graph_is_suspect, repair};
+pub use resume::may_continue;
 
 use crate::contracts::{Approach, Budget, Goal, Verdict};
 use crate::execute::StepRecord;

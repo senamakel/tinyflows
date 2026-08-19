@@ -30,6 +30,8 @@
 
 use std::sync::Arc;
 
+use crate::contracts::ResumePoint;
+use crate::intake::Attempt;
 use tinyflows::caps::Capabilities;
 use tinyflows::store::WorkflowStore;
 
@@ -132,6 +134,32 @@ impl Loop<'_> {
     /// When intake cannot decide, or the ledger cannot be read or written.
     /// Running never errors — see [`crate::execute`].
     pub async fn attempt(&self, episode: &str, goal: &Goal) -> Result<Closed> {
+        Ok(self.attempt_continuing(episode, goal, None).await?.0)
+    }
+
+    /// [`attempt`](Self::attempt), given the chance to continue a run the
+    /// previous one left unfinished.
+    ///
+    /// Returns the close *and* the continuation the next attempt may use —
+    /// `Some` only when this attempt's repair left the failed node's whole
+    /// upstream untouched, and only for the variant that repair produced.
+    /// [`run`](Self::run) threads that value; a host driving attempts itself
+    /// threads it the same way, or passes `None` and pays for the prefix
+    /// again, which is what every attempt did before continuing existed.
+    ///
+    /// The continuation is carried rather than stored because it is worth
+    /// exactly one attempt: it names a boundary in a checkpointer whose thread
+    /// the *next* run will write over, and a stale one would re-enter a graph
+    /// on some other run's prefix.
+    ///
+    /// # Errors
+    /// As [`attempt`](Self::attempt).
+    pub async fn attempt_continuing(
+        &self,
+        episode: &str,
+        goal: &Goal,
+        from: Option<ResumePoint>,
+    ) -> Result<(Closed, Option<ResumePoint>)> {
         let record = self.start(episode, goal).await?;
         let attempt = record.attempt + 1;
 
@@ -145,6 +173,22 @@ impl Loop<'_> {
             self.conn,
         )
         .await?;
+
+        // The continuation only applies to the workflow the repair produced.
+        // The chooser is free to pick something else entirely — a different
+        // variant, the parent, nothing at all — and a prefix committed by one
+        // graph is not a prefix for another.
+        let planned = match (from, &planned.approach) {
+            (Some(point), Approach::Selected { workflow_id, .. })
+                if workflow_id == &point.workflow =>
+            {
+                Attempt {
+                    resume: Some(point),
+                    ..planned
+                }
+            }
+            _ => planned,
+        };
 
         let ran = self.runner.run(&planned).await;
         let closed = closing::close(
@@ -173,13 +217,14 @@ impl Loop<'_> {
                 .await;
         }
 
-        if closed.verdict.satisfied {
+        let next = if closed.verdict.satisfied {
             self.keep_if_it_generalises(goal, &planned).await;
+            None
         } else {
-            self.repair_if_the_graph_is_at_fault(goal, &closed, &planned.approach, &ran)
-                .await;
-        }
-        Ok(closed)
+            self.repair_if_the_graph_is_at_fault(goal, &closed, &planned, &ran)
+                .await
+        };
+        Ok((closed, next))
     }
 
     /// Drive an episode until it is satisfied or stands down.
@@ -192,8 +237,10 @@ impl Loop<'_> {
     /// # Errors
     /// As [`attempt`](Self::attempt).
     pub async fn run(&self, episode: &str, goal: &Goal) -> Result<Finished> {
+        let mut carry: Option<ResumePoint> = None;
         loop {
-            let closed = self.attempt(episode, goal).await?;
+            let (closed, next) = self.attempt_continuing(episode, goal, carry.take()).await?;
+            carry = next;
             let status = match &closed.next {
                 Next::Retry => continue,
                 Next::Done => EpisodeStatus::Satisfied,
@@ -279,28 +326,28 @@ impl Loop<'_> {
         &self,
         goal: &Goal,
         closed: &Closed,
-        approach: &Approach,
+        planned: &Attempt,
         ran: &crate::execute::Ran,
-    ) {
+    ) -> Option<ResumePoint> {
         if closed.verdict.satisfied {
-            return;
+            return None;
         }
         // Whatever ran is the parent of the next repair — including a variant,
         // which makes a second generation. `Ledger::lineage` walks to the root,
         // so a grandchild is still compared inside one family.
-        let parent = match approach {
+        let parent = match &planned.approach {
             Approach::Selected { workflow_id, .. } => workflow_id,
             // Nothing to repair: an authored graph was written for this goal
             // and the next attempt writes another, seeing why this one fell
             // short. A variant of a one-off is a stored procedure nobody asked
             // for.
-            Approach::Authored { .. } => return,
+            Approach::Authored { .. } => return None,
         };
         let evidence = ran.evidence();
         if !graph_is_suspect(&closed.verdict, &evidence) {
-            return;
+            return None;
         }
-        let _ = closing::repair(
+        let variant = closing::repair(
             goal,
             &closed.verdict,
             &evidence,
@@ -310,7 +357,24 @@ impl Loop<'_> {
             self.caps,
             self.conn,
         )
-        .await;
+        .await
+        .ok()
+        .flatten()?;
+
+        // The variant exists either way. What the gate decides is only whether
+        // the next attempt may skip the prefix — a `false` costs the work
+        // again, which is what every attempt cost before this existed.
+        let stopped = ran.resume.as_ref()?;
+        closing::may_continue(
+            &planned.graph,
+            &variant.record.graph,
+            &stopped.failed_node,
+            &variant.ops,
+        )
+        .then(|| ResumePoint {
+            workflow: variant.record.id.clone(),
+            ..stopped.clone()
+        })
     }
 }
 

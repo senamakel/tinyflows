@@ -148,6 +148,9 @@ pub async fn select(
         },
         graph: WorkflowGraph::default(),
         inputs: inputs_of(&answer),
+        // Intake never continues a run: only the loop knows whether the
+        // repair it just made is safe to skip a prefix over.
+        resume: None,
         // Filled by `decide`, which is what knows what the planner was shown.
         lessons_shown: Vec::new(),
     }))

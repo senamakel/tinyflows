@@ -96,6 +96,7 @@ fn ran(outcome: &RunOutcome, diagnosis: &Diagnosis, changed: &str) -> Ran {
         failed: None,
         steps: Vec::new(),
         cost_usd: 0.0,
+        resume: None,
     }
 }
 

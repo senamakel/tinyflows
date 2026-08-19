@@ -43,6 +43,15 @@ pub struct Attempt {
     pub graph: WorkflowGraph,
     /// Values for the graph's declared inputs, by name.
     pub inputs: Map<String, Value>,
+    /// Continue a previous run rather than starting this graph from its
+    /// trigger.
+    ///
+    /// Set only by the loop, only after a repair whose edits left the failed
+    /// node's whole upstream alone. A [`Runner`](crate::execute::Runner) that
+    /// sees `Some` re-enters the named node on the committed prefix; one that
+    /// cannot must run the graph normally rather than fail — continuing is an
+    /// optimisation over a correctness floor, never a requirement.
+    pub resume: Option<crate::contracts::ResumePoint>,
     /// The lessons this attempt's planner was shown.
     ///
     /// Carried so the closing pass can score them against what happened. A
