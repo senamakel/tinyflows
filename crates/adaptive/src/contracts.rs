@@ -421,3 +421,36 @@ mod tests {
         assert!(v.advanced);
     }
 }
+
+/// Where a failed run stopped, so a later attempt can carry on from it.
+///
+/// A run that failed at a node leaves its prefix committed in the engine's
+/// failure boundary. This is the handle to that: which thread holds it, and
+/// which node it stopped at. A [`Runner`](crate::execute::Runner) reports one
+/// on [`Ran`](crate::execute::Ran) when the host it runs on keeps
+/// checkpoints; the loop hands one back on the next
+/// [`Attempt`](crate::intake::Attempt) when — and only when — the repair it
+/// made is safe to skip the prefix over
+/// ([`may_continue`](crate::closing::may_continue)).
+///
+/// A host with no checkpointer reports `None` and receives `None`, and every
+/// attempt starts at the trigger exactly as it always did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResumePoint {
+    /// The engine thread the failed run is checkpointed under — for most hosts
+    /// the run id they gave it.
+    pub thread: String,
+    /// The node whose failure ended that run. What a continue re-runs first,
+    /// and what the ancestor gate is computed against.
+    pub failed_node: String,
+    /// The workflow whose graph committed that prefix.
+    ///
+    /// Carried so the two sides can both check they mean the same run. The
+    /// loop only hands a point to an attempt that selected *this* workflow —
+    /// the chooser is free to pick something else, and a prefix committed by
+    /// one graph is not a prefix for another. A runner may check it again
+    /// against the graph it is about to run; a mismatch means continue was
+    /// asked for on the wrong thing, and starting from the trigger is the
+    /// correct answer.
+    pub workflow: String,
+}

@@ -33,6 +33,13 @@ pub struct Candidate {
     pub applied: u32,
     /// Times that ended satisfied.
     pub helped: u32,
+    /// Its declared inputs: name and whether it is required.
+    ///
+    /// Listed because the chooser is asked to supply values for them. It was
+    /// being asked to fill inputs it had never been shown, which is a guess
+    /// dressed as a binding — and a required input guessed wrong is a run
+    /// that fails after the choice has already been made.
+    pub inputs: Vec<(String, bool)>,
 }
 
 impl Candidate {
@@ -54,8 +61,13 @@ impl Candidate {
             0 => "never run".to_string(),
             applied => format!("run {applied}×, satisfied {}×", self.helped),
         };
+        let inputs = if self.inputs.is_empty() {
+            String::new()
+        } else {
+            format!("\n  inputs: {}", super::recipe::render_inputs(&self.inputs))
+        };
         format!(
-            "- id: {}\n  name: {name}\n  steps: {}, {record}\n  {description}",
+            "- id: {}\n  name: {name}\n  steps: {}, {record}{inputs}\n  {description}",
             self.id, self.node_count
         )
     }
@@ -136,6 +148,9 @@ pub async fn select(
         },
         graph: WorkflowGraph::default(),
         inputs: inputs_of(&answer),
+        // Intake never continues a run: only the loop knows whether the
+        // repair it just made is safe to skip a prefix over.
+        resume: None,
         // Filled by `decide`, which is what knows what the planner was shown.
         lessons_shown: Vec::new(),
     }))
@@ -210,6 +225,7 @@ mod tests {
             node_count: 4,
             applied,
             helped,
+            inputs: vec![("repo".to_string(), true)],
         }
     }
 

@@ -19,12 +19,13 @@ pub mod recipe;
 mod select;
 
 pub use author::author;
+pub use recipe::{Callable, render_callables};
 pub use select::{Candidate, bind, select};
 
 use serde_json::{Map, Value};
 use tinyflows::caps::Capabilities;
 use tinyflows::model::WorkflowGraph;
-use tinyflows::store::WorkflowStore;
+use tinyflows::store::{WorkflowStore, WorkflowSummary};
 
 use crate::contracts::{Approach, Goal};
 use crate::host::HostFacts;
@@ -42,6 +43,15 @@ pub struct Attempt {
     pub graph: WorkflowGraph,
     /// Values for the graph's declared inputs, by name.
     pub inputs: Map<String, Value>,
+    /// Continue a previous run rather than starting this graph from its
+    /// trigger.
+    ///
+    /// Set only by the loop, only after a repair whose edits left the failed
+    /// node's whole upstream alone. A [`Runner`](crate::execute::Runner) that
+    /// sees `Some` re-enters the named node on the committed prefix; one that
+    /// cannot must run the graph normally rather than fail — continuing is an
+    /// optimisation over a correctness floor, never a requirement.
+    pub resume: Option<crate::contracts::ResumePoint>,
     /// The lessons this attempt's planner was shown.
     ///
     /// Carried so the closing pass can score them against what happened. A
@@ -112,7 +122,21 @@ pub async fn decide(
     // attempt, against whatever database the host brought.
     let rows = ledger.rows(episode).await?;
     let tried = crate::ledger::signatures(&rows);
-    let candidates = catalogue(store, ledger, &tried).await?;
+    // One listing, two views of the same shelf, and the difference is the
+    // point. The chooser sees what it has not already tried, because repeating
+    // a selection cannot teach the episode anything. The author sees the WHOLE
+    // shelf, because a workflow that fell short as the entire answer is exactly
+    // the one worth calling as one step of a bigger plan.
+    //
+    // Listed once for the same reason `ledger.rows` is read once above: against
+    // a file-backed store a second `list` is a second directory scan and a
+    // second parse of every record, paid on every attempt for a result already
+    // in hand.
+    let listed = store
+        .list()
+        .map_err(|e| IntakeError::Store(e.to_string()))?;
+    let candidates = catalogue(&listed, ledger, &tried).await?;
+    let callables = callables(&listed);
 
     // Both planners see the same past, in the same words. The exclusion list
     // stops a *selection* being repeated, but nothing structural stops the
@@ -169,7 +193,7 @@ pub async fn decide(
                         Err(err) => return Err(err),
                     }
                 }
-                return author(goal, facts, store.policy(), &noted, caps, conn)
+                return author(goal, facts, &callables, store.policy(), &noted, caps, conn)
                     .await
                     .map(|attempt| Attempt {
                         lessons_shown: shown,
@@ -183,7 +207,7 @@ pub async fn decide(
             Err(err) => return Err(err),
         }
     }
-    author(goal, facts, store.policy(), &past, caps, conn)
+    author(goal, facts, &callables, store.policy(), &past, caps, conn)
         .await
         .map(|attempt| Attempt {
             lessons_shown: shown,
@@ -210,15 +234,41 @@ pub async fn decide(
 /// clause is not a choice, it is noise, and a planner asked to make it is being
 /// asked to guess. Which member survives is decided on score, never on being
 /// the newest — see [`crate::promotion`].
+/// Every enabled workflow, as something a plan may call.
+///
+/// Unfiltered on purpose — see the note at the call site. Takes the listing the
+/// chooser's catalogue already read, so composition costs no extra store
+/// traffic: `WorkflowSummary` already carries the declared inputs, precisely
+/// so a caller need not fetch a whole graph to learn what it takes.
+fn callables(listed: &[WorkflowSummary]) -> Vec<Callable> {
+    listed
+        .iter()
+        .filter(|summary| summary.enabled)
+        .map(|summary| Callable {
+            id: summary.id.clone(),
+            name: summary.name.clone(),
+            description: summary.description.clone(),
+            inputs: declared_inputs(summary),
+        })
+        .collect()
+}
+
+/// A summary's declared inputs as the `(name, required)` pairs both prompts
+/// render. One mapping, because two copies of it is how the chooser and the
+/// author come to disagree about which inputs a workflow demands.
+fn declared_inputs(summary: &WorkflowSummary) -> Vec<(String, bool)> {
+    summary
+        .inputs
+        .iter()
+        .map(|input| (input.name.clone(), input.required))
+        .collect()
+}
+
 async fn catalogue(
-    store: &dyn WorkflowStore,
+    listed: &[WorkflowSummary],
     ledger: &dyn Ledger,
     tried: &[String],
 ) -> Result<Vec<Candidate>> {
-    let listed = store
-        .list()
-        .map_err(|e| IntakeError::Store(e.to_string()))?;
-
     let mut out = Vec::new();
     for summary in listed {
         if !summary.enabled {
@@ -230,12 +280,13 @@ async fn catalogue(
         }
         let score = ledger.workflow_score(&summary.id).await?;
         out.push(Candidate {
-            id: summary.id,
-            name: summary.name,
-            description: summary.description,
+            id: summary.id.clone(),
+            name: summary.name.clone(),
+            description: summary.description.clone(),
             node_count: summary.node_count,
             applied: score.applied,
             helped: score.helped,
+            inputs: declared_inputs(summary),
         });
     }
     collapse_families(out, ledger).await

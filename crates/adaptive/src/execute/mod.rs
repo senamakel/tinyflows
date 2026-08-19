@@ -129,6 +129,15 @@ pub struct Ran {
     pub steps: Vec<StepRecord>,
     /// What the run cost, in the runner's unit. Zero means not measured.
     pub cost_usd: f64,
+    /// Where this run stopped, when it failed at a node and the host kept a
+    /// resumable boundary for it.
+    ///
+    /// `None` is always allowed and is the right answer for a host with no
+    /// checkpointer, a run that completed, or one that broke somewhere a node
+    /// boundary cannot describe. The loop treats it as "start the next attempt
+    /// from the trigger", which is what every attempt did before continuing
+    /// existed.
+    pub resume: Option<crate::contracts::ResumePoint>,
 }
 
 impl Ran {

@@ -205,6 +205,10 @@ impl RunReport {
         }
 
         Ran {
+            // A wire report says what happened, not where to pick it back up:
+            // the boundary lives in the host's checkpointer, and only a host
+            // that keeps one can name it.
+            resume: None,
             outcome: RunOutcome {
                 output: Value::Object(output),
                 pending_approvals: self.pending_approvals,

@@ -16,6 +16,7 @@ use tinyflows::validate::validate_all;
 use super::{Attempt, IntakeError, Result, ask, recipe};
 use crate::contracts::{Approach, Goal, Tier};
 use crate::host::HostFacts;
+use recipe::Callable;
 
 /// Write a graph for `goal`, grounded on the engine's own node catalogue.
 ///
@@ -27,19 +28,29 @@ use crate::host::HostFacts;
 pub async fn author(
     goal: &Goal,
     facts: &HostFacts,
+    callables: &[Callable],
     policy: &dyn HostPolicy,
     past: &str,
     caps: &Capabilities,
     conn: Option<&str>,
 ) -> Result<Attempt> {
     let permitted = facts.render();
+    // The callable listing goes beside what the host permits, because it is
+    // the same kind of fact: these exist, the rest do not. A plan naming one
+    // that is not here is refused at intake, not discovered mid-run.
+    let offered = recipe::render_callables(callables);
     let user = format!(
-        "# Goal\n{}{}{past}",
+        "# Goal\n{}{}{}{past}",
         goal.text.trim(),
         if permitted.is_empty() {
             String::new()
         } else {
             format!("\n\n{permitted}")
+        },
+        if offered.is_empty() {
+            String::new()
+        } else {
+            format!("\n\n{offered}")
         }
     );
 
@@ -62,7 +73,7 @@ pub async fn author(
                 continue;
             }
         };
-        match gated(&answer, facts, policy) {
+        match gated(&answer, facts, callables, policy) {
             Ok(attempt) => return Ok(attempt),
             Err(err) => {
                 prompt = format!(
@@ -80,8 +91,13 @@ pub async fn author(
 const ROUNDS: usize = 3;
 
 /// One reply through every gate, or why it was refused.
-fn gated(answer: &Value, facts: &HostFacts, policy: &dyn HostPolicy) -> Result<Attempt> {
-    let (graph, mut inputs, why) = recipe::lower(answer)?;
+fn gated(
+    answer: &Value,
+    facts: &HostFacts,
+    callables: &[Callable],
+    policy: &dyn HostPolicy,
+) -> Result<Attempt> {
+    let (graph, mut inputs, why) = recipe::lower(answer, callables)?;
 
     // Every failure at once, not the first. A model handed one error fixes it
     // and returns with the next; handed all four it fixes all four.
@@ -143,6 +159,8 @@ fn gated(answer: &Value, facts: &HostFacts, policy: &dyn HostPolicy) -> Result<A
     inputs.retain(|name, _| graph.inputs.iter().any(|d| d.name == *name));
 
     Ok(Attempt {
+        // See `select`: continuing is the loop's call, not intake's.
+        resume: None,
         approach: Approach::Authored {
             why,
             fingerprint: fingerprint(&graph),
@@ -273,6 +291,7 @@ mod tests {
         let attempt = author(
             &Goal::new("do the thing"),
             &HostFacts::unknown(),
+            &[],
             &Permissive,
             "",
             &caps,
@@ -343,6 +362,7 @@ mod tests {
         let attempt = author(
             &Goal::new("do the thing"),
             &HostFacts::unknown(),
+            &[],
             &Permissive,
             "",
             &caps,

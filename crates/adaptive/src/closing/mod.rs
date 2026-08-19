@@ -14,16 +14,68 @@ mod consolidate;
 mod judge;
 mod keep;
 mod repair;
+mod resume;
 
 pub use consolidate::consolidate;
 pub use judge::{Evidence, judge};
 pub use keep::{Kept, keep};
 pub use repair::{Variant, graph_is_suspect, repair};
+pub use resume::may_continue;
 
 use crate::contracts::{Approach, Budget, Goal, Verdict};
+use crate::execute::StepRecord;
 use crate::intake::Result;
 use crate::ledger::{Episode, EpisodeStatus, Ledger, LedgerRow};
+use std::collections::HashMap;
 use tinyflows::caps::Capabilities;
+use tinyflows::model::{NodeKind, WorkflowGraph};
+
+/// The workflows this graph called, and whether each one's step succeeded.
+///
+/// Read off the graph rather than reported by the runner: which nodes are
+/// calls is a property of the plan, so a host implementing [`Runner`] does not
+/// have to know this scoring exists to participate in it.
+///
+/// A node with no step record never ran — the graph stopped short of it — and
+/// is credited with nothing at all, not even `applied`. An id written as an
+/// `=`-expression is skipped: it names a workflow only once the run resolves
+/// it, and scoring the literal text would move counters on a workflow that
+/// does not exist.
+///
+/// **One entry per activation, not per node.** A node inside a loop produces
+/// one [`StepRecord`] per iteration, so the walk is over the *records* with the
+/// graph as a lookup, not over the nodes taking the first record each. Reading
+/// only the first would drop every later call and — worse — let an early
+/// success hide a later error, crediting a workflow for a run that failed.
+///
+/// [`Runner`]: crate::execute::Runner
+fn called_workflows(graph: &WorkflowGraph, steps: &[StepRecord]) -> Vec<(String, bool)> {
+    let calls: HashMap<&str, &str> = graph
+        .nodes
+        .iter()
+        .filter(|node| node.kind == NodeKind::SubWorkflow)
+        .filter_map(|node| {
+            let called = node
+                .config
+                .get("workflow_id")
+                .and_then(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|id| !id.is_empty() && !id.starts_with('='))?;
+            Some((node.id.as_str(), called))
+        })
+        .collect();
+
+    steps
+        .iter()
+        .filter_map(|step| {
+            let called = calls.get(step.node_id.as_str())?;
+            Some((
+                (*called).to_string(),
+                step.status == crate::execute::StepOutcome::Success,
+            ))
+        })
+        .collect()
+}
 
 /// What the loop should do next.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -78,6 +130,7 @@ pub async fn close(
     episode: &str,
     attempt: u32,
     approach: &Approach,
+    graph: &WorkflowGraph,
     ran: &crate::execute::Ran,
     budget: &Budget,
     ledger: &dyn Ledger,
@@ -137,6 +190,30 @@ pub async fn close(
     // the promotion gate has no evidence to read.
     if let Some(id) = workflow_id {
         ledger.score_workflow(&id, verdict.satisfied).await?;
+    }
+
+    // And the workflows this attempt *called*. Without this a workflow only
+    // ever used as a component stays Unproven forever: the chooser distrusts
+    // it, the promotion gate cannot see it, and composition becomes a place
+    // procedures go to stop earning a reputation.
+    //
+    // Same standard a selection is held to — it ran, and the attempt was
+    // judged satisfied — with one addition a selection does not need. A
+    // selected workflow IS the attempt, so the attempt's verdict is its
+    // verdict. A called one is a part, so its own step must also have
+    // succeeded: a child that errored inside a plan that recovered around it
+    // has been exercised, not vindicated, and reads `applied` without
+    // `helped`.
+    //
+    // Weaker evidence than a selection's, and worth knowing it: nothing here
+    // judges the child's *output*, so a child that ran cleanly and
+    // contributed nothing to an episode satisfied by its siblings is credited
+    // anyway. Establishing more would cost a judge call per child, which is
+    // the thing the loop's economics are built to avoid.
+    for (called, worked) in called_workflows(graph, &ran.steps) {
+        ledger
+            .score_workflow(&called, worked && verdict.satisfied)
+            .await?;
     }
 
     let stalled = if verdict.satisfied || verdict.advanced {
