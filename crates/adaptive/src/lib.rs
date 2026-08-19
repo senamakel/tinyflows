@@ -17,6 +17,7 @@
 pub mod closing;
 pub mod contracts;
 pub mod driver;
+pub mod evals;
 pub mod execute;
 pub mod host;
 pub mod intake;
