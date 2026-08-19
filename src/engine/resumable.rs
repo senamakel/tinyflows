@@ -690,6 +690,41 @@ pub async fn retry_with_checkpointer(
     Ok(outcome)
 }
 
+/// Like [`retry_with_checkpointer`], but journaled and observed — the shape a
+/// host that records runs actually needs.
+///
+/// The journaled counterpart of
+/// [`resume_with_checkpointer_journaled_observed`], and for the same reason: a
+/// host whose run records are built from observed steps must see the continued
+/// leg the same way it saw the first one, or the record it writes claims the
+/// tail never ran.
+///
+/// # Errors
+/// Same as [`retry_with_checkpointer`].
+pub async fn retry_with_checkpointer_journaled_observed(
+    workflow: &CompiledWorkflow,
+    capabilities: &Capabilities,
+    checkpointer: Arc<dyn Checkpointer<Value>>,
+    thread_id: &str,
+    journal: Arc<dyn GraphEventJournal>,
+    observer: &Arc<dyn RunObserver>,
+) -> Result<JournaledRunOutcome> {
+    let (outcome, graph_run_ids) = resume_with_checkpointer_inner(
+        workflow,
+        capabilities,
+        checkpointer,
+        thread_id,
+        Continuation::Retry,
+        Some(journal),
+        observer,
+    )
+    .await?;
+    Ok(JournaledRunOutcome {
+        outcome,
+        graph_run_ids,
+    })
+}
+
 /// Like [`retry_with_checkpointer`], but reports live progress to `observer`.
 ///
 /// The observer sees `on_step_finish` for every node that runs *after* the
