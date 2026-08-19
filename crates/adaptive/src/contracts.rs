@@ -264,6 +264,25 @@ pub enum Approach {
         /// and makes an identical re-author visible as the repeat it is.
         fingerprint: String,
     },
+    /// One turn of work with no procedure in it.
+    ///
+    /// The third answer to "does anything stored do this", and the one that
+    /// says the question was wrong: some goals are not a procedure at all.
+    /// "What is the disk usage of this directory" has nothing in it worth
+    /// writing down, and putting it through authoring pays a large planning
+    /// call to produce a one-step graph, then files that graph where it dilutes
+    /// every later selection.
+    ///
+    /// It is deliberately the *narrowest* of the three. An errand is judged
+    /// like any other attempt and can fail; what it cannot do is leave anything
+    /// behind. Nothing is kept ([`crate::closing::keep`] takes only authored
+    /// graphs), nothing is repaired (there is no procedure to vary), and the
+    /// signature is a constant so a second errand inside one episode is visibly
+    /// a repeat — if one turn did not do it, the goal was not an errand.
+    Errand {
+        /// Why no stored workflow was needed and none is worth writing.
+        why: String,
+    },
 }
 
 impl Approach {
@@ -277,6 +296,13 @@ impl Approach {
         match self {
             Self::Selected { workflow_id, .. } => format!("selected:{workflow_id}"),
             Self::Authored { fingerprint, .. } => format!("authored:{fingerprint}"),
+            // No discriminator, on purpose. Two authored attempts are told
+            // apart by their fingerprints because the second may be a genuinely
+            // different graph; two errands cannot be, because an errand carries
+            // no plan to differ in. Signing them the same is what makes the
+            // second one read as the repeat it is — and what lets `decide` stop
+            // offering the option once it has been spent.
+            Self::Errand { .. } => "errand".to_string(),
         }
     }
 }
@@ -284,6 +310,37 @@ impl Approach {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn two_errands_in_one_episode_are_visibly_the_same_attempt() {
+        // Unlike two authored graphs, which may genuinely differ and are told
+        // apart by their fingerprints. An errand carries no plan to differ in,
+        // so the constant signature is what puts it in the exclusion list and
+        // stops an episode spending its budget on identical single turns.
+        let first = Approach::Errand {
+            why: "one turn of work".into(),
+        };
+        let second = Approach::Errand {
+            why: "still one turn, honestly".into(),
+        };
+        assert_eq!(first.signature(), "errand");
+        assert_eq!(first.signature(), second.signature());
+    }
+
+    #[test]
+    fn an_errand_cannot_collide_with_a_stored_workflow_called_errand() {
+        // The namespacing that makes the constant safe: `selected:` prefixes
+        // every workflow id, so no shelf entry can occupy the errand slot.
+        let selected = Approach::Selected {
+            workflow_id: "errand".into(),
+            why: String::new(),
+        };
+        assert_eq!(selected.signature(), "selected:errand");
+        assert_ne!(
+            selected.signature(),
+            Approach::Errand { why: String::new() }.signature()
+        );
+    }
 
     #[test]
     fn an_unrecognised_blocker_is_continuable_rather_than_terminal() {

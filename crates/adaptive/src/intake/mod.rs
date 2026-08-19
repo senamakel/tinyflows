@@ -26,6 +26,7 @@ use serde_json::{Map, Value};
 use tinyflows::caps::Capabilities;
 use tinyflows::model::WorkflowGraph;
 use tinyflows::store::{WorkflowStore, WorkflowSummary};
+use tinyflows::validate::validate_all;
 
 use crate::contracts::{Approach, Goal};
 use crate::host::HostFacts;
@@ -156,7 +157,18 @@ pub async fn decide(
 
     let shown: Vec<String> = lessons.iter().map(|l| l.id.clone()).collect();
 
-    if let Some(chosen) = select(goal, &candidates, &past, caps, conn).await? {
+    // One errand per episode. A goal answered in a turn is an errand; a goal
+    // that took a turn and is still not done was never one, and offering the
+    // option again would let an episode spend its whole budget on single turns
+    // that each fall the same way short.
+    let errand_allowed = !tried.iter().any(|sig| sig == "errand");
+
+    if let Some(chosen) = select(goal, &candidates, &past, errand_allowed, caps, conn).await? {
+        // An errand names no stored workflow, so there is nothing to bind and
+        // nothing to load: its graph is lowered from the goal itself.
+        if matches!(chosen.approach, Approach::Errand { .. }) {
+            return errand_attempt(goal, chosen, facts, shown);
+        }
         // `select` answers with an id; the graph and the input check come from
         // the store. Returning the choice unbound would hand the engine an
         // empty graph, which compiles to nothing and reads as the work failing.
@@ -178,7 +190,11 @@ pub async fn decide(
                      Supply a value for every required input this time, or \
                      decline so a graph is written instead."
                 );
-                if let Some(retry) = select(goal, &candidates, &noted, caps, conn).await? {
+                // No errand on the retry: the question was asked and answered
+                // one call ago, and this round exists to fix a binding slip.
+                // Re-offering it would let a model that could not fill an input
+                // reach for the one answer that needs none.
+                if let Some(retry) = select(goal, &candidates, &noted, false, caps, conn).await? {
                     match bind(retry, store) {
                         Ok(attempt) => {
                             return Ok(Attempt {
@@ -213,6 +229,45 @@ pub async fn decide(
             lessons_shown: shown,
             ..attempt
         })
+}
+
+/// Finish an errand: lower the one-step graph and hold it to the same gates.
+///
+/// Both gates matter here even though no model wrote the graph. `validate_all`
+/// is free and catches a lowering that stopped producing a runnable shape.
+/// `HostFacts::check` is the one that earns its place: an errand is an agent
+/// turn, and a host with no agent capability must refuse it as
+/// [`Unsupported`](IntakeError::Unsupported) — the same answer authoring would
+/// give — rather than emit a graph the runner will fail on and the judge will
+/// then blame on the work.
+fn errand_attempt(
+    goal: &Goal,
+    chosen: Attempt,
+    facts: &HostFacts,
+    shown: Vec<String>,
+) -> Result<Attempt> {
+    let graph = recipe::errand(&goal.text)?;
+
+    let problems = validate_all(&graph);
+    if !problems.is_empty() {
+        return Err(IntakeError::Invalid(
+            problems
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join("; "),
+        ));
+    }
+    let refused = facts.check(&graph);
+    if !refused.is_empty() {
+        return Err(IntakeError::Unsupported(refused.join("; ")));
+    }
+
+    Ok(Attempt {
+        graph,
+        lessons_shown: shown,
+        ..chosen
+    })
 }
 
 /// The stored workflows worth offering, with what is known about each.

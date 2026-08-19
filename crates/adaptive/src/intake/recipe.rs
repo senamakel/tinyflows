@@ -300,6 +300,33 @@ pub fn lower(
     Ok((graph, inputs, why))
 }
 
+/// The one-step graph an [`Errand`](crate::contracts::Approach::Errand) runs.
+///
+/// Built by handing [`lower`] a recipe nobody wrote, rather than assembling
+/// nodes directly. The graph is trivial enough that hand-building it would look
+/// like the simpler option, and that is the trap: it would be a second,
+/// unexercised definition of what an `ask` step compiles to, and the first
+/// change to the envelope path or the trigger node would leave errands quietly
+/// producing a shape the rest of the loop no longer reads. Going through the
+/// same door as an authored plan costs one `json!` and cannot drift.
+///
+/// Deterministic in the goal alone — no model call. The whole economic argument
+/// for the errand path is that recognising one is free once `select` has
+/// answered, so lowering it must not spend anything either.
+///
+/// # Errors
+/// Only if `lower` refuses this recipe, which would mean the shared lowering
+/// path had stopped accepting a bare `ask` step.
+pub(crate) fn errand(goal: &str) -> Result<WorkflowGraph, IntakeError> {
+    let recipe = json!({
+        "why": "one turn of work, no procedure in it",
+        "declared": [],
+        "inputs": {},
+        "steps": [{ "id": "errand", "ask": goal.trim() }],
+    });
+    lower(&recipe, &[]).map(|(graph, _, _)| graph)
+}
+
 /// Ask steps that restate a declared value instead of relying on the
 /// attachment. Only distinctive values count — refusing a plan because an
 /// ask contains the word "on" would block perfectly reusable recipes — and
