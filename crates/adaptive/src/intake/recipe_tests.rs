@@ -133,7 +133,7 @@ fn a_declared_value_pasted_into_an_ask_is_refused_with_the_remedy() {
             { "id": "write", "ask": "Write a two-line poem about the topic 'warm caches'." }
         ]
     });
-    let err = lower(&recipe).expect_err("refused").to_string();
+    let err = lower(&recipe, &[]).expect_err("refused").to_string();
     assert!(err.contains("pastes the value"), "{err}");
     assert!(err.contains("attached automatically"), "{err}");
 
@@ -146,7 +146,7 @@ fn a_declared_value_pasted_into_an_ask_is_refused_with_the_remedy() {
             { "id": "write", "ask": "Write a two-line poem about the given topic." }
         ]
     });
-    lower(&clean).expect("keepable");
+    lower(&clean, &[]).expect("keepable");
 }
 
 #[test]
@@ -160,7 +160,7 @@ fn an_undeclared_input_value_in_an_ask_is_not_a_paste() {
             { "id": "write", "ask": "Write a two-line poem about warm caches." }
         ]
     });
-    lower(&recipe).expect("not a paste — nothing declared");
+    lower(&recipe, &[]).expect("not a paste — nothing declared");
 }
 
 #[test]
@@ -175,7 +175,7 @@ fn an_indistinct_input_value_in_an_ask_is_not_a_paste() {
             { "id": "flip", "ask": "Turn the feature on if the mode input says so." }
         ]
     });
-    lower(&recipe).expect("not a paste");
+    lower(&recipe, &[]).expect("not a paste");
 }
 
 #[test]
