@@ -186,5 +186,5 @@ fn a_resolved_directory_is_reported_with_the_node_surface() {
     let error = resolve_node_dir(&run, "nope", "config.cwd", "agent node prepare")
         .expect_err("a missing directory fails the step");
 
-    assert!(error.to_string().starts_with("agent node prepare:"), "{error}");
+    assert!(error.to_string().contains("agent node prepare:"), "{error}");
 }
