@@ -46,8 +46,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hoisted into a shared module so there is exactly one of them: relative paths
   join the workspace, absolute paths must resolve inside it, symlinks are
   followed, and a missing path or a non-directory fails the step instead of
-  falling back to the workspace. A run with no workspace resolves nothing and
-  passes the value to the harness verbatim, as before.
+  falling back to the workspace. An expression that resolves to `null` fails the
+  step too, rather than reading as "no directory declared" and falling through
+  to the agent definition's own `working_dir` or the harness default. A run with
+  no workspace resolves nothing and passes the value to the harness verbatim, as
+  before.
+
+- **`AgentRunner::resolve_workdir` + `caps::WorkdirCheck`** — the seam a harness
+  uses to answer for its **own** filesystem when a run does declare a workspace.
+  Deciding whether a directory exists, what it canonicalizes to, and whether it
+  is a directory is an outside-world effect, and on a harness whose agents run
+  in a container or a remote sandbox the answer is not on the engine's disk.
+  The shape of the value — absolute vs relative, `..` traversal — is string
+  arithmetic and stays with the engine, so a host cannot weaken the containment
+  check that matters most. The method has a default returning
+  `WorkdirCheck::Unmanaged`, which checks the engine's own filesystem exactly as
+  before, so every existing `AgentRunner` keeps compiling and behaving
+  identically.
 
 ### Changed
 
