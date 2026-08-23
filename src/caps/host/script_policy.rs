@@ -83,10 +83,11 @@ impl ScriptPolicy {
 
     /// The shared resolution: reject the shape, then reject the destination.
     ///
-    /// Both halves are load-bearing. The syntactic check answers the obvious
-    /// `../../etc/passwd` without touching the disk; canonicalizing and
-    /// re-checking afterwards is what catches a symlink *inside* the workspace
-    /// pointing out of it, which no amount of string inspection would have seen.
+    /// Delegated to [`crate::workdir`], which is where that rule now lives so
+    /// the `agent` and `sub_workflow` nodes enforce the same one. A script step
+    /// keeps the stricter half of it — [`Absolute::Refuse`] — because an
+    /// operator's `args.script_path` has always been a workspace-relative name
+    /// and nothing should start reading absolute ones.
     fn resolve(&self, raw: &str, field: &str) -> Result<PathBuf> {
         let Some(workspace) = &self.workspace else {
             return Err(refused(format!(
@@ -95,40 +96,13 @@ impl ScriptPolicy {
             )));
         };
 
-        let candidate = Path::new(raw);
-        if candidate.is_absolute() {
-            return Err(refused(format!(
-                "`args.{field}` ('{raw}') must be relative to the workspace, not absolute"
-            )));
-        }
-        if candidate.components().any(|component| {
-            matches!(
-                component,
-                Component::ParentDir | Component::RootDir | Component::Prefix(_)
-            )
-        }) {
-            return Err(refused(format!(
-                "`args.{field}` ('{raw}') must not traverse outside the workspace"
-            )));
-        }
-
-        let workspace = workspace.canonicalize().map_err(|err| {
-            refused(format!(
-                "the configured workspace ({}) is unreadable: {err}",
-                workspace.display()
-            ))
-        })?;
-        let resolved = workspace.join(candidate).canonicalize().map_err(|err| {
-            refused(format!(
-                "`args.{field}` ('{raw}') does not resolve inside the workspace: {err}"
-            ))
-        })?;
-        if !resolved.starts_with(&workspace) {
-            return Err(refused(format!(
-                "`args.{field}` ('{raw}') resolves outside the workspace"
-            )));
-        }
-        Ok(resolved)
+        crate::workdir::resolve_in_workspace(
+            workspace,
+            raw,
+            &format!("args.{field}"),
+            Absolute::Refuse,
+        )
+        .map_err(refused)
     }
 }
 
