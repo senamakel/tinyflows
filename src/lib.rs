@@ -69,6 +69,7 @@ pub mod store;
 /// surface over all of it. Behind the `testkit` feature.
 #[cfg(any(test, feature = "testkit"))]
 pub mod testkit;
+pub mod transcript;
 pub mod validate;
 // Resolving an author-supplied working directory against the run's workspace —
 // the containment rule a shell step's `args.cwd` already obeyed, shared with the

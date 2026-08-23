@@ -1,11 +1,24 @@
 //! One line of what an agent did, as a run record keeps it.
 //!
-//! Part of the stored model rather than of the engine: nothing in
-//! [`crate::engine`] produces these, and nothing in it reads them. A host that
-//! runs `agent` nodes against something with an event stream folds that stream
-//! into these entries and hangs them off a [`RunStep`](super::RunStep), so a run
-//! read back tomorrow still says what happened inside a step and not only
-//! whether it passed.
+//! An `agent` node runs a host's harness, and a harness has an event stream:
+//! it thinks, calls a tool, reads the result, thinks again. The node's output
+//! says what came *out* of that; a transcript says what happened *inside* it,
+//! so a run read back tomorrow explains itself rather than only passing or
+//! failing.
+//!
+//! Two surfaces carry these, and both are the engine's:
+//! [`AgentRunOutcome::transcript`](crate::caps::AgentRunOutcome::transcript),
+//! where a host hands them over, and
+//! [`ExecutionStep::transcript`](crate::observability::ExecutionStep::transcript),
+//! where the engine hands them back to a [`RunObserver`](crate::observability::RunObserver).
+//! A host that persists runs also finds them on `store::types::RunStep`.
+//!
+//! **Nothing in this crate folds a host's event stream into these** — the
+//! engine has no event stream of its own, and what counts as one entry is a
+//! judgement only the harness can make. Hosts fold; the crate carries.
+//! [`RunObserver::on_agent_event`](crate::observability::RunObserver::on_agent_event)
+//! is how a host reports one *while* the node is still running, rather than
+//! waiting for the step to settle.
 //!
 //! Deliberately flat and stringly-typed. Mirroring a host's own event
 //! vocabulary into the record would make every event kind it adds later a
@@ -17,13 +30,16 @@ use serde::{Deserialize, Serialize};
 
 /// Bytes of one entry's `text` kept on the durable record.
 ///
-/// [`RunRecord`](super::RunRecord) bounds step `input`, `output`, and its own
-/// `inputs` through `bounded_within` so no single value can grow a run record
-/// without limit; a transcript entry is the same kind of host-produced text
-/// (a tool result, a model message) and needs the same ceiling. Small on
-/// purpose — a transcript is many short lines, not one large payload, and a
-/// step with hundreds of entries must not turn one long one into the whole
-/// record's size budget.
+/// A stored run bounds step `input`, `output` and its own `inputs` so no
+/// single value can grow a run record without limit; a transcript entry is
+/// the same kind of host-produced text (a tool result, a model message) and
+/// needs the same ceiling. Small on purpose — a transcript is many short
+/// lines, not one large payload, and a step with hundreds of entries must
+/// not let one long entry become the whole record's size budget.
+///
+/// A host with a genuinely large payload — a full tool result, a reasoning
+/// body — keeps it in its own store and leaves the entry as the index line
+/// pointing at it. That split is why this ceiling can stay small.
 pub const MAX_ENTRY_TEXT_BYTES: usize = 4 * 1024;
 
 /// One thing an agent did, in the order it did it.
@@ -50,8 +66,7 @@ impl TranscriptEntry {
     /// Nothing in this crate folds a host's event stream into these — that
     /// happens entirely on the host side, as the module doc says — so this is
     /// the bound a host's folding code is expected to apply per entry, the way
-    /// [`bounded_within`](super::bounded_within) bounds the record's other
-    /// host-produced text.
+    /// a stored run bounds the record's other host-produced text.
     #[must_use]
     pub fn bounded(at_ms: i64, kind: impl Into<String>, text: impl Into<String>) -> Self {
         let mut text = text.into();
