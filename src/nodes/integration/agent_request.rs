@@ -240,13 +240,19 @@ pub(crate) fn declared_working_dir(cfg: &Value, node_id: &str) -> Result<Option<
 /// # Errors
 /// Returns [`EngineError::Capability`] when the directory escapes the
 /// workspace, does not exist, or is not a directory.
-pub(crate) fn resolve_working_dir(ctx: &NodeContext<'_>, raw: &str, key: &str) -> Result<String> {
+pub(crate) async fn resolve_working_dir(
+    ctx: &NodeContext<'_>,
+    raw: &str,
+    key: &str,
+) -> Result<String> {
     crate::workdir::resolve_node_dir(
+        ctx.caps.agent.as_ref(),
         ctx.run,
         raw,
         &format!("config.{key}"),
         &format!("agent node {}", ctx.node.id),
     )
+    .await
 }
 
 /// Resolves each declared [`ContextSource`] into a [`ContextBlock`], in
@@ -415,7 +421,7 @@ pub(crate) async fn assemble(
         } else {
             "working_dir"
         };
-        agent.working_dir = Some(resolve_working_dir(ctx, &raw, key)?);
+        agent.working_dir = Some(resolve_working_dir(ctx, &raw, key).await?);
     }
     let identity = identity_of(ctx, item_index);
     let conn = cfg.get("connection_ref").and_then(Value::as_str);

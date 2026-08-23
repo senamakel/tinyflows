@@ -189,7 +189,7 @@ async fn run_turn_indexed(
         } else {
             "working_dir"
         };
-        let resolved = super::agent_request::resolve_working_dir(ctx, &raw, key)?;
+        let resolved = super::agent_request::resolve_working_dir(ctx, &raw, key).await?;
         if let Value::Object(map) = &mut request {
             map.insert("cwd".to_string(), Value::from(resolved.clone()));
             map.insert("working_dir".to_string(), Value::from(resolved));

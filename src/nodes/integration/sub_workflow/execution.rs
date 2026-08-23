@@ -126,7 +126,7 @@ fn pause_for_child_gates(node_id: &str, gates: Vec<String>) -> NodeOutput {
 /// (see [`crate::workdir`]). A parent run with no workspace has nothing to
 /// contain the value against, so it is taken as written: that is how a graph
 /// declares a workspace for a child when the run itself was never pinned to one.
-fn child_workspace(ctx: &NodeContext<'_>, scope: &Value) -> Result<Option<String>> {
+async fn child_workspace(ctx: &NodeContext<'_>, scope: &Value) -> Result<Option<String>> {
     let Some(declared) = ctx.node.config.get("workspace").filter(|v| !v.is_null()) else {
         return Ok(crate::workdir::run_workspace(ctx.run).map(str::to_string));
     };
@@ -143,12 +143,16 @@ fn child_workspace(ctx: &NodeContext<'_>, scope: &Value) -> Result<Option<String
             ctx.node.id
         )));
     }
-    Ok(Some(crate::workdir::resolve_node_dir(
-        ctx.run,
-        raw,
-        "config.workspace",
-        &format!("sub_workflow node {}", ctx.node.id),
-    )?))
+    Ok(Some(
+        crate::workdir::resolve_node_dir(
+            ctx.caps.agent.as_ref(),
+            ctx.run,
+            raw,
+            "config.workspace",
+            &format!("sub_workflow node {}", ctx.node.id),
+        )
+        .await?,
+    ))
 }
 
 /// What one child run produced, from the parent node's point of view.
@@ -259,7 +263,7 @@ async fn run_child(
     // the child run's workspace, held to the same containment rule as an
     // `agent` node's `cwd`: it must resolve inside the parent's workspace. With
     // no override the child inherits the parent's.
-    let child_workspace = child_workspace(ctx, scope)?;
+    let child_workspace = child_workspace(ctx, scope).await?;
     // Box the recursive engine call so the async future type stays sized.
     // Forward the parent run's cancellation token: cancelling the parent must
     // wind down this child too, rather than letting it run on orphaned behind a
