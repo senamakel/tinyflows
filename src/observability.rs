@@ -64,9 +64,13 @@ pub enum RunStatus {
 }
 
 /// The outcome of a single [`ExecutionStep`].
-#[derive(Debug, Clone)]
+///
+/// [`Success`](Self::Success) is the default so [`ExecutionStep`] can derive
+/// one — see the note there.
+#[derive(Debug, Clone, Default)]
 pub enum StepStatus {
     /// The node executed and produced output items.
+    #[default]
     Success,
     /// The node's executor errored (after any retries were exhausted).
     Error,
@@ -77,7 +81,26 @@ pub enum StepStatus {
 ///
 /// This is the record the canvas renders when a user inspects a node, and what a
 /// run-history view summarizes.
-#[derive(Debug, Clone)]
+/// # Constructing one
+///
+/// `Default` is derived so a host can build a step without naming every field:
+///
+/// ```
+/// use tinyflows::observability::{ExecutionStep, StepStatus};
+///
+/// let step = ExecutionStep {
+///     node_id: "solve".to_string(),
+///     status: StepStatus::Error,
+///     ..Default::default()
+/// };
+/// assert!(step.transcript.is_empty());
+/// ```
+///
+/// That is the migration path when this struct gains a field: a literal that
+/// names every one breaks, and `..Default::default()` does not. Preferred over
+/// `#[non_exhaustive]`, which would forbid the literal outright — worse for a
+/// type hosts are meant to build in their own tests.
+#[derive(Debug, Clone, Default)]
 pub struct ExecutionStep {
     /// The id of the node this step ran.
     pub node_id: String,
