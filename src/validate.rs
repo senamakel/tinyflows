@@ -255,6 +255,9 @@ use agents::validate_agents;
 mod loops;
 use loops::validate_loops;
 
+mod node_config;
+use node_config::validate_node_configs;
+
 mod scatter;
 use scatter::{nodes_on_cycle, path_exists, validate_scatter_regions};
 
