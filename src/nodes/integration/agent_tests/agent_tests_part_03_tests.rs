@@ -11,6 +11,7 @@ mod transcript {
     use crate::model::AgentDefinition;
     use crate::nodes::{NodeContext, NodeExecutor, NodeOutput};
     use crate::observability::{NoopObserver, RunObserver};
+    use crate::transcript::TranscriptEntry;
     use serde_json::{Value, json};
     use std::sync::Arc;
 
@@ -135,29 +136,79 @@ mod transcript {
         assert!(out.transcript.is_empty());
     }
 
+    /// A runner that names its item and finishes in reverse order.
+    ///
+    /// Both halves matter. Naming the item is what lets the assertion tell
+    /// input order from completion order at all — four identical turns cannot.
+    /// Finishing in reverse is what makes the two orders actually disagree, so
+    /// a completion-ordered accumulator fails this test rather than passing it
+    /// by luck.
+    struct ReverseOrderHarness;
+
+    #[async_trait::async_trait]
+    impl AgentRunner for ReverseOrderHarness {
+        async fn run_agent(
+            &self,
+            _agent_ref: &str,
+            _request: Value,
+            _conn: Option<&str>,
+        ) -> crate::error::Result<Value> {
+            unreachable!("the typed `run` is overridden")
+        }
+
+        async fn run(
+            &self,
+            request: crate::caps::AgentRunRequest,
+        ) -> crate::error::Result<crate::caps::AgentRunOutcome> {
+            // `=item.seed` is resolved against this item before the request is
+            // assembled, so the config carries which item this turn is for.
+            let seed = request
+                .config
+                .get("prompt")
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
+            // Later items return first.
+            let delay = 40u64.saturating_sub(seed * 10);
+            tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+            Ok(crate::caps::AgentRunOutcome::finished(json!({
+                "text": format!("answered {seed}")
+            }))
+            .with_transcript(vec![TranscriptEntry::bounded(
+                0,
+                "agent_message",
+                format!("item {seed}"),
+            )]))
+        }
+    }
+
     #[tokio::test]
     async fn per_item_transcripts_come_back_in_item_order() {
         // `map_items` restores its OUTPUTS to input order, so the transcript
-        // describing them has to match. Appending on completion would let a
-        // concurrent run interleave differently from one run to the next, for
-        // identical input — the sink is keyed by item index to prevent that.
+        // describing them has to match. The sink is keyed by item index for
+        // exactly this: with `concurrency > 1` the turns finish in whatever
+        // order they finish, and appending on completion would make one run's
+        // transcript differ from the next for identical input.
         let out = execute(
-            harness(),
-            json!({ "agent_ref": "triager", "execution": "per_item", "concurrency": 4 }),
-            (0..4).map(|n| Item::new(json!({ "seed": n }))).collect(),
+            Arc::new(ReverseOrderHarness),
+            json!({
+                "agent_ref": "triager",
+                "execution": "per_item",
+                "concurrency": 4,
+                "prompt": "=item.seed",
+            }),
+            (0..4u64).map(|n| Item::new(json!({ "seed": n }))).collect(),
             &NoopObserver,
         )
         .await;
 
-        // MockAgentHarness names the agent in its second entry, and every item
-        // runs the same agent — so what is asserted here is the *grouping*:
-        // each turn's pair stays together and the pairs stay in item order.
-        assert_eq!(out.transcript.len(), 8);
-        let kinds: Vec<&str> = out.transcript.iter().map(|e| e.kind.as_str()).collect();
+        assert_eq!(out.items.len(), 4, "one turn per input item");
         assert_eq!(
-            kinds,
-            ["agent_thinking", "agent_message"].repeat(4),
-            "each turn contributes its pair intact, in item order"
+            out.transcript
+                .iter()
+                .map(|e| e.text.as_str())
+                .collect::<Vec<_>>(),
+            ["item 0", "item 1", "item 2", "item 3"],
+            "input order, not completion order"
         );
     }
 }

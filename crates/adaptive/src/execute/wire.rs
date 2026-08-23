@@ -57,6 +57,46 @@ use super::Ran;
 /// Per-node budget for the durable record. Written once; generous.
 pub const RECORD_BUDGET: usize = 256 * 1024;
 
+/// Aggregate budget for one step's transcript, in bytes of entry text.
+///
+/// A per-entry bound is not enough on its own. `TranscriptEntry::bounded` caps
+/// one entry at 4 KiB, and a `per_item` node folds every item's turn into ONE
+/// step — so a few thousand entries reach the 16 MB limit a Mongo document
+/// may hold, in exactly the production-only way the ledger's own note about
+/// one-document-per-step warns of. Worse, `save_steps` deletes before it
+/// upserts, so an oversized write destroys the previous record and then fails.
+pub const TRANSCRIPT_BUDGET: usize = RECORD_BUDGET;
+
+/// Kept from each end when a transcript is over budget.
+const TRANSCRIPT_EDGE: usize = 32;
+
+/// Trims `entries` to [`TRANSCRIPT_BUDGET`], keeping both ends.
+///
+/// Head **and** tail, with a marker between: the start says how the agent
+/// approached the work and the end says how it concluded, and the middle is the
+/// most droppable part of a long tool loop. Clipping only the tail would lose
+/// the conclusion, which is usually the reason someone opened the transcript.
+fn bounded_transcript(entries: &[TranscriptEntry]) -> Vec<TranscriptEntry> {
+    let total: usize = entries.iter().map(|e| e.text.len()).sum();
+    if total <= TRANSCRIPT_BUDGET {
+        return entries.to_vec();
+    }
+    if entries.len() <= TRANSCRIPT_EDGE * 2 {
+        // Few enough entries that dropping the middle would not help; the size
+        // is in individual entries, which are already individually bounded.
+        return entries.to_vec();
+    }
+    let dropped = entries.len() - TRANSCRIPT_EDGE * 2;
+    let mut out: Vec<TranscriptEntry> = entries[..TRANSCRIPT_EDGE].to_vec();
+    out.push(TranscriptEntry::bounded(
+        entries[TRANSCRIPT_EDGE].at_ms,
+        "error",
+        format!("…[{dropped} transcript entries elided to fit the record budget]"),
+    ));
+    out.extend_from_slice(&entries[entries.len() - TRANSCRIPT_EDGE..]);
+    out
+}
+
 /// Per-node budget for what the judge reads. A dozen of these share one context
 /// window, so it is much smaller than the record.
 pub const PROMPT_BUDGET: usize = 4 * 1024;
@@ -98,10 +138,13 @@ pub struct StepRecord {
     /// Carried rather than dropped because [`Ran::steps`](crate::execute::Ran)
     /// is the archival record — "every node activation, at full record
     /// fidelity" — and for an `agent` node the transcript is most of what there
-    /// is to know. Unlike `output` it is not clipped to the record budget:
-    /// entries are already individually bounded by
-    /// `TranscriptEntry::bounded`, and clipping a transcript in the middle
-    /// would lose the end of a thought rather than the tail of a payload.
+    /// is to know.
+    ///
+    /// Bounded differently from `output`, not left unbounded: individual
+    /// entries are already capped, so what matters here is the *aggregate*
+    /// (see [`TRANSCRIPT_BUDGET`]), and an over-budget transcript keeps both
+    /// ends rather than being clipped from one — a truncated payload loses its
+    /// tail, a truncated transcript would lose its conclusion.
     ///
     /// Empty for every non-`agent` node and for a harness that reports none.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -121,7 +164,7 @@ impl StepRecord {
             output: bounded_within(&step.output, budget),
             duration_ms: u64::try_from(step.duration_ms).unwrap_or(u64::MAX),
             null_bindings: step.diagnostics.clone(),
-            transcript: step.transcript.clone(),
+            transcript: bounded_transcript(&step.transcript),
         }
     }
 
@@ -490,5 +533,73 @@ mod tests {
         let record = StepRecord::bounded(&step("cost", StepStatus::Success, json!([])), 4096);
         let wire = serde_json::to_string(&record).expect("serialize");
         assert!(!wire.contains("transcript"), "{wire}");
+    }
+
+    /// A transcript large enough to threaten the Mongo document cap is trimmed.
+    ///
+    /// Per-entry bounds are not enough: a `per_item` node folds every item's
+    /// turn into ONE step, so thousands of 4 KiB entries reach the 16 MB limit
+    /// a document may hold — and `save_steps` deletes before it upserts, so the
+    /// oversized write would destroy the previous record and then fail.
+    #[test]
+    fn an_oversized_transcript_is_trimmed_to_the_budget() {
+        let entries: Vec<TranscriptEntry> = (0..4_000)
+            .map(|n| TranscriptEntry::bounded(n, "agent_thinking", "x".repeat(1024)))
+            .collect();
+        let original = ExecutionStep {
+            transcript: entries,
+            ..step("solve", StepStatus::Success, json!([]))
+        };
+
+        let record = StepRecord::bounded(&original, RECORD_BUDGET);
+        let bytes: usize = record.transcript.iter().map(|e| e.text.len()).sum();
+        assert!(
+            bytes < TRANSCRIPT_BUDGET,
+            "trimmed to {bytes} bytes, over the {TRANSCRIPT_BUDGET} budget"
+        );
+    }
+
+    /// Trimming keeps BOTH ends, and says how much it dropped.
+    ///
+    /// The start says how the agent approached the work and the end says how it
+    /// concluded; clipping only the tail would lose the conclusion, which is
+    /// usually why someone opened the transcript.
+    #[test]
+    fn trimming_keeps_the_start_and_the_end() {
+        let mut entries: Vec<TranscriptEntry> = (0..4_000)
+            .map(|n| TranscriptEntry::bounded(n, "agent_thinking", "x".repeat(1024)))
+            .collect();
+        entries[0] = TranscriptEntry::bounded(0, "agent_thinking", "FIRST");
+        let last = entries.len() - 1;
+        entries[last] = TranscriptEntry::bounded(9_999, "agent_message", "LAST");
+
+        let original = ExecutionStep {
+            transcript: entries,
+            ..step("solve", StepStatus::Success, json!([]))
+        };
+        let kept = StepRecord::bounded(&original, RECORD_BUDGET).transcript;
+
+        assert_eq!(kept.first().map(|e| e.text.as_str()), Some("FIRST"));
+        assert_eq!(kept.last().map(|e| e.text.as_str()), Some("LAST"));
+        assert!(
+            kept.iter().any(|e| e.text.contains("elided")),
+            "the gap announces itself rather than being silent"
+        );
+    }
+
+    /// A transcript within budget is untouched.
+    #[test]
+    fn a_transcript_within_budget_keeps_every_entry() {
+        let entries: Vec<TranscriptEntry> = (0..64)
+            .map(|n| TranscriptEntry::bounded(n, "agent_thinking", "x".repeat(256)))
+            .collect();
+        let original = ExecutionStep {
+            transcript: entries.clone(),
+            ..step("solve", StepStatus::Success, json!([]))
+        };
+        assert_eq!(
+            StepRecord::bounded(&original, RECORD_BUDGET).transcript,
+            entries
+        );
     }
 }
