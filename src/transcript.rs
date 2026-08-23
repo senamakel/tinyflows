@@ -16,9 +16,12 @@
 //! **Nothing in this crate folds a host's event stream into these** — the
 //! engine has no event stream of its own, and what counts as one entry is a
 //! judgement only the harness can make. Hosts fold; the crate carries.
-//! [`RunObserver::on_agent_event`](crate::observability::RunObserver::on_agent_event)
-//! is how a host reports one *while* the node is still running, rather than
-//! waiting for the step to settle.
+//!
+//! **Settled, not live.** Entries ride the outcome a harness returns, so they
+//! reach an observer when the node finishes rather than as they happen.
+//! Reporting them during a run would need a sink on the agent capability, and
+//! [`AgentRunRequest`](crate::caps::AgentRunRequest) cannot carry one — it is
+//! `Serialize` + `PartialEq` — so that is a deliberate follow-up.
 //!
 //! Deliberately flat and stringly-typed. Mirroring a host's own event
 //! vocabulary into the record would make every event kind it adds later a

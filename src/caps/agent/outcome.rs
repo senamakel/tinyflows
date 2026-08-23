@@ -130,7 +130,7 @@ pub struct AgentRunOutcome {
     ///
     /// **Settled, not live.** These ride the outcome, so they exist only once
     /// the run is over. Reporting entries *during* a run would need a sink on
-    /// this capability, which [`AgentRunRequest`] cannot carry — it is
+    /// this capability, which [`AgentRunRequest`](crate::caps::AgentRunRequest) cannot carry — it is
     /// `Serialize` + `PartialEq` — so that is a deliberate follow-up rather
     /// than something to imply here.
     ///
@@ -150,8 +150,8 @@ impl AgentRunOutcome {
     /// does: `json` is the value when it is an object or array, and `text` is
     /// the value when it is a string, else its `text` field.
     ///
-    /// This is what the default [`AgentRunner::run`] wraps a legacy
-    /// [`run_agent`](AgentRunner::run_agent) return in, and the shorthand a
+    /// This is what the default [`AgentRunner::run`](crate::caps::AgentRunner::run) wraps a legacy
+    /// [`run_agent`](crate::caps::AgentRunner::run_agent) return in, and the shorthand a
     /// simple adapter wants.
     ///
     /// ```
