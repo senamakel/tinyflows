@@ -16,9 +16,10 @@
 //! has no sandbox, which is exactly what `workflows.allowCode` says.
 
 use std::collections::BTreeMap;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 use crate::error::{EngineError, Result};
+use crate::workdir::Absolute;
 
 /// Where a script step may read a script from and run.
 #[derive(Debug, Clone, Default)]
@@ -79,6 +80,15 @@ impl ScriptPolicy {
             )));
         }
         Ok(resolved)
+    }
+
+    /// The workspace root as a plain string, for a caller seeding a run's
+    /// `run.workspace` from the same policy a shell step resolves against.
+    #[must_use]
+    pub fn workspace_str(&self) -> Option<String> {
+        self.workspace
+            .as_deref()
+            .map(|w| w.to_string_lossy().into_owned())
     }
 
     /// The shared resolution: reject the shape, then reject the destination.
