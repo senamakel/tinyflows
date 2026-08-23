@@ -42,6 +42,7 @@ use serde_json::{Map, Value};
 
 use crate::error::Result;
 use crate::model::{AgentDefinition, ToolGrant};
+use crate::transcript::TranscriptEntry;
 
 /// Which model, on which provider, an agent run should use.
 ///
@@ -381,6 +382,27 @@ pub struct AgentRunOutcome {
     /// Optional usage figures.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<AgentUsage>,
+    /// What the harness did on the way to this outcome, in order.
+    ///
+    /// The node's payload above says what came *out* of the agent; this says
+    /// what happened *inside* it — the thinking, the tool calls, the results.
+    /// The engine copies it onto the step's
+    /// [`ExecutionStep::transcript`](crate::observability::ExecutionStep::transcript),
+    /// which is how it reaches a
+    /// [`RunObserver`](crate::observability::RunObserver) — so a host that
+    /// fills this in gets a run history that explains itself instead of one
+    /// that only reports pass or fail.
+    ///
+    /// Empty by default, and empty is a normal outcome: a harness with no
+    /// event stream to fold has nothing to say here, and every host that
+    /// predates this field keeps compiling and behaving identically. Bound each
+    /// entry with [`TranscriptEntry::bounded`] — the engine does not truncate.
+    ///
+    /// A host reporting entries *while* the node still runs uses
+    /// [`RunObserver::on_agent_event`](crate::observability::RunObserver::on_agent_event);
+    /// this field is the settled set.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub transcript: Vec<TranscriptEntry>,
 }
 
 impl AgentRunOutcome {
@@ -419,7 +441,31 @@ impl AgentRunOutcome {
             json,
             raw: value,
             usage: None,
+            transcript: Vec::new(),
         }
+    }
+
+    /// The same outcome, carrying what the harness did to reach it.
+    ///
+    /// The builder half of [`transcript`](Self::transcript), so a host can fold
+    /// its event stream once and attach it without naming every other field:
+    ///
+    /// ```
+    /// use tinyflows::caps::AgentRunOutcome;
+    /// use tinyflows::transcript::TranscriptEntry;
+    /// use serde_json::json;
+    ///
+    /// let outcome = AgentRunOutcome::finished(json!("837799"))
+    ///     .with_transcript(vec![
+    ///         TranscriptEntry::bounded(1, "agent_thinking", "Collatz — memoise."),
+    ///         TranscriptEntry::bounded(2, "tool_call", "shell: python3 solve.py"),
+    ///     ]);
+    /// assert_eq!(outcome.transcript.len(), 2);
+    /// ```
+    #[must_use]
+    pub fn with_transcript(mut self, transcript: Vec<TranscriptEntry>) -> Self {
+        self.transcript = transcript;
+        self
     }
 
     /// Whether the agent reached a final answer.

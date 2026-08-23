@@ -27,6 +27,7 @@ fn step(node_id: &str, nulls: &[(&str, &str)]) -> ExecutionStep {
                 expression: expression.to_string(),
             })
             .collect(),
+        transcript: vec![],
     }
 }
 
@@ -39,6 +40,7 @@ fn failed(node_id: &str, output: serde_json::Value) -> ExecutionStep {
         // The point of this case: an error hidden by an `on_error` policy
         // carries no diagnostics at all.
         diagnostics: Vec::new(),
+        transcript: vec![],
     }
 }
 

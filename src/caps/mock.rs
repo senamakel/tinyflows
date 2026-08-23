@@ -124,6 +124,21 @@ impl AgentRunner for MockAgentHarness {
                 steps: Some(1),
                 ..Default::default()
             }),
+            // Non-empty on purpose: a host testing against this mock should see
+            // a transcript reach its observer, not an empty vec that passes for
+            // the same thing.
+            transcript: vec![
+                crate::transcript::TranscriptEntry::bounded(
+                    0,
+                    "agent_thinking",
+                    format!("deciding how to answer as {}", request.agent.id),
+                ),
+                crate::transcript::TranscriptEntry::bounded(
+                    0,
+                    "agent_message",
+                    format!("ran {}", request.agent.id),
+                ),
+            ],
         })
     }
 
@@ -219,6 +234,11 @@ impl AgentRunner for MockLimitedAgentRunner {
             json: partial.clone(),
             raw: partial,
             usage: None,
+            transcript: vec![crate::transcript::TranscriptEntry::bounded(
+                0,
+                "agent_thinking",
+                "ran out of steps mid-thought",
+            )],
         })
     }
 }
@@ -254,6 +274,13 @@ impl AgentRunner for MockPausingAgentRunner {
             json: Value::Null,
             raw: Value::Null,
             usage: None,
+            // A pause still explains itself: this is the run whose transcript is
+            // most worth reading, because its output never arrives.
+            transcript: vec![crate::transcript::TranscriptEntry::bounded(
+                0,
+                "tool_call",
+                "github.add_labels (awaiting approval)",
+            )],
         })
     }
 }

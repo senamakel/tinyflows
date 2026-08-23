@@ -35,6 +35,7 @@
 //!     output: serde_json::json!([]),
 //!     duration_ms: 0,
 //!     diagnostics: vec![],
+//!     transcript: vec![],
 //! });
 //! assert_eq!(recorder.nodes.lock().unwrap().as_slice(), ["parse"]);
 //! ```
@@ -92,6 +93,21 @@ pub struct ExecutionStep {
     /// exact unresolved wiring behind a bad tool call. Empty on error steps and
     /// for nodes without expression config.
     pub diagnostics: Vec<crate::expr::NullResolution>,
+    /// What a harness did inside this node, in order — the thinking, the tool
+    /// calls, the results.
+    ///
+    /// [`output`](Self::output) says what came *out* of the node; this says
+    /// what happened *inside* it, which for an `agent` node is most of what
+    /// there is to know. Folded by the host and handed over on
+    /// [`AgentRunOutcome::transcript`](crate::caps::AgentRunOutcome::transcript);
+    /// the engine copies it here and never interprets it.
+    ///
+    /// Empty for every non-`agent` node, for a host that reports none, and on
+    /// an error step — a node that failed produced no outcome to read one from.
+    /// A host watching a long node live wants
+    /// [`RunObserver::on_agent_event`](RunObserver::on_agent_event) instead;
+    /// this is the settled set.
+    pub transcript: Vec<crate::transcript::TranscriptEntry>,
 }
 
 /// One execution of a workflow, captured as an ordered list of [`ExecutionStep`]s.
@@ -176,6 +192,23 @@ pub trait RunObserver: Send + Sync {
     /// callback can run.
     fn on_item_finish(&self, node_id: &str, index: usize, total: usize, ok: bool) {
         let _ = (node_id, index, total, ok);
+    }
+
+    /// Called as a host's harness produces one transcript entry inside a
+    /// still-running `agent` node.
+    ///
+    /// The live counterpart of
+    /// [`ExecutionStep::transcript`](ExecutionStep::transcript), and the reason
+    /// it is not enough on its own: a step's transcript arrives when the node
+    /// *finishes*, and an agent node can run for minutes. A host that wants to
+    /// show what an agent is doing while it does it reads this; a host that
+    /// only persists finished runs can ignore it and lose nothing, since every
+    /// entry reported here also appears on the settled step.
+    ///
+    /// Called from the host's own harness thread, so an implementation must not
+    /// block — the convention is to hand the entry to a channel and return.
+    fn on_agent_event(&self, node_id: &str, entry: &crate::transcript::TranscriptEntry) {
+        let _ = (node_id, entry);
     }
 
     /// Called once, after the run settles, with the assembled [`Run`] record.

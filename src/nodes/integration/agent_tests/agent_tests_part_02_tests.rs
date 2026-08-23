@@ -364,3 +364,183 @@ mod configurable {
         assert_eq!(harness.list_agents().await.unwrap().len(), 1);
     }
 }
+
+// ---- transcripts: what the harness did inside the node ------------------
+
+mod transcript {
+    use super::agent_node;
+    use crate::caps::mock::{MockAgentHarness, MockAgentRunner, mock_capabilities_with_agent};
+    use crate::caps::AgentRunner;
+    use crate::data::Item;
+    use crate::model::AgentDefinition;
+    use crate::nodes::{NodeContext, NodeExecutor, NodeOutput};
+    use crate::observability::{NoopObserver, RunObserver};
+    use crate::transcript::TranscriptEntry;
+    use serde_json::{Value, json};
+    use std::sync::{Arc, Mutex};
+
+    /// Records the live hook, so a test can prove entries arrive as the node
+    /// runs rather than only on the settled step.
+    #[derive(Default)]
+    struct LiveCapture {
+        seen: Mutex<Vec<(String, String)>>,
+    }
+
+    impl RunObserver for LiveCapture {
+        fn on_agent_event(&self, node_id: &str, entry: &TranscriptEntry) {
+            self.seen
+                .lock()
+                .unwrap()
+                .push((node_id.to_string(), entry.kind.clone()));
+        }
+    }
+
+    async fn execute(
+        runner: Arc<dyn AgentRunner>,
+        config: Value,
+        input: Vec<Item>,
+        observer: &dyn RunObserver,
+    ) -> NodeOutput {
+        let node = agent_node(config);
+        let caps = mock_capabilities_with_agent_arc(runner);
+        let agents: &[AgentDefinition] = &[];
+        let run_meta = json!({ "run_id": "run_t", "sub_workflow_depth": 0 });
+        super::super::AgentNode
+            .execute(NodeContext {
+                node: &node,
+                input: &input,
+                run: &run_meta,
+                nodes: &Value::Null,
+                caps: &caps,
+                agents,
+                observer,
+                token: crate::engine::CancellationToken::new(),
+                lane: None,
+                resume: None,
+                step: 0,
+            })
+            .await
+            .expect("execute")
+    }
+
+    /// `mock_capabilities_with_agent` takes a concrete runner; these tests need
+    /// to swap two different ones through the same helper.
+    fn mock_capabilities_with_agent_arc(
+        runner: Arc<dyn AgentRunner>,
+    ) -> crate::caps::Capabilities {
+        let mut caps = mock_capabilities_with_agent(MockAgentRunner);
+        caps.agent = Some(runner);
+        caps
+    }
+
+    fn harness() -> Arc<dyn AgentRunner> {
+        Arc::new(MockAgentHarness::new())
+    }
+
+    #[tokio::test]
+    async fn a_harness_transcript_reaches_the_node_output() {
+        // The settled half: what the host reported on its `AgentRunOutcome`
+        // rides the `NodeOutput`, which is what the engine copies onto the step.
+        let out = execute(
+            harness(),
+            json!({ "agent_ref": "triager" }),
+            vec![Item::new(json!({ "seed": 1 }))],
+            &NoopObserver,
+        )
+        .await;
+
+        assert_eq!(
+            out.transcript
+                .iter()
+                .map(|e| e.kind.as_str())
+                .collect::<Vec<_>>(),
+            ["agent_thinking", "agent_message"],
+            "MockAgentHarness reports two entries; both must survive to the output"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_same_entries_are_also_reported_live() {
+        // Both paths carry the same entries on purpose: a console watching a
+        // long node renders from `on_agent_event`, a run read back tomorrow
+        // renders from the step, and neither may be the only source.
+        let observer = LiveCapture::default();
+        let out = execute(
+            harness(),
+            json!({ "agent_ref": "triager" }),
+            vec![Item::new(json!({ "seed": 1 }))],
+            &observer,
+        )
+        .await;
+
+        let seen = observer.seen.lock().unwrap();
+        assert_eq!(seen.len(), out.transcript.len());
+        assert!(
+            seen.iter().all(|(node, _)| node == "n"),
+            "every entry is attributed to the node that produced it"
+        );
+        assert_eq!(
+            seen.iter()
+                .map(|(_, kind)| kind.as_str())
+                .collect::<Vec<_>>(),
+            ["agent_thinking", "agent_message"]
+        );
+    }
+
+    #[tokio::test]
+    async fn per_item_turns_accumulate_into_one_transcript() {
+        // Why the accumulator is shared rather than returned: a per-item node
+        // runs one turn per input and reports ONE step. Without it, every turn
+        // but the last would be dropped.
+        let out = execute(
+            harness(),
+            json!({ "agent_ref": "triager", "execution": "per_item" }),
+            vec![
+                Item::new(json!({ "seed": 1 })),
+                Item::new(json!({ "seed": 2 })),
+                Item::new(json!({ "seed": 3 })),
+            ],
+            &NoopObserver,
+        )
+        .await;
+
+        assert_eq!(out.items.len(), 3, "one turn per input item");
+        assert_eq!(
+            out.transcript.len(),
+            6,
+            "two entries per turn, all three turns kept"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_legacy_host_reports_no_transcript() {
+        // THE non-breaking guarantee. `MockAgentRunner` implements only the
+        // legacy `run_agent`, so the default `run` wraps its return in a
+        // `finished` outcome with no transcript. A host that never heard of this
+        // field keeps working and simply has nothing to say.
+        let out = execute(
+            Arc::new(MockAgentRunner),
+            json!({ "agent_ref": "triager" }),
+            vec![Item::new(json!({ "seed": 1 }))],
+            &NoopObserver,
+        )
+        .await;
+        assert!(out.transcript.is_empty());
+        assert_eq!(out.items.len(), 1, "the turn still ran and still emitted");
+    }
+
+    #[tokio::test]
+    async fn a_node_with_no_harness_reports_no_transcript() {
+        // The degraded path: no `agent_ref`, so the node falls back to
+        // `LlmProvider` and there is no harness to have a transcript. Empty is
+        // the honest answer, and must not be an error.
+        let out = execute(
+            harness(),
+            json!({ "prompt": "hi" }),
+            vec![Item::new(json!({}))],
+            &NoopObserver,
+        )
+        .await;
+        assert!(out.transcript.is_empty());
+    }
+}
