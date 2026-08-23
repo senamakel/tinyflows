@@ -625,6 +625,40 @@ pub async fn run_transcripts(store: &dyn Ledger) {
     a_looped_node_keeps_every_iteration(store).await;
     saving_a_transcript_twice_replaces_rather_than_appends(store).await;
     a_page_windows_the_episode_list(store).await;
+    an_agent_step_keeps_its_harness_transcript(store).await;
+}
+
+/// An `agent` step's harness transcript survives the ledger.
+///
+/// `Ran::steps` is the archival record — "every node activation, at full record
+/// fidelity" — so a backend that persists the step but drops what the harness
+/// did inside it satisfies the type and loses the point.
+async fn an_agent_step_keeps_its_harness_transcript(store: &dyn Ledger) {
+    use tinyflows::transcript::TranscriptEntry;
+
+    let entries = vec![
+        TranscriptEntry::bounded(1, "agent_thinking", "memoise the chain"),
+        TranscriptEntry::bounded(2, "tool_call", "shell: python3 solve.py"),
+        TranscriptEntry::bounded(3, "tool_result", "837799"),
+    ];
+    let mut solve = step("solve", 1);
+    solve.transcript = entries.clone();
+
+    store
+        .save_steps("ldg_transcript", &[solve, step("check", 2)])
+        .await
+        .expect("save");
+
+    let back = store.steps("ldg_transcript").await.expect("steps");
+    assert_eq!(back.len(), 2);
+    assert_eq!(
+        back[0].transcript, entries,
+        "the agent node's transcript round-trips whole and in order"
+    );
+    assert!(
+        back[1].transcript.is_empty(),
+        "a step that recorded none still reads as none, not as the previous step's"
+    );
 }
 
 fn step(node_id: &str, n: u64) -> crate::execute::StepRecord {
@@ -634,6 +668,7 @@ fn step(node_id: &str, n: u64) -> crate::execute::StepRecord {
         output: serde_json::json!({ "i": n }),
         duration_ms: n,
         null_bindings: Vec::new(),
+        transcript: Vec::new(),
     }
 }
 

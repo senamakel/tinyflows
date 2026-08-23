@@ -19,7 +19,8 @@
 //! - [`note`] — what the host has learned about a workflow across runs.
 //! - [`proposal`] — a graph change suggested but not yet made.
 //! - [`error`] — the failure vocabulary every surface reports through.
-//! - [`transcript`] — one line of what an agent did inside a step.
+//! - [`TranscriptEntry`] — one line of what an agent did inside a step,
+//!   re-exported from [`crate::transcript`] because the engine carries it too.
 //!
 //! Why a failed run failed, in terms an author can act on, is
 //! [`crate::diagnostics`] — reading a run's steps is a pure function of the
@@ -31,7 +32,6 @@ mod error;
 mod note;
 mod proposal;
 mod run;
-mod transcript;
 mod workflow;
 
 #[cfg(test)]
@@ -49,7 +49,11 @@ pub use run::{
     LEGACY_TRUNCATED_KEY, RunId, RunOrigin, RunRecord, RunStatus, RunStep, TRUNCATED_KEY,
     bounded_evidence, bounded_within, is_truncated,
 };
-pub use transcript::TranscriptEntry;
+// Re-exported, not owned: `TranscriptEntry` is engine surface (it rides an
+// `ExecutionStep` and an `AgentRunOutcome`), so it lives at `crate::transcript`
+// and cannot sit behind the `store` feature. Kept here so every path that has
+// always read `store::types::TranscriptEntry` still resolves.
+pub use crate::transcript::TranscriptEntry;
 pub use workflow::{
     WorkflowDefaults, WorkflowId, WorkflowRecord, WorkflowRevision, WorkflowSummary,
     record_fingerprint,

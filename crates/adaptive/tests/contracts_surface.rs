@@ -104,6 +104,7 @@ fn the_envelope_is_camel_case_and_the_graph_inside_it_is_not() {
                 output: serde_json::json!({"ok": true}),
                 duration_ms: 12,
                 null_bindings: Vec::new(),
+                transcript: Vec::new(),
             }],
             pending_approvals: vec!["publish".into()],
             cancelled: false,

@@ -158,6 +158,18 @@ pub struct NodeOutput {
     /// is why, before this existed, a `sub_workflow` whose child paused at an
     /// approval gate had to fail the parent outright rather than pause it.
     pub control: Option<NodeControl>,
+    /// What a harness did inside this node, in order.
+    ///
+    /// Only an `agent` node fills this in, and only when the host's
+    /// [`AgentRunner`](crate::caps::AgentRunner) reported one on its
+    /// [`AgentRunOutcome`](crate::caps::AgentRunOutcome). The engine copies it
+    /// onto the node's
+    /// [`ExecutionStep`](crate::observability::ExecutionStep) and otherwise
+    /// does not read it — it is carried, never interpreted.
+    ///
+    /// Empty for every other node kind, and for a harness with no event stream
+    /// to fold.
+    pub transcript: Vec<crate::transcript::TranscriptEntry>,
 }
 
 /// What a node asks the engine to do instead of simply emitting its items.
@@ -235,6 +247,15 @@ impl NodeOutput {
     #[must_use]
     pub fn empty() -> Self {
         Self::default()
+    }
+
+    /// The same output, carrying what a harness did to produce it.
+    ///
+    /// See [`transcript`](Self::transcript). Only the `agent` node uses this.
+    #[must_use]
+    pub fn with_transcript(mut self, transcript: Vec<crate::transcript::TranscriptEntry>) -> Self {
+        self.transcript = transcript;
+        self
     }
 
     /// Attaches data-binding diagnostics (null-resolved expressions) to this

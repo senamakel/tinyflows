@@ -35,6 +35,7 @@
 //!     output: serde_json::json!([]),
 //!     duration_ms: 0,
 //!     diagnostics: vec![],
+//!     transcript: vec![],
 //! });
 //! assert_eq!(recorder.nodes.lock().unwrap().as_slice(), ["parse"]);
 //! ```
@@ -63,9 +64,13 @@ pub enum RunStatus {
 }
 
 /// The outcome of a single [`ExecutionStep`].
-#[derive(Debug, Clone)]
+///
+/// [`Success`](Self::Success) is the default so [`ExecutionStep`] can derive
+/// one — see the note there.
+#[derive(Debug, Clone, Default)]
 pub enum StepStatus {
     /// The node executed and produced output items.
+    #[default]
     Success,
     /// The node's executor errored (after any retries were exhausted).
     Error,
@@ -76,7 +81,26 @@ pub enum StepStatus {
 ///
 /// This is the record the canvas renders when a user inspects a node, and what a
 /// run-history view summarizes.
-#[derive(Debug, Clone)]
+/// # Constructing one
+///
+/// `Default` is derived so a host can build a step without naming every field:
+///
+/// ```
+/// use tinyflows::observability::{ExecutionStep, StepStatus};
+///
+/// let step = ExecutionStep {
+///     node_id: "solve".to_string(),
+///     status: StepStatus::Error,
+///     ..Default::default()
+/// };
+/// assert!(step.transcript.is_empty());
+/// ```
+///
+/// That is the migration path when this struct gains a field: a literal that
+/// names every one breaks, and `..Default::default()` does not. Preferred over
+/// `#[non_exhaustive]`, which would forbid the literal outright — worse for a
+/// type hosts are meant to build in their own tests.
+#[derive(Debug, Clone, Default)]
 pub struct ExecutionStep {
     /// The id of the node this step ran.
     pub node_id: String,
@@ -92,6 +116,26 @@ pub struct ExecutionStep {
     /// exact unresolved wiring behind a bad tool call. Empty on error steps and
     /// for nodes without expression config.
     pub diagnostics: Vec<crate::expr::NullResolution>,
+    /// What a harness did inside this node, in order — the thinking, the tool
+    /// calls, the results.
+    ///
+    /// [`output`](Self::output) says what came *out* of the node; this says
+    /// what happened *inside* it, which for an `agent` node is most of what
+    /// there is to know. Folded by the host and handed over on
+    /// [`AgentRunOutcome::transcript`](crate::caps::AgentRunOutcome::transcript);
+    /// the engine copies it here and never interprets it.
+    ///
+    /// Empty for every non-`agent` node, for a host that reports none, and on
+    /// an error step — a node that failed produced no outcome to read one from,
+    /// which is a known gap for a paused agent (see `AgentRunOutcome::transcript`).
+    ///
+    /// **Settled, not live.** Entries arrive when the node finishes, because
+    /// they ride the outcome the harness returns. Reporting them *during* a run
+    /// would need a sink on the capability contract, which
+    /// [`AgentRunRequest`](crate::caps::AgentRunRequest) cannot carry (it is
+    /// `Serialize` + `PartialEq`); that is a deliberate follow-up rather than
+    /// something to imply here.
+    pub transcript: Vec<crate::transcript::TranscriptEntry>,
 }
 
 /// One execution of a workflow, captured as an ordered list of [`ExecutionStep`]s.

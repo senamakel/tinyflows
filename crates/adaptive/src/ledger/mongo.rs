@@ -467,6 +467,8 @@ impl Ledger for MongoLedger {
                         "duration_ms": i64::try_from(step.duration_ms).unwrap_or(i64::MAX),
                         "null_bindings": serde_json::to_string(&step.null_bindings)
                             .map_err(|e| LedgerError::Corrupt(e.to_string()))?,
+                        "transcript": serde_json::to_string(&step.transcript)
+                            .map_err(|e| LedgerError::Corrupt(e.to_string()))?,
                     } },
                 )
                 .upsert(true)
@@ -496,6 +498,15 @@ impl Ledger for MongoLedger {
                 duration_ms: u64::from(as_u32(&d, "duration_ms")),
                 null_bindings: serde_json::from_str(&text(&d, "null_bindings"))
                     .map_err(|e| LedgerError::Corrupt(e.to_string()))?,
+                // A document written before this field existed has no
+                // `transcript` key; `text` yields "" for it, which is not valid
+                // JSON. Absent means "recorded none", so it reads as empty
+                // rather than corrupting the whole attempt's steps.
+                transcript: match text(&d, "transcript").as_str() {
+                    "" => Vec::new(),
+                    raw => serde_json::from_str(raw)
+                        .map_err(|e| LedgerError::Corrupt(e.to_string()))?,
+                },
             });
         }
         Ok(out)

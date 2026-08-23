@@ -50,11 +50,132 @@ use tinyflows::evidence::bounded_within;
 use tinyflows::expr::NullResolution;
 use tinyflows::model::WorkflowGraph;
 use tinyflows::observability::{ExecutionStep, StepStatus};
+use tinyflows::transcript::TranscriptEntry;
 
 use super::Ran;
 
 /// Per-node budget for the durable record. Written once; generous.
 pub const RECORD_BUDGET: usize = 256 * 1024;
+
+/// Aggregate budget for one step's transcript, in bytes of entry text.
+///
+/// A per-entry bound is not enough on its own. `TranscriptEntry::bounded` caps
+/// one entry at 4 KiB, and a `per_item` node folds every item's turn into ONE
+/// step — so a few thousand entries reach the 16 MB limit a Mongo document
+/// may hold, in exactly the production-only way the ledger's own note about
+/// one-document-per-step warns of. Worse, `save_steps` deletes before it
+/// upserts, so an oversized write destroys the previous record and then fails.
+pub const TRANSCRIPT_BUDGET: usize = RECORD_BUDGET;
+
+/// Kept from each end when a transcript is over budget.
+const TRANSCRIPT_EDGE: usize = 32;
+
+/// Bytes of one entry's `kind` kept.
+///
+/// A kind is a discriminator — `tool_call`, `agent_thinking` — so this is
+/// generous for anything meant. `TranscriptEntry::bounded` caps `text` and
+/// not this, and the field is public, so without a cap here four entries
+/// carrying their payload in `kind` walk straight past the budget.
+const TRANSCRIPT_KIND_BYTES: usize = 128;
+
+/// What one entry costs against [`TRANSCRIPT_BUDGET`].
+///
+/// `kind` counts as well as `text`: it is host-supplied and an open set, so a
+/// budget that ignored it could be walked past by a harness that puts its
+/// payload there.
+fn entry_cost(entry: &TranscriptEntry) -> usize {
+    entry.kind.len() + entry.text.len()
+}
+
+/// Trims `entries` to [`TRANSCRIPT_BUDGET`], keeping both ends.
+///
+/// Two passes, because there are two ways to be over budget and each needs its
+/// own answer:
+///
+/// 1. **Every entry is re-bounded.** `TranscriptEntry::bounded` is the
+///    per-entry cap, but nothing forces a harness to build its entries through
+///    it — the struct's fields are public. So one entry larger than a whole
+///    Mongo document can arrive, and no count-based rule would catch it.
+/// 2. **Then the middle is dropped** until the aggregate fits. Head *and*
+///    tail, with a marker between: the start says how the agent approached the
+///    work and the end says how it concluded, and the middle is the most
+///    droppable part of a long tool loop. Clipping only the tail would lose the
+///    conclusion, which is usually why someone opened the transcript.
+///
+/// There is deliberately no early return on a short transcript. Sixty-four
+/// entries can be over budget just as four thousand can, and an early return
+/// keyed on count was exactly the hole review found in the first version of
+/// this function.
+fn bounded_transcript(entries: &[TranscriptEntry]) -> Vec<TranscriptEntry> {
+    let out: Vec<TranscriptEntry> = entries
+        .iter()
+        .map(|e| {
+            let mut kind = e.kind.clone();
+            if kind.len() > TRANSCRIPT_KIND_BYTES {
+                let end = kind
+                    .char_indices()
+                    .map(|(index, _)| index)
+                    .take_while(|index| *index <= TRANSCRIPT_KIND_BYTES)
+                    .last()
+                    .unwrap_or(0);
+                kind.truncate(end);
+            }
+            TranscriptEntry::bounded(e.at_ms, kind, e.text.clone())
+        })
+        .collect();
+
+    let total: usize = out.iter().map(entry_cost).sum();
+    if total <= TRANSCRIPT_BUDGET {
+        return out;
+    }
+
+    // One pass from each end, never a rescan. Walking the vector and removing
+    // from its middle re-measures the whole thing per iteration and shifts the
+    // suffix each time — quadratic, on work that happens after the agent has
+    // finished and while a report is waiting to go out.
+    //
+    // Half the budget from each end, so a transcript that is huge at one end
+    // cannot starve the other.
+    let half = TRANSCRIPT_BUDGET / 2;
+
+    let mut head = 0usize;
+    let mut spent = 0usize;
+    while head < out.len() && head < TRANSCRIPT_EDGE {
+        let cost = entry_cost(&out[head]);
+        if spent + cost > half {
+            break;
+        }
+        spent += cost;
+        head += 1;
+    }
+
+    let mut tail = 0usize;
+    spent = 0;
+    while tail < out.len() - head && tail < TRANSCRIPT_EDGE {
+        let cost = entry_cost(&out[out.len() - 1 - tail]);
+        if spent + cost > half {
+            break;
+        }
+        spent += cost;
+        tail += 1;
+    }
+
+    let dropped = out.len() - head - tail;
+    if dropped == 0 {
+        return out;
+    }
+
+    let at_ms = out.get(head).map_or(0, |e| e.at_ms);
+    let mut trimmed: Vec<TranscriptEntry> = Vec::with_capacity(head + tail + 1);
+    trimmed.extend_from_slice(&out[..head]);
+    trimmed.push(TranscriptEntry::bounded(
+        at_ms,
+        "error",
+        format!("…[{dropped} transcript entries elided to fit the record budget]"),
+    ));
+    trimmed.extend_from_slice(&out[out.len() - tail..]);
+    trimmed
+}
 
 /// Per-node budget for what the judge reads. A dozen of these share one context
 /// window, so it is much smaller than the record.
@@ -92,6 +213,22 @@ pub struct StepRecord {
     /// Config expressions that resolved to null during this activation.
     #[serde(default)]
     pub null_bindings: Vec<NullResolution>,
+    /// What the harness did inside the node, in order.
+    ///
+    /// Carried rather than dropped because [`Ran::steps`](crate::execute::Ran)
+    /// is the archival record — "every node activation, at full record
+    /// fidelity" — and for an `agent` node the transcript is most of what there
+    /// is to know.
+    ///
+    /// Bounded differently from `output`, not left unbounded: individual
+    /// entries are already capped, so what matters here is the *aggregate*
+    /// (see [`TRANSCRIPT_BUDGET`]), and an over-budget transcript keeps both
+    /// ends rather than being clipped from one — a truncated payload loses its
+    /// tail, a truncated transcript would lose its conclusion.
+    ///
+    /// Empty for every non-`agent` node and for a harness that reports none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub transcript: Vec<TranscriptEntry>,
 }
 
 impl StepRecord {
@@ -107,6 +244,7 @@ impl StepRecord {
             output: bounded_within(&step.output, budget),
             duration_ms: u64::try_from(step.duration_ms).unwrap_or(u64::MAX),
             null_bindings: step.diagnostics.clone(),
+            transcript: bounded_transcript(&step.transcript),
         }
     }
 
@@ -122,6 +260,7 @@ impl StepRecord {
             output: self.output.clone(),
             duration_ms: u128::from(self.duration_ms),
             diagnostics: self.null_bindings.clone(),
+            transcript: self.transcript.clone(),
         }
     }
 }
@@ -224,173 +363,5 @@ impl RunReport {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use tinyflows::evidence::is_truncated;
-
-    fn step(node_id: &str, status: StepStatus, output: Value) -> ExecutionStep {
-        ExecutionStep {
-            node_id: node_id.into(),
-            status,
-            output,
-            duration_ms: 12,
-            diagnostics: Vec::new(),
-        }
-    }
-
-    fn graph() -> WorkflowGraph {
-        WorkflowGraph {
-            schema_version: 1,
-            id: Some("g".into()),
-            name: "g".into(),
-            inputs: Vec::new(),
-            agents: Vec::new(),
-            nodes: Vec::new(),
-            edges: Vec::new(),
-        }
-    }
-
-    #[test]
-    fn one_fat_node_does_not_take_the_rest_of_the_record_with_it() {
-        // The whole reason bounding is per node. `bounded_within` is
-        // non-recursive: applied to the aggregate, the big one would replace
-        // every other node's output with a string preview.
-        let big = json!({ "body": "x".repeat(600 * 1024) });
-        let report = RunReport {
-            steps: vec![
-                StepRecord::bounded(
-                    &step("small", StepStatus::Success, json!({"ok": 1})),
-                    RECORD_BUDGET,
-                ),
-                StepRecord::bounded(&step("huge", StepStatus::Success, big), RECORD_BUDGET),
-            ],
-            ..RunReport::default()
-        };
-
-        assert!(
-            !is_truncated(&report.steps[0].output),
-            "the small node is intact"
-        );
-        assert!(
-            is_truncated(&report.steps[1].output),
-            "the big one is trimmed"
-        );
-        assert_eq!(report.steps[0].output, json!({"ok": 1}));
-    }
-
-    #[test]
-    fn a_swallowed_error_survives_the_round_trip() {
-        // `output` alone cannot express this, which is why steps cross.
-        let record = StepRecord::bounded(
-            &step(
-                "fetch",
-                StepStatus::Error,
-                json!({"error": "connection refused"}),
-            ),
-            RECORD_BUDGET,
-        );
-        let json = serde_json::to_string(&record).expect("serializes");
-        let back: StepRecord = serde_json::from_str(&json).expect("deserializes");
-        assert_eq!(back.status, StepOutcome::Error);
-        assert!(matches!(back.to_step().status, StepStatus::Error));
-    }
-
-    #[test]
-    fn every_iteration_of_a_looped_node_is_kept() {
-        let report = RunReport {
-            steps: vec![
-                StepRecord::bounded(
-                    &step("body", StepStatus::Success, json!({"i": 1})),
-                    RECORD_BUDGET,
-                ),
-                StepRecord::bounded(
-                    &step("body", StepStatus::Success, json!({"i": 2})),
-                    RECORD_BUDGET,
-                ),
-                StepRecord::bounded(
-                    &step("body", StepStatus::Success, json!({"i": 3})),
-                    RECORD_BUDGET,
-                ),
-            ],
-            ..RunReport::default()
-        };
-        assert_eq!(report.steps.len(), 3);
-
-        // The reconstructed final state keeps only the last, as the engine's own
-        // does — the history lives on `steps`.
-        let ran = report.into_ran(&graph());
-        assert_eq!(ran.outcome.output["nodes"]["body"], json!({"i": 3}));
-        assert_eq!(ran.steps.len(), 3);
-    }
-
-    #[test]
-    fn the_judges_view_is_bounded_tighter_than_the_record() {
-        let body = json!({ "body": "x".repeat(64 * 1024) });
-        let report = RunReport {
-            steps: vec![StepRecord::bounded(
-                &step("agent", StepStatus::Success, body),
-                RECORD_BUDGET,
-            )],
-            ..RunReport::default()
-        };
-        // Well under the record budget, so kept whole there...
-        assert!(!is_truncated(&report.steps[0].output));
-
-        let ran = report.into_ran(&graph());
-        // ...and trimmed in the projection the model reads.
-        assert!(is_truncated(&ran.outcome.output["nodes"]["agent"]));
-        assert!(
-            !is_truncated(&ran.steps[0].output),
-            "the record is untouched"
-        );
-    }
-
-    #[test]
-    fn a_failed_run_still_carries_every_step_it_managed() {
-        // The case `output` cannot express at all: the engine returned Err, so
-        // there is no outcome, but eleven steps happened.
-        let report = RunReport {
-            steps: (0..11)
-                .map(|i| {
-                    StepRecord::bounded(
-                        &step("loop", StepStatus::Success, json!({ "i": i })),
-                        RECORD_BUDGET,
-                    )
-                })
-                .collect(),
-            failed: Some("loop node exceeded its maximum of 5 iterations".into()),
-            ..RunReport::default()
-        };
-        let ran = report.into_ran(&graph());
-        assert_eq!(ran.steps.len(), 11);
-        assert_eq!(
-            ran.outcome.output["error"],
-            json!("loop node exceeded its maximum of 5 iterations")
-        );
-        // And the nodes are there too, so the judge sees what did happen rather
-        // than only that something broke.
-        assert!(ran.outcome.output["nodes"]["loop"].is_object());
-    }
-
-    #[test]
-    fn the_whole_report_round_trips_as_json() {
-        let report = RunReport {
-            attempt_id: "ep-1/3".into(),
-            steps: vec![StepRecord::bounded(
-                &step("write", StepStatus::Success, json!({"path": "report.md"})),
-                RECORD_BUDGET,
-            )],
-            pending_approvals: vec!["publish".into()],
-            cancelled: false,
-            changed: "1 file changed".into(),
-            failed: None,
-            cost_usd: 0.42,
-        };
-        let text = serde_json::to_string(&report).expect("serializes");
-        assert!(text.contains("attemptId"), "camelCase on the wire: {text}");
-        let back: RunReport = serde_json::from_str(&text).expect("deserializes");
-        assert_eq!(back.attempt_id, "ep-1/3");
-        assert_eq!(back.pending_approvals, vec!["publish".to_string()]);
-        assert!((back.cost_usd - 0.42).abs() < f64::EPSILON);
-    }
-}
+#[path = "wire_tests.rs"]
+mod tests;

@@ -1,5 +1,8 @@
 //! The `agent` node: an LLM agent turn with optional sub-ports.
 
+use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex};
+
 use async_trait::async_trait;
 use serde_json::Value;
 
@@ -7,6 +10,55 @@ use crate::data::Item;
 use crate::error::Result;
 use crate::nodes::integration::schema;
 use crate::nodes::{NodeContext, NodeExecutor, NodeOutput};
+use crate::transcript::TranscriptEntry;
+
+/// Collects every turn's transcript across one node activation.
+///
+/// A `per_item` agent node runs one turn per input item while the step it
+/// reports carries a single transcript, so the entries have to accumulate
+/// somewhere shared. Shared rather than returned so `map_items`' closure
+/// signature stays as it is.
+///
+/// Keyed by **item index** rather than appended flat, because `per_item` with
+/// `concurrency > 1` completes turns in whatever order they finish while
+/// `map_items` deliberately restores its outputs to input order. Appending on
+/// completion would make one run's transcript interleave differently from the
+/// next for identical input; draining in key order makes it match the items it
+/// describes. `None` is the single-turn case, which sorts first and is alone.
+type TranscriptSink = Arc<Mutex<BTreeMap<Option<usize>, Vec<TranscriptEntry>>>>;
+
+/// Keeps `entries` for the settled step, under the item they belong to.
+///
+/// Not reported live: they ride the outcome the harness returns, so by the time
+/// this runs the turn is over. See `ExecutionStep::transcript`.
+fn record_transcript(
+    ctx: &NodeContext<'_>,
+    sink: &TranscriptSink,
+    item_index: Option<usize>,
+    entries: Vec<TranscriptEntry>,
+) {
+    if entries.is_empty() {
+        return;
+    }
+    // A poisoned lock must not fail the turn: the agent already ran and its
+    // answer is good. Losing the transcript degrades the run history, which is
+    // strictly better than discarding the work.
+    match sink.lock() {
+        Ok(mut held) => held.entry(item_index).or_default().extend(entries),
+        Err(err) => tracing::warn!(
+            node = %ctx.node.id,
+            %err,
+            "agent node: transcript sink poisoned; dropping this turn's entries"
+        ),
+    }
+}
+
+/// Takes everything the sink holds, in item order, leaving it empty.
+fn drain(sink: &TranscriptSink) -> Vec<TranscriptEntry> {
+    sink.lock()
+        .map(|mut held| std::mem::take(&mut *held).into_values().flatten().collect())
+        .unwrap_or_default()
+}
 
 /// Runs an LLM agent turn, optionally composed with **sub-ports** that attach an
 /// output parser and tools to the bare completion.
@@ -80,12 +132,18 @@ impl NodeExecutor for AgentNode {
                 == crate::nodes::ExecutionMode::PerItem
                 && !ctx.input.is_empty();
 
+        // One accumulator for the whole node activation, because a `per_item`
+        // agent node runs many turns and the step carries one transcript. Shared
+        // rather than returned, so `map_items`' closure signature is untouched.
+        let transcript: TranscriptSink = Arc::new(Mutex::new(BTreeMap::new()));
+
         if per_item {
             // Fan out: `config.concurrency` decides how many turns run at once
             // (default 1 — sequential, as this node has always behaved), and
             // `config.on_item_error` what a failing turn does to the batch.
             let opts = crate::nodes::map::map_options(&ctx.node.config, &ctx.node.id, ctx.run);
             let ctx = &ctx;
+            let transcript = &transcript;
             let (items, diagnostics) = crate::nodes::map::map_items(
                 ctx.input.len(),
                 &ctx.node.id,
@@ -98,19 +156,23 @@ impl NodeExecutor for AgentNode {
                     // The same scope the config was resolved against, so an
                     // agent definition's own `=`-expressions see this item.
                     let scope = crate::nodes::expr_scope_for(ctx, item_json);
-                    let item = run_turn_indexed(ctx, &cfg, &scope, Some(index)).await?;
+                    let item = run_turn_indexed(ctx, &cfg, &scope, Some(index), transcript).await?;
                     Ok((item, diags))
                 },
             )
             .await?;
-            return Ok(NodeOutput::main(items).with_diagnostics(diagnostics));
+            return Ok(NodeOutput::main(items)
+                .with_diagnostics(diagnostics)
+                .with_transcript(drain(transcript)));
         }
 
         // Single turn against the first-item scope (or empty input).
         let (cfg, diagnostics) = crate::nodes::resolve_config_traced(&ctx);
         let scope = crate::nodes::expr_scope(&ctx);
-        let item = run_turn(&ctx, &cfg, &scope).await?;
-        Ok(NodeOutput::main(vec![item]).with_diagnostics(diagnostics))
+        let item = run_turn(&ctx, &cfg, &scope, &transcript).await?;
+        Ok(NodeOutput::main(vec![item])
+            .with_diagnostics(diagnostics)
+            .with_transcript(drain(&transcript)))
     }
 }
 
@@ -118,8 +180,13 @@ impl NodeExecutor for AgentNode {
 /// registered agent kind), the optional tool sub-port, the optional
 /// output-parser sub-port, and finally the stable `{ json, text, raw }`
 /// envelope. Returns the emitted [`Item`] (without pairing — the caller sets it).
-async fn run_turn(ctx: &NodeContext<'_>, cfg: &Value, scope: &Value) -> Result<Item> {
-    run_turn_indexed(ctx, cfg, scope, None).await
+async fn run_turn(
+    ctx: &NodeContext<'_>,
+    cfg: &Value,
+    scope: &Value,
+    transcript: &TranscriptSink,
+) -> Result<Item> {
+    run_turn_indexed(ctx, cfg, scope, None, transcript).await
 }
 
 /// [`run_turn`], told which input item it is running for under `per_item`
@@ -129,6 +196,7 @@ async fn run_turn_indexed(
     cfg: &Value,
     scope: &Value,
     item_index: Option<usize>,
+    transcript: &TranscriptSink,
 ) -> Result<Item> {
     let conn = cfg.get("connection_ref").and_then(Value::as_str);
 
@@ -146,7 +214,7 @@ async fn run_turn_indexed(
         let request =
             super::agent_request::assemble(ctx, cfg, agent_ref, scope, item_index).await?;
         let outcome = runner.run(request).await?;
-        return finish_agent_run(ctx, cfg, conn, agent_ref, outcome).await;
+        return finish_agent_run(ctx, cfg, conn, agent_ref, outcome, transcript, item_index).await;
     }
 
     // Degraded path: no agent kind selected, or no harness wired. The node
@@ -300,8 +368,15 @@ async fn finish_agent_run(
     conn: Option<&str>,
     agent_ref: &str,
     outcome: crate::caps::AgentRunOutcome,
+    transcript: &TranscriptSink,
+    item_index: Option<usize>,
 ) -> Result<Item> {
     use crate::caps::StopReason;
+
+    // Before the stop reason is judged, so a run that paused or hit a limit
+    // still explains what it managed to do — that is exactly the run whose
+    // transcript is worth reading.
+    record_transcript(ctx, transcript, item_index, outcome.transcript);
 
     let mut meta = serde_json::json!({ "stop": outcome.stop.as_str(), "agent_ref": agent_ref });
 

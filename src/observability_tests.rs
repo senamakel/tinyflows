@@ -12,6 +12,7 @@ fn noop_observer_callbacks_are_inert() {
         output: Value::Null,
         duration_ms: 0,
         diagnostics: Vec::new(),
+        transcript: vec![],
     });
     observer.on_item_start("n", 0, 1);
     observer.on_item_finish("n", 0, 1, true);
@@ -44,6 +45,7 @@ fn constructs_execution_step_with_each_status() {
         output: serde_json::json!([{ "json": { "x": 1 } }]),
         duration_ms: 12,
         diagnostics: Vec::new(),
+        transcript: vec![],
     };
     assert_eq!(ok.node_id, "parse");
     assert_eq!(ok.duration_ms, 12);
@@ -56,6 +58,7 @@ fn constructs_execution_step_with_each_status() {
         output: Value::Null,
         duration_ms: 0,
         diagnostics: Vec::new(),
+        transcript: vec![],
     };
     assert!(matches!(err.status, StepStatus::Error));
     assert_eq!(err.output, Value::Null);
@@ -72,6 +75,7 @@ fn constructs_run_with_steps() {
             output: serde_json::json!([]),
             duration_ms: 3,
             diagnostics: Vec::new(),
+            transcript: vec![],
         }],
     };
     assert_eq!(run.id, "run-7");
@@ -129,6 +133,7 @@ fn custom_observer_receives_all_callbacks() {
         output: serde_json::json!([]),
         duration_ms: 1,
         diagnostics: Vec::new(),
+        transcript: vec![],
     });
     observer.on_step_finish(&ExecutionStep {
         node_id: "second".to_string(),
@@ -136,6 +141,7 @@ fn custom_observer_receives_all_callbacks() {
         output: Value::Null,
         duration_ms: 2,
         diagnostics: Vec::new(),
+        transcript: vec![],
     });
     observer.on_run_finish(&Run {
         id: "run-9".to_string(),
@@ -166,5 +172,44 @@ fn observer_is_usable_as_trait_object() {
         output: serde_json::json!([]),
         duration_ms: 0,
         diagnostics: Vec::new(),
+        transcript: vec![],
     });
+}
+
+/// A step carries what the harness did, and it reaches an observer through
+/// `on_step_finish` — the settled set, not a live feed. See
+/// [`ExecutionStep::transcript`].
+#[test]
+fn a_step_carries_the_settled_transcript() {
+    let observer = Capture::default();
+    let step = ExecutionStep {
+        node_id: "solve".to_string(),
+        status: StepStatus::Success,
+        output: serde_json::json!([]),
+        duration_ms: 5,
+        diagnostics: Vec::new(),
+        transcript: vec![
+            crate::transcript::TranscriptEntry::bounded(1, "agent_thinking", "a"),
+            crate::transcript::TranscriptEntry::bounded(2, "agent_message", "b"),
+        ],
+    };
+    observer.on_step_finish(&step);
+    assert_eq!(observer.steps.lock().unwrap().as_slice(), ["solve"]);
+    assert_eq!(step.transcript.len(), 2);
+    assert_eq!(step.transcript[0].kind, "agent_thinking");
+}
+
+#[test]
+fn a_non_agent_step_carries_no_transcript() {
+    // Empty is the normal case, and it must stay cheap: every non-agent node
+    // reports one of these on every activation.
+    let step = ExecutionStep {
+        node_id: "cost".to_string(),
+        status: StepStatus::Success,
+        output: serde_json::json!([]),
+        duration_ms: 0,
+        diagnostics: Vec::new(),
+        transcript: vec![],
+    };
+    assert!(step.transcript.is_empty());
 }

@@ -36,6 +36,9 @@ where
                 output: serde_json::to_value(&output.items).unwrap_or(Value::Null),
                 duration_ms,
                 diagnostics: output.diagnostics.clone(),
+                // Carried, not interpreted: an `agent` node's executor put the
+                // host's folded transcript here, every other node left it empty.
+                transcript: output.transcript.clone(),
             };
             steps
                 .lock()
@@ -190,6 +193,9 @@ where
                 output: Value::Null,
                 duration_ms,
                 diagnostics,
+                // A node that failed produced no `NodeOutput`, so there is no
+                // outcome to read a transcript from.
+                transcript: Vec::new(),
             };
             steps
                 .lock()

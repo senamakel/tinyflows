@@ -38,3 +38,4 @@ fn wf(kind: NodeKind, config: Value) -> WorkflowGraph {
 
 include!("agent_tests/agent_tests_part_01_tests.rs");
 include!("agent_tests/agent_tests_part_02_tests.rs");
+include!("agent_tests/agent_tests_part_03_tests.rs");
