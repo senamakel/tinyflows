@@ -177,6 +177,15 @@ pub(super) fn contract_sub_workflow() -> NodeKindContract {
                 "The id of a saved workflow to run as the child. Provide this OR workflow.",
             ),
             ConfigField::optional(
+                "workspace",
+                "string",
+                "Runs the child in another directory: it becomes the CHILD run's workspace, \
+                     which the child's own nodes resolve their `cwd` against. Resolved against \
+                     the parent's workspace under the same rule as an agent node's `cwd` (must \
+                     resolve inside it, must exist, must be a directory) and bindable the same \
+                     way. Omitted, the child inherits the parent's workspace.",
+            ),
+            ConfigField::optional(
                 "inputs",
                 "object",
                 "Values for the child's declared workflow inputs, by name. Each value is \
