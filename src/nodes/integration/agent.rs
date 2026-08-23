@@ -159,7 +159,7 @@ async fn run_turn_indexed(
     // context still reaches the model on a host with no `AgentRunner`. Nodes
     // that declare no context are untouched, so an existing graph's request is
     // byte-identical to what it has always been.
-    let request = match cfg.get("context") {
+    let mut request = match cfg.get("context") {
         Some(raw) if !raw.is_null() => {
             let sources: Vec<crate::model::ContextSource> = serde_json::from_value(raw.clone())
                 .map_err(|e| {
@@ -176,6 +176,25 @@ async fn run_turn_indexed(
         }
         _ => cfg.clone(),
     };
+    // A declared working directory is checked on this path too. The bare
+    // completion has nowhere to *run*, so the resolved value is only normalised
+    // into the request for a provider that forwards it — but an author who
+    // pointed a step at a directory that escapes the workspace or is not there
+    // is told so here rather than discovering it the next time a harness is
+    // wired. Both spellings are set to the resolved path so a provider reading
+    // either sees the same directory.
+    if let Some(raw) = super::agent_request::declared_working_dir(cfg, &ctx.node.id)? {
+        let key = if cfg.get("cwd").is_some() {
+            "cwd"
+        } else {
+            "working_dir"
+        };
+        let resolved = super::agent_request::resolve_working_dir(ctx, &raw, key)?;
+        if let Value::Object(map) = &mut request {
+            map.insert("cwd".to_string(), Value::from(resolved.clone()));
+            map.insert("working_dir".to_string(), Value::from(resolved));
+        }
+    }
     let response = ctx.caps.llm.complete(request, conn).await?;
 
     // `text`/`raw` are derived from the untouched completion; `value` is the
