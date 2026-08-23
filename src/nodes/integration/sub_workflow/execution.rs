@@ -118,6 +118,39 @@ fn pause_for_child_gates(node_id: &str, gates: Vec<String>) -> NodeOutput {
     )
 }
 
+/// The workspace the child run is pinned to: this node's `workspace` override
+/// when it declares one, else the parent's.
+///
+/// The override is resolved against the parent's workspace and refused if it
+/// escapes it — the same rule, and the same code, as an `agent` node's `cwd`
+/// (see [`crate::workdir`]). A parent run with no workspace has nothing to
+/// contain the value against, so it is taken as written: that is how a graph
+/// declares a workspace for a child when the run itself was never pinned to one.
+fn child_workspace(ctx: &NodeContext<'_>, scope: &Value) -> Result<Option<String>> {
+    let Some(declared) = ctx.node.config.get("workspace").filter(|v| !v.is_null()) else {
+        return Ok(crate::workdir::run_workspace(ctx.run).map(str::to_string));
+    };
+    let declared = crate::expr::resolve(declared, scope);
+    let raw = declared.as_str().ok_or_else(|| {
+        EngineError::Capability(format!(
+            "sub_workflow node {}: `workspace` must be a string",
+            ctx.node.id
+        ))
+    })?;
+    if raw.trim().is_empty() {
+        return Err(EngineError::Capability(format!(
+            "sub_workflow node {}: `workspace` must be a non-empty path when present",
+            ctx.node.id
+        )));
+    }
+    Ok(Some(crate::workdir::resolve_node_dir(
+        ctx.run,
+        raw,
+        "config.workspace",
+        &format!("sub_workflow node {}", ctx.node.id),
+    )?))
+}
+
 /// What one child run produced, from the parent node's point of view.
 ///
 /// Three outcomes rather than two: a child can finish, wind down because the
@@ -221,6 +254,12 @@ async fn run_child(
     // from the batch — the whole point of resolving inputs in here rather than
     // once at the call site.
     let child_inputs = child_inputs(&ctx.node.config, scope)?;
+    // Where the child runs. `config.workspace` (expression-resolved like
+    // `workflow_id`, so it can name a directory an earlier node created) becomes
+    // the child run's workspace, held to the same containment rule as an
+    // `agent` node's `cwd`: it must resolve inside the parent's workspace. With
+    // no override the child inherits the parent's.
+    let child_workspace = child_workspace(ctx, scope)?;
     // Box the recursive engine call so the async future type stays sized.
     // Forward the parent run's cancellation token: cancelling the parent must
     // wind down this child too, rather than letting it run on orphaned behind a
@@ -235,6 +274,7 @@ async fn run_child(
         child_depth,
         depth_cap,
         ctx.token.clone(),
+        child_workspace,
     ))
     .await?;
 

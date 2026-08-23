@@ -149,8 +149,21 @@ pub(crate) async fn run_sub_workflow(
     depth: u64,
     max_depth: u64,
     token: CancellationToken,
+    workspace: Option<String>,
 ) -> Result<RunOutcome> {
     let observer: Arc<dyn RunObserver> = Arc::new(crate::observability::NoopObserver);
+    let mut overlay = json!({
+        "sub_workflow_depth": depth,
+        "max_sub_workflow_depth": max_depth,
+    });
+    // The child's workspace: the parent's, unless the `sub_workflow` node named
+    // another (already resolved and contained by the node). Inherited rather
+    // than dropped, because a child whose agents suddenly resolved their `cwd`
+    // against nothing would run them in whatever directory the harness defaults
+    // to — the silent relocation this whole seam exists to prevent.
+    if let Some(workspace) = workspace {
+        overlay["workspace"] = Value::from(workspace);
+    }
     let (_graph, _thread_id, outcome, _run_ids) = build_and_run(
         workflow,
         input,
@@ -158,10 +171,7 @@ pub(crate) async fn run_sub_workflow(
         &observer,
         RunConfig::new(workflow)?
             .with_token(token)
-            .with_overlay(json!({
-                "sub_workflow_depth": depth,
-                "max_sub_workflow_depth": max_depth,
-            })),
+            .with_overlay(overlay),
     )
     .await?;
     Ok(outcome)

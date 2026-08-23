@@ -70,9 +70,13 @@ pub mod store;
 #[cfg(any(test, feature = "testkit"))]
 pub mod testkit;
 pub mod validate;
+// Resolving an author-supplied working directory against the run's workspace —
+// the containment rule a shell step's `args.cwd` already obeyed, shared with the
+// `agent` and `sub_workflow` nodes so there is exactly one of them.
 /// Render workflow structure to PNG or JPEG files for visual debugging.
 #[cfg(feature = "graph-debug")]
 pub mod visualization;
+mod workdir;
 
 /// The crate name published to crates.io.
 pub const CRATE_NAME: &str = env!("CARGO_PKG_NAME");

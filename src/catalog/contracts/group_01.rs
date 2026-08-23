@@ -68,6 +68,15 @@ pub(super) fn contract_trigger() -> NodeKindContract {
                      Declared on the ROOT graph's trigger; it is forwarded to every child run, so \
                      setting it on a nested workflow has no effect.",
             ),
+            ConfigField::optional(
+                "workspace",
+                "string",
+                "The directory this run is pinned to. Every node `cwd` resolves against it \
+                     and none may escape it; a `sub_workflow` node may re-pin a child run to a \
+                     directory INSIDE it. A host that pins a workspace per run rather than per \
+                     graph puts the same key on the trigger PAYLOAD instead. With no workspace \
+                     the engine resolves nothing and a `cwd` reaches the harness verbatim.",
+            ),
         ],
         ports: PortSpec::new(&[], &["main"]),
         example: json!({
@@ -126,11 +135,23 @@ pub(super) fn contract_agent() -> NodeKindContract {
                      providers need not parse a composite string.",
             ),
             ConfigField::optional(
-                "working_dir",
+                "cwd",
                 "string",
                 "Working directory the agent runs in, when it runs somewhere with a \
-                     filesystem. Opaque and UNTRUSTED: the engine never touches the filesystem, \
-                     so the host must validate it against its own permitted roots.",
+                     filesystem. Resolved against the run's workspace (trigger config.workspace): \
+                     a relative path is joined to it, an absolute one must resolve inside it, and \
+                     a directory that is missing or is not a directory FAILS the step rather than \
+                     falling back to the workspace. Bindable, which is the point — \
+                     \"=nodes.prepare.item.json.worktree\" points the step at a directory an \
+                     earlier node created. On a run with no workspace the string is passed to the \
+                     harness verbatim and the host must validate it itself.",
+            ),
+            ConfigField::optional(
+                "working_dir",
+                "string",
+                "The older spelling of `cwd`, and the name of the field on an agent \
+                     definition, so it stays accepted; `cwd` wins when both are set. Same \
+                     resolution rules.",
             ),
             ConfigField::optional(
                 "context",
@@ -199,7 +220,7 @@ pub(super) fn contract_agent() -> NodeKindContract {
                 .to_string(),
             "Merge order is definition-then-node, narrowing only: instructions append, \
                  context appends, tools intersect, limits take the lower bound, metadata merges \
-                 per key, and model/provider/working_dir are overridden by the node."
+                 per key, and model/provider/cwd (working_dir) are overridden by the node."
                 .to_string(),
             "agent_ref, tool slug, tool connection_ref, a memory context scope, and a host \
                  context source must all be LITERALS, never =expressions — otherwise run data \

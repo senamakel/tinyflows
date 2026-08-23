@@ -95,7 +95,7 @@ pub(crate) async fn resolve_definition(
 /// | field | rule |
 /// |---|---|
 /// | `instructions` | the node's are **appended** to the definition's, never replacing them — a node must not be able to silently neuter a curated agent's standing instructions |
-/// | `model`, `provider`, `working_dir` | the node's win when set |
+/// | `model`, `provider`, `cwd`/`working_dir` | the node's win when set |
 /// | `context` | the definition's blocks first, then the node's |
 /// | `tools` | when the definition grants any, the node's list **intersects** them and may not add a tool the definition never granted; when the definition grants none there is nothing to narrow against, so the node's stand |
 /// | `limits` | field-wise, keeping the **lower** of each declared bound |
@@ -125,8 +125,8 @@ pub(crate) fn merge_node_overrides(
     if let Some(provider) = cfg.get("provider").and_then(Value::as_str) {
         definition.provider = Some(provider.to_string());
     }
-    if let Some(working_dir) = cfg.get("working_dir").and_then(Value::as_str) {
-        definition.working_dir = Some(working_dir.to_string());
+    if let Some(working_dir) = declared_working_dir(cfg, node_id)? {
+        definition.working_dir = Some(working_dir);
     }
 
     let node_context: Vec<ContextSource> = field(cfg, "context", node_id)?;
@@ -180,6 +180,58 @@ fn narrow_tools(granted: &[ToolGrant], requested: &[ToolGrant], node_id: &str) -
         })
         .cloned()
         .collect()
+}
+
+/// The working directory a node declared, under either spelling.
+///
+/// `cwd` is the name every other surface in the crate uses for "run this step
+/// over there" — a `shell` node's `config.cwd`, a script step's `args.cwd` — so
+/// it is the one to reach for. `working_dir` is the older spelling, and the name
+/// of the field on [`AgentDefinition`], so it stays accepted; `cwd` wins when
+/// both are set.
+///
+/// # Errors
+/// Refuses a non-string or a blank value, exactly as a `shell` node's `cwd`
+/// does. A number or an empty string here is an authoring slip, and the
+/// alternative is a step that silently runs somewhere else.
+pub(crate) fn declared_working_dir(cfg: &Value, node_id: &str) -> Result<Option<String>> {
+    for key in ["cwd", "working_dir"] {
+        let Some(value) = cfg.get(key).filter(|v| !v.is_null()) else {
+            continue;
+        };
+        let dir = value.as_str().ok_or_else(|| {
+            EngineError::Capability(format!("agent node {node_id}: `{key}` must be a string"))
+        })?;
+        if dir.trim().is_empty() {
+            return Err(EngineError::Capability(format!(
+                "agent node {node_id}: `{key}` must be a non-empty path when present"
+            )));
+        }
+        return Ok(Some(dir.to_string()));
+    }
+    Ok(None)
+}
+
+/// Resolves a declared working directory against the run's workspace.
+///
+/// The value is already expression-resolved by the node's config pass, which is
+/// the point: the directory an `agent` node runs in is usually one an earlier
+/// node just created, addressed as `"=nodes.prepare.item.json.worktree"`.
+///
+/// On a run with no workspace the string passes through untouched — see
+/// [`crate::workdir`] for why the engine will not check a filesystem the agent
+/// may not even be running on.
+///
+/// # Errors
+/// Returns [`EngineError::Capability`] when the directory escapes the
+/// workspace, does not exist, or is not a directory.
+pub(crate) fn resolve_working_dir(ctx: &NodeContext<'_>, raw: &str, key: &str) -> Result<String> {
+    crate::workdir::resolve_node_dir(
+        ctx.run,
+        raw,
+        &format!("config.{key}"),
+        &format!("agent node {}", ctx.node.id),
+    )
 }
 
 /// Resolves each declared [`ContextSource`] into a [`ContextBlock`], in
@@ -338,7 +390,18 @@ pub(crate) async fn assemble(
         })?
     };
 
-    let agent = merge_node_overrides(definition, cfg, &ctx.node.id)?;
+    let mut agent = merge_node_overrides(definition, cfg, &ctx.node.id)?;
+    // The effective working directory, resolved against the run's workspace and
+    // refused if it escapes it. Done on the merged value so a definition's own
+    // `working_dir` is held to the same rule as a node's `cwd`.
+    if let Some(raw) = agent.working_dir.clone() {
+        let key = if cfg.get("cwd").is_some() {
+            "cwd"
+        } else {
+            "working_dir"
+        };
+        agent.working_dir = Some(resolve_working_dir(ctx, &raw, key)?);
+    }
     let identity = identity_of(ctx, item_index);
     let conn = cfg.get("connection_ref").and_then(Value::as_str);
 

@@ -537,6 +537,7 @@ pub fn validate_all(graph: &WorkflowGraph) -> Vec<ValidationError> {
 
     validate_loops(graph, &mut errors);
     validate_scatter_regions(graph, &mut errors);
+    validate_working_dirs(graph, &mut errors);
     // Declared-input checks. These are author-time mistakes that would otherwise
     // surface as a confusing runtime `null`: a name that `=inputs.<name>` cannot
     // address, two declarations racing for the same key, a default the input's
@@ -580,6 +581,9 @@ use loops::validate_loops;
 
 mod scatter;
 use scatter::{nodes_on_cycle, path_exists, validate_scatter_regions};
+
+mod workdir;
+use workdir::validate_working_dirs;
 
 #[cfg(test)]
 #[path = "validate_tests.rs"]

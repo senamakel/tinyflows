@@ -36,6 +36,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   an `approvals: Option<Arc<dyn ApprovalProvider>>` field, so add
   `approvals: None` (or a provider) to keep compiling.
 
+- **Working-directory resolution for `agent` and `sub_workflow` nodes.** A run
+  is pinned to one workspace (the trigger's `config.workspace`, or a `workspace`
+  key on the trigger payload), and a node may now say where inside it the step
+  runs: `cwd` on an `agent` node (`working_dir` remains accepted as the older
+  spelling), `workspace` on a `sub_workflow` node to re-pin the child run. Both
+  are `=`-bindable, so a step can run in a directory an earlier node created.
+  The containment rule is the one a shell step's `args.cwd` already obeyed,
+  hoisted into a shared module so there is exactly one of them: relative paths
+  join the workspace, absolute paths must resolve inside it, symlinks are
+  followed, and a missing path or a non-directory fails the step instead of
+  falling back to the workspace. A run with no workspace resolves nothing and
+  passes the value to the harness verbatim, as before.
+
 ### Changed
 
 - **Approval provenance is preserved across a resume.** `RunInput::approvals`
@@ -118,6 +131,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and would have fired every on-error breakpoint on it.
 
 ### Changed
+
+- **A directory key a node does not read is now a validation error.** `workdir`,
+  `working_directory`, `workspace` and friends on an `agent` node — or a
+  top-level `cwd` on a `tool_call` node, whose working directory belongs in
+  `args.cwd` — used to be accepted, persisted, and silently ignored, leaving the
+  step running in the workspace with nothing anywhere saying so. The message
+  names the key the node actually reads.
 
 - **Breaking: the Chrome companion moved behind the `chrome-extension`
   feature.** `tinyflows::browser` and `tinyflows::companion` — previously part

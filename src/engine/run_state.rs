@@ -154,6 +154,22 @@ pub(super) async fn build_and_run(
             json!({ "run": { "max_sub_workflow_depth": max_depth } }),
         );
     }
+    // The run's workspace: the directory an author-supplied `cwd` resolves
+    // against and may not escape (see `crate::workdir`). Read off the trigger
+    // config like every other run-level knob and seeded into the run state, so
+    // a node reads it back without knowing anything about the graph. A host that
+    // pins a workspace per run rather than per graph puts a `workspace` key on
+    // the trigger payload instead; both are read by `workdir::run_workspace`.
+    if let Some(workspace) = workflow
+        .graph
+        .trigger()
+        .and_then(|t| t.config.get("workspace"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|w| !w.is_empty())
+    {
+        merge(&mut initial, json!({ "run": { "workspace": workspace } }));
+    }
     // Optional run-level metadata overlaid onto `run` before the run starts —
     // e.g. the `sub_workflow_depth` counter a nested `sub_workflow` run threads
     // to bound recursion (see [`run_sub_workflow`]). Merged (not overwritten) so

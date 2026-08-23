@@ -70,14 +70,41 @@ traits](Capability-Traits).
 
 | Node | Purpose | Ports / config gist |
 |------|---------|---------------------|
-| `agent` | Runs an LLM agent turn | Sub-ports `chat_model` / `memory` / `tool` / `output_parser`; config `prompt`, `model`, … — via `LlmProvider` |
+| `agent` | Runs an LLM agent turn | Sub-ports `chat_model` / `memory` / `tool` / `output_parser`; config `prompt`, `model`, `cwd`, … — via `LlmProvider` |
 | `tool_call` | Invokes one specific integration action | Config `slug`, `args` — via `ToolInvoker` |
 | `http_request` | Outbound HTTP request | Config `method`, `url`, `headers`, `query`, `body` — via `HttpClient` |
 | `code` | Runs sandboxed user code | Config `language` (`javascript`/`python`), `source` — via `CodeRunner` |
 | `shell` | Runs a shell script, inline or from a file | Config `source` **or** `script_path`, plus `interpreter` (`sh`/`bash`), `cwd`, `env` — via `ShellRunner` |
 | `output_parser` | Parses/validates an agent's output into a structured shape | May use `LlmProvider` for auto-fixing; can nest as a sub-agent |
 | `approval` | Puts a subject in front of a **human** and routes on approve/reject | Out `approved` / `rejected` / `timeout`; config `subject`, `subject_kind`, `title`, `prompt`, `assignees`, `wait_mode`, `on_reject`, `on_timeout` (`error` default / `reject` / `route` — `route` is required to reach the `timeout` port) — via `ApprovalProvider` |
-| `sub_workflow` | Runs another workflow as a nested sub-graph | Config: exactly one of `workflow` (inline) / `workflow_id`; optional `inputs` map for the child's declared inputs |
+| `sub_workflow` | Runs another workflow as a nested sub-graph | Config: exactly one of `workflow` (inline) / `workflow_id`; optional `inputs` map for the child's declared inputs, optional `workspace` to run the child elsewhere |
+
+### Where a step runs
+
+A run is pinned to one **workspace** — the trigger's `config.workspace`, or a
+`workspace` key on the trigger payload for a host that pins one per run. Every
+directory a node names resolves against it:
+
+- an `agent` node's `cwd` (`working_dir` is the older spelling of the same key),
+- a `shell` node's `cwd`, and a script step's `args.cwd`,
+- a `sub_workflow` node's `workspace`, which re-pins the **child run** — the
+  child inherits the parent's otherwise.
+
+One rule for all of them: a relative path is joined to the workspace, an
+absolute one is allowed only if it resolves inside it (symlinks followed), and a
+directory that is missing or is not a directory **fails the step** rather than
+falling back to the workspace. Every one of them is `=`-bindable, which is the
+point — `"cwd": "=nodes.prepare.item.json.worktree"` runs the step in a
+directory an earlier node created.
+
+A run with **no** workspace resolves nothing: the string reaches the harness
+verbatim, as it always has, because a host whose agents run in a remote sandbox
+names directories this process has never heard of.
+
+A directory key a node does not read — `workdir` on an `agent` node, `cwd` on a
+`tool_call` node — is a **validation error**, not a silent no-op. Being able to
+write down where a step runs and have it ignored is the failure this whole seam
+exists to remove.
 
 The capability-backed integration nodes (`agent`, `tool_call`, `http_request`)
 resolve `=` expressions anywhere in their config against the `{ item, items, run }`
