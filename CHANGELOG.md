@@ -71,13 +71,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   review reads it, since one resume value is delivered to every interrupted
   node.
 
-- **A directory key a node does not read is now a validation error.** `workdir`,
-  `working_directory`, `workspace` and friends on an `agent` node — or a
-  top-level `cwd` on a `tool_call` node, whose working directory belongs in
-  `args.cwd` — used to be accepted, persisted, and silently ignored, leaving the
-  step running in the workspace with nothing anywhere saying so. The message
-  names the key the node actually reads.
-
 - **`tinyflows::testkit` — testing, mocking, and live debugging for workflows.**
   Behind the default-off `testkit` feature; adds no dependencies.
 
@@ -138,6 +131,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and would have fired every on-error breakpoint on it.
 
 ### Changed
+
+- **A directory key a node does not read is now a validation error.** `workdir`,
+  `working_directory`, `workspace` and friends on an `agent` node — or a
+  top-level `cwd` on a `tool_call` node, whose working directory belongs in
+  `args.cwd` — used to be accepted, persisted, and silently ignored, leaving the
+  step running in the workspace with nothing anywhere saying so. The message
+  names the key the node actually reads.
 
 - **Breaking: the Chrome companion moved behind the `chrome-extension`
   feature.** `tinyflows::browser` and `tinyflows::companion` — previously part
