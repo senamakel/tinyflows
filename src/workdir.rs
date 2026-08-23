@@ -175,13 +175,10 @@ pub(crate) fn resolve_node_dir(
         );
         return Ok(raw.to_string());
     };
-    let resolved = resolve_dir_in_workspace(
-        Path::new(workspace),
-        raw,
-        field,
-        Absolute::AllowInside,
-    )
-    .map_err(|message| crate::error::EngineError::Capability(format!("{surface}: {message}")))?;
+    let resolved =
+        resolve_dir_in_workspace(Path::new(workspace), raw, field, Absolute::AllowInside).map_err(
+            |message| crate::error::EngineError::Capability(format!("{surface}: {message}")),
+        )?;
     Ok(resolved.to_string_lossy().into_owned())
 }
 

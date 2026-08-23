@@ -42,10 +42,19 @@ fn an_agent_node_may_name_its_working_directory() {
 fn a_directory_key_an_agent_node_never_reads_is_refused() {
     // The failure this check exists for: the key is accepted, persisted, and
     // then ignored, so the step runs in the workspace with nothing saying so.
-    for key in ["workdir", "work_dir", "working_directory", "workspace", "directory"] {
+    for key in [
+        "workdir",
+        "work_dir",
+        "working_directory",
+        "workspace",
+        "directory",
+    ] {
         let graph = graph_with("agent", json!({ "prompt": "go", key: "/srv/elsewhere" }));
         let reasons = reasons(&graph);
-        assert!(reasons.contains(key), "`{key}` should be refused: {reasons}");
+        assert!(
+            reasons.contains(key),
+            "`{key}` should be refused: {reasons}"
+        );
         assert!(reasons.contains("use `cwd`"), "{reasons}");
     }
 }
@@ -95,13 +104,13 @@ fn a_trigger_may_pin_the_runs_workspace() {
 
 #[test]
 fn a_node_kind_with_no_working_directory_says_so() {
-    let graph = graph_with("transform", json!({ "expression": "=item", "cwd": "build" }));
+    let graph = graph_with(
+        "transform",
+        json!({ "expression": "=item", "cwd": "build" }),
+    );
     let reasons = reasons(&graph);
 
-    assert!(
-        reasons.contains("has no working directory"),
-        "{reasons}"
-    );
+    assert!(reasons.contains("has no working directory"), "{reasons}");
 }
 
 #[test]

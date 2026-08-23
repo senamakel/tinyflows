@@ -225,11 +225,7 @@ pub(crate) fn declared_working_dir(cfg: &Value, node_id: &str) -> Result<Option<
 /// # Errors
 /// Returns [`EngineError::Capability`] when the directory escapes the
 /// workspace, does not exist, or is not a directory.
-pub(crate) fn resolve_working_dir(
-    ctx: &NodeContext<'_>,
-    raw: &str,
-    key: &str,
-) -> Result<String> {
+pub(crate) fn resolve_working_dir(ctx: &NodeContext<'_>, raw: &str, key: &str) -> Result<String> {
     crate::workdir::resolve_node_dir(
         ctx.run,
         raw,

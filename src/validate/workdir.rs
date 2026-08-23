@@ -42,9 +42,7 @@ fn advice(kind: &NodeKind, key: &str) -> String {
         NodeKind::SubWorkflow => {
             format!("use `workspace` to re-pin the child run's workspace, not `{key}`")
         }
-        NodeKind::Trigger => format!(
-            "use `workspace` to pin the run's workspace, not `{key}`"
-        ),
+        NodeKind::Trigger => format!("use `workspace` to pin the run's workspace, not `{key}`"),
         NodeKind::ToolCall => format!(
             "a tool's working directory goes in `args.cwd`, which the tool itself reads — a \
              top-level `{key}` on the node is never looked at"

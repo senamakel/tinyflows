@@ -6,7 +6,9 @@
 
 use serde_json::json;
 
-use super::{Absolute, resolve_dir_in_workspace, resolve_in_workspace, resolve_node_dir, run_workspace};
+use super::{
+    Absolute, resolve_dir_in_workspace, resolve_in_workspace, resolve_node_dir, run_workspace,
+};
 
 /// A workspace with a `worktrees/issue-1` directory and a file in it.
 fn workspace() -> tempfile::TempDir {
@@ -66,7 +68,10 @@ fn an_absolute_directory_is_refused_where_the_rule_is_stricter() {
     )
     .expect_err("Absolute::Refuse takes no absolute path, inside or not");
 
-    assert!(error.contains("must be relative to the workspace"), "{error}");
+    assert!(
+        error.contains("must be relative to the workspace"),
+        "{error}"
+    );
 }
 
 #[test]
@@ -110,7 +115,10 @@ fn a_directory_that_does_not_exist_fails_naming_the_path() {
     .expect_err("a missing directory fails rather than falling back to the workspace");
 
     assert!(error.contains("worktrees/issue-404"), "{error}");
-    assert!(error.contains("does not resolve inside the workspace"), "{error}");
+    assert!(
+        error.contains("does not resolve inside the workspace"),
+        "{error}"
+    );
 }
 
 #[test]
@@ -135,13 +143,9 @@ fn a_symlink_inside_the_workspace_pointing_out_of_it_is_refused() {
     let elsewhere = tempfile::tempdir().expect("tempdir");
     std::os::unix::fs::symlink(elsewhere.path(), root.path().join("escape")).expect("symlink");
 
-    let error = resolve_dir_in_workspace(
-        root.path(),
-        "escape",
-        "config.cwd",
-        Absolute::AllowInside,
-    )
-    .expect_err("the symlink target is outside the workspace");
+    let error =
+        resolve_dir_in_workspace(root.path(), "escape", "config.cwd", Absolute::AllowInside)
+            .expect_err("the symlink target is outside the workspace");
 
     assert!(error.contains("resolves outside the workspace"), "{error}");
 }
