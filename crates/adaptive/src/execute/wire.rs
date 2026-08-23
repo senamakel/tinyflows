@@ -107,7 +107,7 @@ fn entry_cost(entry: &TranscriptEntry) -> usize {
 /// keyed on count was exactly the hole review found in the first version of
 /// this function.
 fn bounded_transcript(entries: &[TranscriptEntry]) -> Vec<TranscriptEntry> {
-    let mut out: Vec<TranscriptEntry> = entries
+    let out: Vec<TranscriptEntry> = entries
         .iter()
         .map(|e| {
             let mut kind = e.kind.clone();
@@ -124,29 +124,57 @@ fn bounded_transcript(entries: &[TranscriptEntry]) -> Vec<TranscriptEntry> {
         })
         .collect();
 
-    let total = |v: &[TranscriptEntry]| -> usize { v.iter().map(entry_cost).sum() };
-    if total(&out) <= TRANSCRIPT_BUDGET {
+    let total: usize = out.iter().map(entry_cost).sum();
+    if total <= TRANSCRIPT_BUDGET {
         return out;
     }
 
-    // Drop from the middle outwards, keeping the two edges, until it fits.
-    while total(&out) > TRANSCRIPT_BUDGET && out.len() > TRANSCRIPT_EDGE * 2 {
-        out.remove(out.len() / 2);
+    // One pass from each end, never a rescan. Walking the vector and removing
+    // from its middle re-measures the whole thing per iteration and shifts the
+    // suffix each time — quadratic, on work that happens after the agent has
+    // finished and while a report is waiting to go out.
+    //
+    // Half the budget from each end, so a transcript that is huge at one end
+    // cannot starve the other.
+    let half = TRANSCRIPT_BUDGET / 2;
+
+    let mut head = 0usize;
+    let mut spent = 0usize;
+    while head < out.len() && head < TRANSCRIPT_EDGE {
+        let cost = entry_cost(&out[head]);
+        if spent + cost > half {
+            break;
+        }
+        spent += cost;
+        head += 1;
     }
 
-    let dropped = entries.len() - out.len();
-    if dropped > 0 {
-        let at_ms = out.get(TRANSCRIPT_EDGE).map_or(0, |e| e.at_ms);
-        out.insert(
-            TRANSCRIPT_EDGE.min(out.len()),
-            TranscriptEntry::bounded(
-                at_ms,
-                "error",
-                format!("…[{dropped} transcript entries elided to fit the record budget]"),
-            ),
-        );
+    let mut tail = 0usize;
+    spent = 0;
+    while tail < out.len() - head && tail < TRANSCRIPT_EDGE {
+        let cost = entry_cost(&out[out.len() - 1 - tail]);
+        if spent + cost > half {
+            break;
+        }
+        spent += cost;
+        tail += 1;
     }
-    out
+
+    let dropped = out.len() - head - tail;
+    if dropped == 0 {
+        return out;
+    }
+
+    let at_ms = out.get(head).map_or(0, |e| e.at_ms);
+    let mut trimmed: Vec<TranscriptEntry> = Vec::with_capacity(head + tail + 1);
+    trimmed.extend_from_slice(&out[..head]);
+    trimmed.push(TranscriptEntry::bounded(
+        at_ms,
+        "error",
+        format!("…[{dropped} transcript entries elided to fit the record budget]"),
+    ));
+    trimmed.extend_from_slice(&out[out.len() - tail..]);
+    trimmed
 }
 
 /// Per-node budget for what the judge reads. A dozen of these share one context

@@ -373,3 +373,32 @@ fn the_budget_counts_the_kind_as_well_as_the_text() {
     let bytes: usize = kept.iter().map(|e| e.kind.len() + e.text.len()).sum();
     assert!(bytes <= TRANSCRIPT_BUDGET, "kind was not counted: {bytes}");
 }
+
+/// Trimming a very large transcript stays fast.
+///
+/// The first version rescanned the whole vector per iteration and removed from
+/// its middle — quadratic, on work that runs *after* the agent has finished and
+/// while a report is waiting to go out. A generous ceiling: the point is to
+/// catch a return to quadratic, not to benchmark.
+#[test]
+fn trimming_a_huge_transcript_is_not_quadratic() {
+    let entries: Vec<TranscriptEntry> = (0..80_000)
+        .map(|n| TranscriptEntry::bounded(n, "agent_thinking", "x".repeat(64)))
+        .collect();
+    let original = ExecutionStep {
+        transcript: entries,
+        ..step("solve", StepStatus::Success, json!([]))
+    };
+
+    let started = std::time::Instant::now();
+    let kept = StepRecord::bounded(&original, RECORD_BUDGET).transcript;
+    let elapsed = started.elapsed();
+
+    assert!(
+        elapsed < std::time::Duration::from_secs(5),
+        "took {elapsed:?} — the trim has gone quadratic again"
+    );
+    let bytes: usize = kept.iter().map(|e| e.kind.len() + e.text.len()).sum();
+    assert!(bytes <= TRANSCRIPT_BUDGET);
+    assert!(kept.iter().any(|e| e.text.contains("elided")));
+}
