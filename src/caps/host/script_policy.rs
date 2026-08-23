@@ -82,15 +82,6 @@ impl ScriptPolicy {
         Ok(resolved)
     }
 
-    /// The workspace root as a plain string, for a caller seeding a run's
-    /// `run.workspace` from the same policy a shell step resolves against.
-    #[must_use]
-    pub fn workspace_str(&self) -> Option<String> {
-        self.workspace
-            .as_deref()
-            .map(|w| w.to_string_lossy().into_owned())
-    }
-
     /// The shared resolution: reject the shape, then reject the destination.
     ///
     /// Delegated to [`crate::workdir`], which is where that rule now lives so
