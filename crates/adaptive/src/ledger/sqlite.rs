@@ -107,6 +107,7 @@ const DDL: &[&str] = &[
         output        TEXT NOT NULL,
         duration_ms   INTEGER NOT NULL DEFAULT 0,
         null_bindings TEXT NOT NULL DEFAULT '[]',
+        transcript    TEXT NOT NULL DEFAULT '[]',
         PRIMARY KEY (scope_key, row_id, seq)
     )",
 ];
@@ -118,6 +119,7 @@ const DDL: &[&str] = &[
 /// errors once the column is there, which is the expected case on every start
 /// after the first — so these are the statements whose failure means success.
 const MIGRATIONS: &[&str] = &[
+    "ALTER TABLE attempt_steps ADD COLUMN transcript TEXT NOT NULL DEFAULT '[]'",
     "ALTER TABLE lessons ADD COLUMN scope_key TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE workflow_scores ADD COLUMN scope_key TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE ledger_rows ADD COLUMN satisfied INTEGER NOT NULL DEFAULT 0",
@@ -653,8 +655,9 @@ impl Ledger for SqliteLedger {
         for (seq, step) in steps.iter().enumerate() {
             conn.execute(
                 "INSERT OR REPLACE INTO attempt_steps(scope_key, row_id, seq, node_id, status,
-                                                      output, duration_ms, null_bindings)
-                 VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",
+                                                      output, duration_ms, null_bindings,
+                                                      transcript)
+                 VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)",
                 params![
                     self.bucket(),
                     row_id,
@@ -668,6 +671,8 @@ impl Ledger for SqliteLedger {
                     i64::try_from(step.duration_ms).unwrap_or(i64::MAX),
                     serde_json::to_string(&step.null_bindings)
                         .map_err(|e| LedgerError::Corrupt(e.to_string()))?,
+                    serde_json::to_string(&step.transcript)
+                        .map_err(|e| LedgerError::Corrupt(e.to_string()))?,
                 ],
             )?;
         }
@@ -677,7 +682,8 @@ impl Ledger for SqliteLedger {
     async fn steps(&self, row_id: &str) -> Result<Vec<crate::execute::StepRecord>> {
         let conn = self.guard()?;
         let mut stmt = conn.prepare(
-            "SELECT node_id, status, output, duration_ms, null_bindings FROM attempt_steps
+            "SELECT node_id, status, output, duration_ms, null_bindings, transcript
+             FROM attempt_steps
              WHERE scope_key = ?1 AND row_id = ?2 ORDER BY seq",
         )?;
         let found = stmt
@@ -688,27 +694,32 @@ impl Ledger for SqliteLedger {
                     r.get::<_, String>(2)?,
                     r.get::<_, i64>(3)?,
                     r.get::<_, String>(4)?,
+                    r.get::<_, String>(5)?,
                 ))
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
 
         found
             .into_iter()
-            .map(|(node_id, status, output, duration_ms, bindings)| {
-                Ok(crate::execute::StepRecord {
-                    node_id,
-                    status: if status == "error" {
-                        crate::execute::StepOutcome::Error
-                    } else {
-                        crate::execute::StepOutcome::Success
-                    },
-                    output: serde_json::from_str(&output)
-                        .map_err(|e| LedgerError::Corrupt(e.to_string()))?,
-                    duration_ms: u64::try_from(duration_ms).unwrap_or(0),
-                    null_bindings: serde_json::from_str(&bindings)
-                        .map_err(|e| LedgerError::Corrupt(e.to_string()))?,
-                })
-            })
+            .map(
+                |(node_id, status, output, duration_ms, bindings, transcript)| {
+                    Ok(crate::execute::StepRecord {
+                        node_id,
+                        status: if status == "error" {
+                            crate::execute::StepOutcome::Error
+                        } else {
+                            crate::execute::StepOutcome::Success
+                        },
+                        output: serde_json::from_str(&output)
+                            .map_err(|e| LedgerError::Corrupt(e.to_string()))?,
+                        duration_ms: u64::try_from(duration_ms).unwrap_or(0),
+                        null_bindings: serde_json::from_str(&bindings)
+                            .map_err(|e| LedgerError::Corrupt(e.to_string()))?,
+                        transcript: serde_json::from_str(&transcript)
+                            .map_err(|e| LedgerError::Corrupt(e.to_string()))?,
+                    })
+                },
+            )
             .collect()
     }
 

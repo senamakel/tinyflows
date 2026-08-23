@@ -158,6 +158,7 @@ impl Runner for Simulated {
                 output: json!({ "json": { "exit_code": 0, "stdout": script } }),
                 duration_ms: 1,
                 null_bindings: Vec::new(),
+                transcript: Vec::new(),
             }],
             changed: if worked {
                 "wrote the answer".to_string()

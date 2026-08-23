@@ -50,6 +50,7 @@ use tinyflows::evidence::bounded_within;
 use tinyflows::expr::NullResolution;
 use tinyflows::model::WorkflowGraph;
 use tinyflows::observability::{ExecutionStep, StepStatus};
+use tinyflows::transcript::TranscriptEntry;
 
 use super::Ran;
 
@@ -92,6 +93,19 @@ pub struct StepRecord {
     /// Config expressions that resolved to null during this activation.
     #[serde(default)]
     pub null_bindings: Vec<NullResolution>,
+    /// What the harness did inside the node, in order.
+    ///
+    /// Carried rather than dropped because [`Ran::steps`](crate::execute::Ran)
+    /// is the archival record — "every node activation, at full record
+    /// fidelity" — and for an `agent` node the transcript is most of what there
+    /// is to know. Unlike `output` it is not clipped to the record budget:
+    /// entries are already individually bounded by
+    /// `TranscriptEntry::bounded`, and clipping a transcript in the middle
+    /// would lose the end of a thought rather than the tail of a payload.
+    ///
+    /// Empty for every non-`agent` node and for a harness that reports none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub transcript: Vec<TranscriptEntry>,
 }
 
 impl StepRecord {
@@ -107,6 +121,7 @@ impl StepRecord {
             output: bounded_within(&step.output, budget),
             duration_ms: u64::try_from(step.duration_ms).unwrap_or(u64::MAX),
             null_bindings: step.diagnostics.clone(),
+            transcript: step.transcript.clone(),
         }
     }
 
@@ -122,17 +137,7 @@ impl StepRecord {
             output: self.output.clone(),
             duration_ms: u128::from(self.duration_ms),
             diagnostics: self.null_bindings.clone(),
-            // Deliberately empty: `StepRecord` is a budget-bounded wire form
-            // and does not transport a harness transcript, which is many
-            // entries and would dwarf the budget the rest of this type is
-            // bounded to. The round trip is already lossy by design — `output`
-            // is clipped and `duration_ms` narrows — so a step reconstructed
-            // here genuinely has no transcript rather than having lost one.
-            //
-            // Nothing downstream of `to_step` reads it: this exists so
-            // `diagnose` can read a step on the far side, and diagnosis is a
-            // function of status, output and null bindings.
-            transcript: Vec::new(),
+            transcript: self.transcript.clone(),
         }
     }
 }
@@ -404,5 +409,86 @@ mod tests {
         assert_eq!(back.attempt_id, "ep-1/3");
         assert_eq!(back.pending_approvals, vec!["publish".to_string()]);
         assert!((back.cost_usd - 0.42).abs() < f64::EPSILON);
+    }
+
+    /// A harness transcript survives the wire form in both directions.
+    ///
+    /// `Ran::steps` is documented as the archival record — "every node
+    /// activation, at full record fidelity" — so dropping the transcript here
+    /// would silently empty the richest part of an `agent` node's history on
+    /// every local and remote adaptive run.
+    #[test]
+    fn a_transcript_round_trips_through_the_record() {
+        let entries = vec![
+            TranscriptEntry::bounded(1, "agent_thinking", "memoise the chain"),
+            TranscriptEntry::bounded(2, "tool_call", "shell: python3 solve.py"),
+            TranscriptEntry::bounded(3, "tool_result", "837799"),
+        ];
+        let original = ExecutionStep {
+            transcript: entries.clone(),
+            ..step("solve", StepStatus::Success, json!([{ "json": 837_799 }]))
+        };
+
+        let record = StepRecord::bounded(&original, 4096);
+        assert_eq!(record.transcript, entries, "the record keeps it");
+
+        let back = record.to_step();
+        assert_eq!(back.transcript, entries, "and hands it back");
+    }
+
+    /// The transcript is NOT clipped to the record budget.
+    ///
+    /// `output` is, because it is one payload whose tail is the least
+    /// interesting part. A transcript is many already-bounded entries, and
+    /// cutting it mid-way loses the end of a thought rather than the tail of a
+    /// value — so the budget deliberately does not reach it.
+    #[test]
+    fn the_record_budget_does_not_clip_the_transcript() {
+        let entries: Vec<TranscriptEntry> = (0..64)
+            .map(|n| TranscriptEntry::bounded(n, "agent_thinking", "x".repeat(256)))
+            .collect();
+        let original = ExecutionStep {
+            transcript: entries.clone(),
+            ..step(
+                "solve",
+                StepStatus::Success,
+                json!([{ "json": "x".repeat(9_000) }]),
+            )
+        };
+
+        let record = StepRecord::bounded(&original, 128);
+        assert!(
+            is_truncated(&record.output),
+            "the output IS clipped to the budget"
+        );
+        assert_eq!(
+            record.transcript.len(),
+            entries.len(),
+            "the transcript is not"
+        );
+    }
+
+    /// A record written before the field existed still deserializes.
+    #[test]
+    fn a_legacy_record_reads_as_having_no_transcript() {
+        // camelCase, as the type serializes — a legacy record is a real wire
+        // document, not a snake_case approximation of one.
+        let legacy = json!({
+            "nodeId": "solve",
+            "status": "success",
+            "output": [],
+            "durationMs": 12,
+            "nullBindings": [],
+        });
+        let record: StepRecord = serde_json::from_value(legacy).expect("deserialize");
+        assert!(record.transcript.is_empty());
+    }
+
+    /// An empty transcript serializes exactly as it did before the field.
+    #[test]
+    fn an_empty_transcript_adds_nothing_to_the_wire() {
+        let record = StepRecord::bounded(&step("cost", StepStatus::Success, json!([])), 4096);
+        let wire = serde_json::to_string(&record).expect("serialize");
+        assert!(!wire.contains("transcript"), "{wire}");
     }
 }

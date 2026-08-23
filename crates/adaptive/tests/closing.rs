@@ -541,6 +541,7 @@ fn step(node: &str, ok: bool) -> tinyflows_adaptive::execute::StepRecord {
         output: Value::Null,
         duration_ms: 1,
         null_bindings: Vec::new(),
+        transcript: Vec::new(),
     }
 }
 

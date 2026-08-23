@@ -297,6 +297,7 @@ impl Runner for Checkpointed {
                         output: slot.clone(),
                         duration_ms: 0,
                         null_bindings: Vec::new(),
+                        transcript: Vec::new(),
                     })
                     .collect()
             })
