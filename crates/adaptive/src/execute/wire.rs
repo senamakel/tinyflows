@@ -122,6 +122,17 @@ impl StepRecord {
             output: self.output.clone(),
             duration_ms: u128::from(self.duration_ms),
             diagnostics: self.null_bindings.clone(),
+            // Deliberately empty: `StepRecord` is a budget-bounded wire form
+            // and does not transport a harness transcript, which is many
+            // entries and would dwarf the budget the rest of this type is
+            // bounded to. The round trip is already lossy by design — `output`
+            // is clipped and `duration_ms` narrows — so a step reconstructed
+            // here genuinely has no transcript rather than having lost one.
+            //
+            // Nothing downstream of `to_step` reads it: this exists so
+            // `diagnose` can read a step on the far side, and diagnosis is a
+            // function of status, output and null bindings.
+            transcript: Vec::new(),
         }
     }
 }
@@ -235,6 +246,7 @@ mod tests {
             output,
             duration_ms: 12,
             diagnostics: Vec::new(),
+            transcript: Vec::new(),
         }
     }
 
