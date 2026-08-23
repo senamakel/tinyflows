@@ -103,10 +103,15 @@ pub struct ExecutionStep {
     /// the engine copies it here and never interprets it.
     ///
     /// Empty for every non-`agent` node, for a host that reports none, and on
-    /// an error step — a node that failed produced no outcome to read one from.
-    /// A host watching a long node live wants
-    /// [`RunObserver::on_agent_event`](RunObserver::on_agent_event) instead;
-    /// this is the settled set.
+    /// an error step — a node that failed produced no outcome to read one from,
+    /// which is a known gap for a paused agent (see `AgentRunOutcome::transcript`).
+    ///
+    /// **Settled, not live.** Entries arrive when the node finishes, because
+    /// they ride the outcome the harness returns. Reporting them *during* a run
+    /// would need a sink on the capability contract, which
+    /// [`AgentRunRequest`](crate::caps::AgentRunRequest) cannot carry (it is
+    /// `Serialize` + `PartialEq`); that is a deliberate follow-up rather than
+    /// something to imply here.
     pub transcript: Vec<crate::transcript::TranscriptEntry>,
 }
 
@@ -192,23 +197,6 @@ pub trait RunObserver: Send + Sync {
     /// callback can run.
     fn on_item_finish(&self, node_id: &str, index: usize, total: usize, ok: bool) {
         let _ = (node_id, index, total, ok);
-    }
-
-    /// Called as a host's harness produces one transcript entry inside a
-    /// still-running `agent` node.
-    ///
-    /// The live counterpart of
-    /// [`ExecutionStep::transcript`](ExecutionStep::transcript), and the reason
-    /// it is not enough on its own: a step's transcript arrives when the node
-    /// *finishes*, and an agent node can run for minutes. A host that wants to
-    /// show what an agent is doing while it does it reads this; a host that
-    /// only persists finished runs can ignore it and lose nothing, since every
-    /// entry reported here also appears on the settled step.
-    ///
-    /// Called from the host's own harness thread, so an implementation must not
-    /// block — the convention is to hand the entry to a channel and return.
-    fn on_agent_event(&self, node_id: &str, entry: &crate::transcript::TranscriptEntry) {
-        let _ = (node_id, entry);
     }
 
     /// Called once, after the run settles, with the assembled [`Run`] record.

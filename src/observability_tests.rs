@@ -176,72 +176,13 @@ fn observer_is_usable_as_trait_object() {
     });
 }
 
-/// A `RunObserver` that records the live agent-event stream alongside steps,
-/// so a test can tell the two delivery paths apart.
-#[derive(Default)]
-struct AgentCapture {
-    live: Mutex<Vec<(String, String, String)>>,
-    settled: Mutex<Vec<(String, usize)>>,
-}
-
-impl RunObserver for AgentCapture {
-    fn on_agent_event(&self, node_id: &str, entry: &crate::transcript::TranscriptEntry) {
-        self.live.lock().unwrap().push((
-            node_id.to_string(),
-            entry.kind.clone(),
-            entry.text.clone(),
-        ));
-    }
-
-    fn on_step_finish(&self, step: &ExecutionStep) {
-        self.settled
-            .lock()
-            .unwrap()
-            .push((step.node_id.clone(), step.transcript.len()));
-    }
-}
-
-#[test]
-fn on_agent_event_defaults_to_inert() {
-    // The whole point of the default body: a host that predates this hook keeps
-    // compiling and observes nothing new.
-    let observer = NoopObserver;
-    observer.on_agent_event(
-        "solve",
-        &crate::transcript::TranscriptEntry::bounded(1, "agent_thinking", "…"),
-    );
-}
-
-#[test]
-fn agent_events_arrive_live_and_in_order() {
-    let observer = AgentCapture::default();
-    for (at, kind, text) in [
-        (1, "agent_thinking", "Collatz — memoise"),
-        (2, "tool_call", "shell: python3 solve.py"),
-        (3, "tool_result", "837799"),
-    ] {
-        observer.on_agent_event(
-            "solve",
-            &crate::transcript::TranscriptEntry::bounded(at, kind, text),
-        );
-    }
-
-    let live = observer.live.lock().unwrap();
-    // Order is the contract: a transcript read out of order is not a transcript.
-    assert_eq!(
-        live.iter()
-            .map(|(_, kind, _)| kind.as_str())
-            .collect::<Vec<_>>(),
-        ["agent_thinking", "tool_call", "tool_result"]
-    );
-    assert!(live.iter().all(|(node, _, _)| node == "solve"));
-    assert_eq!(live[2].2, "837799");
-}
-
+/// A step carries what the harness did, and it reaches an observer through
+/// `on_step_finish` — the settled set, not a live feed. See
+/// [`ExecutionStep::transcript`].
 #[test]
 fn a_step_carries_the_settled_transcript() {
-    let observer = AgentCapture::default();
-    observer.on_step_finish(&ExecutionStep {
+    let observer = Capture::default();
+    let step = ExecutionStep {
         node_id: "solve".to_string(),
         status: StepStatus::Success,
         output: serde_json::json!([]),
@@ -251,11 +192,11 @@ fn a_step_carries_the_settled_transcript() {
             crate::transcript::TranscriptEntry::bounded(1, "agent_thinking", "a"),
             crate::transcript::TranscriptEntry::bounded(2, "agent_message", "b"),
         ],
-    });
-    assert_eq!(
-        observer.settled.lock().unwrap().as_slice(),
-        [("solve".to_string(), 2)]
-    );
+    };
+    observer.on_step_finish(&step);
+    assert_eq!(observer.steps.lock().unwrap().as_slice(), ["solve"]);
+    assert_eq!(step.transcript.len(), 2);
+    assert_eq!(step.transcript[0].kind, "agent_thinking");
 }
 
 #[test]

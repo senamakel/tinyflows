@@ -1,5 +1,6 @@
 //! The `agent` node: an LLM agent turn with optional sub-ports.
 
+use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -17,25 +18,33 @@ use crate::transcript::TranscriptEntry;
 /// reports carries a single transcript, so the entries have to accumulate
 /// somewhere shared. Shared rather than returned so `map_items`' closure
 /// signature stays as it is.
-type TranscriptSink = Arc<Mutex<Vec<TranscriptEntry>>>;
-
-/// Reports `entries` live, then keeps them for the settled step.
 ///
-/// Both halves matter and neither replaces the other: `on_agent_event` is
-/// what lets a console show an agent working through a node that runs for
-/// minutes, and the accumulated copy is what a run read back tomorrow has.
-fn record_transcript(ctx: &NodeContext<'_>, sink: &TranscriptSink, entries: Vec<TranscriptEntry>) {
+/// Keyed by **item index** rather than appended flat, because `per_item` with
+/// `concurrency > 1` completes turns in whatever order they finish while
+/// `map_items` deliberately restores its outputs to input order. Appending on
+/// completion would make one run's transcript interleave differently from the
+/// next for identical input; draining in key order makes it match the items it
+/// describes. `None` is the single-turn case, which sorts first and is alone.
+type TranscriptSink = Arc<Mutex<BTreeMap<Option<usize>, Vec<TranscriptEntry>>>>;
+
+/// Keeps `entries` for the settled step, under the item they belong to.
+///
+/// Not reported live: they ride the outcome the harness returns, so by the time
+/// this runs the turn is over. See `ExecutionStep::transcript`.
+fn record_transcript(
+    ctx: &NodeContext<'_>,
+    sink: &TranscriptSink,
+    item_index: Option<usize>,
+    entries: Vec<TranscriptEntry>,
+) {
     if entries.is_empty() {
         return;
     }
-    for entry in &entries {
-        ctx.observer.on_agent_event(&ctx.node.id, entry);
-    }
-    // A poisoned lock here must not fail the turn: the agent already ran and
-    // its answer is good. Losing the transcript degrades the run history,
-    // which is strictly better than discarding the work.
+    // A poisoned lock must not fail the turn: the agent already ran and its
+    // answer is good. Losing the transcript degrades the run history, which is
+    // strictly better than discarding the work.
     match sink.lock() {
-        Ok(mut held) => held.extend(entries),
+        Ok(mut held) => held.entry(item_index).or_default().extend(entries),
         Err(err) => tracing::warn!(
             node = %ctx.node.id,
             %err,
@@ -44,10 +53,10 @@ fn record_transcript(ctx: &NodeContext<'_>, sink: &TranscriptSink, entries: Vec<
     }
 }
 
-/// Takes everything the sink holds, leaving it empty.
+/// Takes everything the sink holds, in item order, leaving it empty.
 fn drain(sink: &TranscriptSink) -> Vec<TranscriptEntry> {
     sink.lock()
-        .map(|mut held| std::mem::take(&mut *held))
+        .map(|mut held| std::mem::take(&mut *held).into_values().flatten().collect())
         .unwrap_or_default()
 }
 
@@ -126,7 +135,7 @@ impl NodeExecutor for AgentNode {
         // One accumulator for the whole node activation, because a `per_item`
         // agent node runs many turns and the step carries one transcript. Shared
         // rather than returned, so `map_items`' closure signature is untouched.
-        let transcript: TranscriptSink = Arc::new(Mutex::new(Vec::new()));
+        let transcript: TranscriptSink = Arc::new(Mutex::new(BTreeMap::new()));
 
         if per_item {
             // Fan out: `config.concurrency` decides how many turns run at once
@@ -205,7 +214,7 @@ async fn run_turn_indexed(
         let request =
             super::agent_request::assemble(ctx, cfg, agent_ref, scope, item_index).await?;
         let outcome = runner.run(request).await?;
-        return finish_agent_run(ctx, cfg, conn, agent_ref, outcome, transcript).await;
+        return finish_agent_run(ctx, cfg, conn, agent_ref, outcome, transcript, item_index).await;
     }
 
     // Degraded path: no agent kind selected, or no harness wired. The node
@@ -360,13 +369,14 @@ async fn finish_agent_run(
     agent_ref: &str,
     outcome: crate::caps::AgentRunOutcome,
     transcript: &TranscriptSink,
+    item_index: Option<usize>,
 ) -> Result<Item> {
     use crate::caps::StopReason;
 
     // Before the stop reason is judged, so a run that paused or hit a limit
     // still explains what it managed to do — that is exactly the run whose
     // transcript is worth reading.
-    record_transcript(ctx, transcript, outcome.transcript);
+    record_transcript(ctx, transcript, item_index, outcome.transcript);
 
     let mut meta = serde_json::json!({ "stop": outcome.stop.as_str(), "agent_ref": agent_ref });
 

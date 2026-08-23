@@ -28,7 +28,10 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Bytes of one entry's `text` kept on the durable record.
+/// Bytes of one entry's `text`, marker included.
+///
+/// A clipped entry is at most this long *in total* — the truncation marker
+/// is charged against the budget, not added after it.
 ///
 /// A stored run bounds step `input`, `output` and its own `inputs` so no
 /// single value can grow a run record without limit; a transcript entry is
@@ -41,6 +44,10 @@ use serde::{Deserialize, Serialize};
 /// body — keeps it in its own store and leaves the entry as the index line
 /// pointing at it. That split is why this ceiling can stay small.
 pub const MAX_ENTRY_TEXT_BYTES: usize = 4 * 1024;
+
+/// Appended to a clipped entry, and counted against
+/// [`MAX_ENTRY_TEXT_BYTES`] rather than added on top of it.
+const TRUNCATION_MARKER: &str = " …[truncated]";
 
 /// One thing an agent did, in the order it did it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -71,14 +78,18 @@ impl TranscriptEntry {
     pub fn bounded(at_ms: i64, kind: impl Into<String>, text: impl Into<String>) -> Self {
         let mut text = text.into();
         if text.len() > MAX_ENTRY_TEXT_BYTES {
+            // Reserve the marker's own bytes BEFORE choosing the cut, so the
+            // finished entry honours the cap rather than exceeding it by the
+            // length of the thing announcing the cut.
+            let budget = MAX_ENTRY_TEXT_BYTES - TRUNCATION_MARKER.len();
             let end = text
                 .char_indices()
                 .map(|(index, _)| index)
-                .take_while(|index| *index <= MAX_ENTRY_TEXT_BYTES)
+                .take_while(|index| *index <= budget)
                 .last()
                 .unwrap_or(0);
             text.truncate(end);
-            text.push_str(" …[truncated]");
+            text.push_str(TRUNCATION_MARKER);
         }
         Self {
             at_ms,
