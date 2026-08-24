@@ -46,7 +46,8 @@ pub use proposal::{
 };
 
 pub use run::{
-    LEGACY_TRUNCATED_KEY, RunId, RunOrigin, RunRecord, RunStatus, RunStep, TRUNCATED_KEY,
+    LEGACY_TRUNCATED_KEY, RunExecutor, RunId, RunOrigin, RunRecord, RunStatus, RunStep,
+    TRUNCATED_KEY,
     bounded_evidence, bounded_within, is_truncated,
 };
 pub use transcript::TranscriptEntry;
