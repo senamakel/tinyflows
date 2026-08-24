@@ -638,6 +638,7 @@ impl HandlerData {
         let result = outcome::finish_execution(
             output,
             last_err,
+            attempts_used,
             duration_ms,
             on_error,
             &node,
