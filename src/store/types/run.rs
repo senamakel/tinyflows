@@ -109,6 +109,39 @@ impl RunOrigin {
     }
 }
 
+/// The OS process that is executing a run.
+///
+/// A run record on its own cannot say whether the process that wrote it is
+/// still alive, which is the difference between "another host is working on
+/// this" and "this row is a tombstone from a process that was killed". Stamping
+/// the executor turns that unanswerable question into a liveness check.
+///
+/// Both halves of the identity matter. A bare pid is not enough: pids are
+/// recycled, so a run left behind by pid 4711 would look alive the moment
+/// something unrelated is assigned 4711. `started_at_secs` — the executing
+/// process's own start time — makes the pair unique for as long as the record
+/// is worth reading.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RunExecutor {
+    /// The host the process runs on.
+    ///
+    /// The run store is per-machine today, but a record naming a pid with no
+    /// host is one shared filesystem away from a liveness check that compares
+    /// this machine's process table against another machine's pid. Recording it
+    /// costs nothing and makes the check refuse rather than guess.
+    pub host: String,
+    /// The executing process's id.
+    pub pid: u32,
+    /// When that process itself started, in seconds since the epoch.
+    ///
+    /// The pid-reuse guard. Absent when the platform would not report it, in
+    /// which case a liveness check falls back to the pid alone and errs toward
+    /// leaving the record alone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub started_at_secs: Option<u64>,
+}
+
 /// Where a run got to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -220,6 +253,28 @@ pub struct RunRecord {
     /// caller could not say anything about itself.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin: Option<RunOrigin>,
+    /// The process executing this run, while one is.
+    ///
+    /// Written when the run is admitted and left in place when it settles: a
+    /// finished run's executor is history, not a claim. What reads it is a
+    /// reconciliation sweep, which only consults it for a record that still
+    /// says [`RunStatus::Running`].
+    ///
+    /// Absent on records written before this field existed, which a sweep
+    /// treats as unowned — an old record claiming to run is exactly the kind
+    /// this exists to clean up.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub executor: Option<RunExecutor>,
+    /// Whether someone has asked this run to stop.
+    ///
+    /// The durable half of cancellation. An in-memory cancellation registry can
+    /// only reach a run its own process is executing, so a cancel aimed at a run
+    /// owned by another live process is written here instead; that process
+    /// notices the flag on its next poll and cancels itself. Never cleared — a
+    /// run that was asked to stop and then settled should still say it was
+    /// asked.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub cancel_requested: bool,
     /// Steps in completion order.
     #[serde(default)]
     pub steps: Vec<RunStep>,
@@ -280,6 +335,12 @@ impl RunRecord {
     /// Record who asked for this run.
     pub fn with_origin(mut self, origin: Option<RunOrigin>) -> Self {
         self.origin = origin;
+        self
+    }
+
+    /// Record the process executing this run.
+    pub fn with_executor(mut self, executor: Option<RunExecutor>) -> Self {
+        self.executor = executor;
         self
     }
 
