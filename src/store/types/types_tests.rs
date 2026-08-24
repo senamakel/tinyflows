@@ -93,6 +93,8 @@ fn run_records_use_camel_case_on_the_wire() {
         inputs: Default::default(),
         trigger: None,
         origin: None,
+        executor: None,
+        cancel_requested: false,
         summary: None,
         diagnosis: None,
     })
@@ -175,6 +177,8 @@ fn run_evidence_is_omitted_from_the_wire_when_absent() {
         inputs: Default::default(),
         trigger: None,
         origin: None,
+        executor: None,
+        cancel_requested: false,
         summary: None,
         diagnosis: None,
     })
@@ -201,6 +205,8 @@ fn what_a_run_was_started_with_survives_the_wire() {
         inputs: Default::default(),
         trigger: None,
         origin: None,
+        executor: None,
+        cancel_requested: false,
         summary: None,
         diagnosis: None,
     }
