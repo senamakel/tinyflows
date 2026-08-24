@@ -40,7 +40,8 @@ pub use file::{safe_component, workspace_scope, write_atomic};
 
 pub use self::types::{
     Diagnosis, LEGACY_TRUNCATED_KEY, NoteId, NoteKind, NoteSource, ProposalId, ProposalStatus,
-    ProposalVerification, RunId, RunOrigin, RunRecord, RunStatus, RunStep, TRUNCATED_KEY,
+    ProposalVerification, RunExecutor, RunId, RunOrigin, RunRecord, RunStatus, RunStep,
+    TRUNCATED_KEY,
     TranscriptEntry, WorkflowDefaults, WorkflowError, WorkflowId, WorkflowNote, WorkflowProposal,
     WorkflowRecord, WorkflowRevision, WorkflowSummary, is_truncated,
 };
@@ -145,6 +146,20 @@ pub trait WorkflowStore: Send + Sync {
 
     /// Every recorded run for a workflow, newest first.
     fn list_runs(&self, workflow_id: &str) -> Result<Vec<RunRecord>, WorkflowError>;
+
+    /// Every recorded run that has not settled, across all workflows.
+    ///
+    /// What a reconciliation sweep reads — the caller that asks "which records
+    /// still claim to be live" is asking across every workflow in the scope, and
+    /// answering that through [`list_runs`](Self::list_runs) would re-read the
+    /// whole runs directory once per workflow.
+    ///
+    /// The default returns nothing, which makes a store that cannot enumerate
+    /// its runs a store a sweep leaves alone rather than one that fails to
+    /// compile.
+    fn unsettled_runs(&self) -> Result<Vec<RunRecord>, WorkflowError> {
+        Ok(Vec::new())
+    }
 
     /// Every superseded copy of a workflow, newest first.
     ///
