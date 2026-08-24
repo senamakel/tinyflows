@@ -31,7 +31,9 @@ pub(super) use super::file::{
 pub(super) use super::{
     FileWorkflowStore, WorkflowStore, require, require_run, rollback, undo_last,
 };
-pub(super) use crate::store::types::{RunStatus, WorkflowDefaults, WorkflowError, WorkflowRecord};
+pub(super) use crate::store::types::{
+    RunExecutor, RunRecord, RunStatus, WorkflowDefaults, WorkflowError, WorkflowRecord,
+};
 
 /// A store rooted in a temporary directory, with definitions and runs kept
 /// apart the way the discovered layout keeps them.
