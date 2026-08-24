@@ -191,14 +191,29 @@ fn narrow_tools(granted: &[ToolGrant], requested: &[ToolGrant], node_id: &str) -
 /// both are set.
 ///
 /// # Errors
-/// Refuses a non-string or a blank value, exactly as a `shell` node's `cwd`
-/// does. A number or an empty string here is an authoring slip, and the
-/// alternative is a step that silently runs somewhere else.
+/// Refuses a non-string, a blank value, **or a null**, exactly as a `shell`
+/// node's `cwd` does. A number or an empty string here is an authoring slip,
+/// and the alternative is a step that silently runs somewhere else.
+///
+/// Null is the one worth spelling out. `cfg` arrives already
+/// expression-resolved, so `"cwd": "=nodes.prepare.item.json.worktree"` becomes
+/// `null` whenever that path is missing — the upstream node failed, or the key
+/// moved. Treating that as "no `cwd` declared" would fall through to
+/// `working_dir`, then to the definition's own directory, then to whatever the
+/// harness defaults to: the step runs in a *different checkout* and says
+/// nothing. A directory an author named is never silently swapped for another,
+/// so a present-but-null value fails the node instead.
 pub(crate) fn declared_working_dir(cfg: &Value, node_id: &str) -> Result<Option<String>> {
     for key in ["cwd", "working_dir"] {
-        let Some(value) = cfg.get(key).filter(|v| !v.is_null()) else {
+        let Some(value) = cfg.get(key) else {
             continue;
         };
+        if value.is_null() {
+            return Err(EngineError::Capability(format!(
+                "agent node {node_id}: `{key}` resolved to null; an expression that reads a \
+                 missing path fails the step rather than falling back to another directory"
+            )));
+        }
         let dir = value.as_str().ok_or_else(|| {
             EngineError::Capability(format!("agent node {node_id}: `{key}` must be a string"))
         })?;
@@ -225,13 +240,19 @@ pub(crate) fn declared_working_dir(cfg: &Value, node_id: &str) -> Result<Option<
 /// # Errors
 /// Returns [`EngineError::Capability`] when the directory escapes the
 /// workspace, does not exist, or is not a directory.
-pub(crate) fn resolve_working_dir(ctx: &NodeContext<'_>, raw: &str, key: &str) -> Result<String> {
+pub(crate) async fn resolve_working_dir(
+    ctx: &NodeContext<'_>,
+    raw: &str,
+    key: &str,
+) -> Result<String> {
     crate::workdir::resolve_node_dir(
+        ctx.caps.agent.as_ref(),
         ctx.run,
         raw,
         &format!("config.{key}"),
         &format!("agent node {}", ctx.node.id),
     )
+    .await
 }
 
 /// Resolves each declared [`ContextSource`] into a [`ContextBlock`], in
@@ -400,7 +421,7 @@ pub(crate) async fn assemble(
         } else {
             "working_dir"
         };
-        agent.working_dir = Some(resolve_working_dir(ctx, &raw, key)?);
+        agent.working_dir = Some(resolve_working_dir(ctx, &raw, key).await?);
     }
     let identity = identity_of(ctx, item_index);
     let conn = cfg.get("connection_ref").and_then(Value::as_str);

@@ -147,6 +147,42 @@ async fn a_cwd_that_does_not_exist_fails_naming_the_path() {
 }
 
 #[tokio::test]
+async fn a_cwd_expression_that_resolves_to_null_fails_the_step() {
+    // The upstream node did not publish the key the `cwd` expression reads, so
+    // the resolved config carries `null`. That must fail here rather than read
+    // as "no `cwd` declared" and let the harness pick its own directory.
+    let root = workspace();
+    let graph = parse(graph_json(
+        &canonical(&root),
+        json!("=nodes.prepare.item.missing_key"),
+    ));
+
+    let error = run_graph(&graph).await.expect_err("the step must fail");
+
+    assert!(error.contains("resolved to null"), "{error}");
+    assert!(error.contains("agent node code"), "{error}");
+}
+
+#[tokio::test]
+async fn a_null_cwd_does_not_fall_back_to_working_dir() {
+    // Both spellings present, `cwd` resolving to null: the older `working_dir`
+    // must not quietly win. Picking it up would run the step in a directory the
+    // author's `cwd` expression was meant to override.
+    let root = workspace();
+    let mut graph = graph_json(&canonical(&root), json!("=nodes.prepare.item.missing_key"));
+    graph["nodes"][2]["config"]["working_dir"] = json!("worktrees/issue-1");
+    let graph = parse(graph);
+
+    let error = run_graph(&graph).await.expect_err("the step must fail");
+
+    assert!(error.contains("resolved to null"), "{error}");
+    assert!(
+        !error.contains("worktrees/issue-1"),
+        "the fallback is never reached: {error}"
+    );
+}
+
+#[tokio::test]
 async fn a_run_with_no_workspace_passes_the_directory_through_unchanged() {
     // Back-compat: a harness whose agents run in a sandbox names directories
     // this process has never heard of.

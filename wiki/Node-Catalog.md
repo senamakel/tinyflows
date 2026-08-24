@@ -97,9 +97,25 @@ falling back to the workspace. Every one of them is `=`-bindable, which is the
 point — `"cwd": "=nodes.prepare.item.json.worktree"` runs the step in a
 directory an earlier node created.
 
+An expression that resolves to `null` — the upstream node failed, or the key
+moved — **fails the step** too. It is not read as "no directory declared": that
+would fall back to the agent definition's own `working_dir`, then to whatever
+the harness defaults to, and the step would run in a different checkout without
+saying so.
+
 A run with **no** workspace resolves nothing: the string reaches the harness
 verbatim, as it always has, because a host whose agents run in a remote sandbox
 names directories this process has never heard of.
+
+**Whose filesystem.** The shape of a declared directory — absolute vs relative,
+`..` traversal — is decided by reading the string, so the engine always checks
+it. Whether the path *exists*, what it canonicalizes to, and whether it is a
+directory are outside-world effects, and they route through
+`AgentRunner::resolve_workdir`. A harness whose agents run in a container or a
+remote sandbox implements it and answers for its own filesystem; the default is
+`WorkdirCheck::Unmanaged`, which checks the engine's own disk exactly as before.
+The `shell` node reaches the same place by a different road: it hands `cwd` to
+the `ShellRunner` untouched and the host's `ScriptPolicy` contains it.
 
 A directory key a node does not read — `workdir` on an `agent` node, `cwd` on a
 `tool_call` node — is a **validation error**, not a silent no-op. Being able to

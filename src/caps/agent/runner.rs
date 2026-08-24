@@ -1,5 +1,22 @@
 use super::*;
 
+/// A host's answer to "where does this declared working directory actually
+/// live?" — see [`AgentRunner::resolve_workdir`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WorkdirCheck {
+    /// Not this harness's filesystem to judge. The engine falls back to
+    /// checking the directory on its own process filesystem, which is the
+    /// behavior every host had before this method existed.
+    Unmanaged,
+    /// The directory exists in that workspace, and this is its canonical path
+    /// on the filesystem the agent will actually run on. The engine passes it
+    /// to the harness verbatim.
+    Resolved(String),
+    /// The directory is refused, for this reason. The engine fails the step
+    /// with the message, prefixed with the node it came from.
+    Refused(String),
+}
+
 /// Runs a host-registered, multi-turn **agent** — the harness seam.
 ///
 /// Where [`LlmProvider::complete`](crate::caps::LlmProvider::complete) is a
@@ -180,5 +197,33 @@ pub trait AgentRunner: Send + Sync {
             .iter()
             .map(|grant| ToolDescriptor::from_grant(grant, conn))
             .collect())
+    }
+
+    /// Resolves a node's declared working directory (`config.cwd`, a
+    /// `sub_workflow` node's `config.workspace`) against `workspace`, on the
+    /// filesystem the agent will actually run on.
+    ///
+    /// The engine has no filesystem of its own. It can, and does, check the
+    /// *shape* of a declared directory — an absolute path, a `..` traversal —
+    /// because that is string arithmetic. Deciding whether the path **exists**,
+    /// what it canonicalizes to, and whether it is a directory is an
+    /// outside-world effect, and on a harness whose agents run in a remote
+    /// sandbox or a container the answer is not on the engine's disk at all.
+    /// This method is where such a host answers for its own filesystem.
+    ///
+    /// `workspace` is the run's declared boundary and `declared` the raw value
+    /// the author wrote (already expression-resolved). A host that resolves the
+    /// pair must also **contain** it: returning
+    /// [`Resolved`](WorkdirCheck::Resolved) asserts the path is inside
+    /// `workspace`, since only the host can compare two paths on its own
+    /// filesystem.
+    ///
+    /// The default returns [`Unmanaged`](WorkdirCheck::Unmanaged) for
+    /// everything, so the engine canonicalizes locally exactly as it did before
+    /// this method existed. A host whose agents share the engine's filesystem
+    /// wants precisely that and should leave it alone.
+    async fn resolve_workdir(&self, workspace: &str, declared: &str) -> WorkdirCheck {
+        let _ = (workspace, declared);
+        WorkdirCheck::Unmanaged
     }
 }

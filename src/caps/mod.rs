@@ -24,7 +24,7 @@ use crate::error::Result;
 
 pub use self::agent::{
     AgentInput, AgentModelSelection, AgentRunIdentity, AgentRunOutcome, AgentRunRequest,
-    AgentRunner, AgentUsage, ContextBlock, StopReason, ToolDescriptor,
+    AgentRunner, AgentUsage, ContextBlock, StopReason, ToolDescriptor, WorkdirCheck,
 };
 pub use self::approval::{
     ApprovalDecision, ApprovalOutcome, ApprovalProvider, ApprovalRequest, ApprovalSubject,
