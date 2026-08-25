@@ -6,6 +6,9 @@ const BACKOFF_POLL_MS: u64 = 25;
 pub(super) async fn finish_execution<F>(
     output: Option<crate::nodes::NodeOutput>,
     last_err: Option<EngineError>,
+    // How many times the executor actually ran. Reported on the
+    // retries-exhausted warning so "after retries" carries a number.
+    attempts: u32,
     duration_ms: u128,
     on_error: &str,
     node: &crate::model::Node,
@@ -161,7 +164,22 @@ where
             Ok(emit(update, port, &output.items))
         }
         None => {
-            tracing::warn!(node = %node.id, "node failed after retries");
+            // Report the cause, not just the fact. `last_err` is a parameter of
+            // this function and is not unwrapped until the `let Some(err)`
+            // below, so without naming it here nothing in the log could say
+            // why the node failed — the line was node id and nothing else.
+            // Borrowed, not moved: the unwrap below still takes it by value.
+            //
+            // Deliberately logged here rather than after the unwrap: the `None`
+            // arm below is the defensive unreachable path, and moving this line
+            // past it would stop that case reporting at all.
+            tracing::warn!(
+                node = %node.id,
+                attempts,
+                on_error = %on_error,
+                error = ?last_err,
+                "node failed after retries"
+            );
             // Recover the data-binding diagnostics of the failed
             // attempt: the executor computes them while resolving config
             // but discards them on the error path, so re-resolve the same
