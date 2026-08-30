@@ -137,6 +137,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   needs it and should not have to pull in a process runner and an HTTP client to
   get it. Still re-exported from `caps::host::mocks`.
 
+### Removed
+
+- **Breaking: the Chrome workflow companion has been removed.** The
+  `chrome-extension` feature, `tinyflows::browser` and `tinyflows::companion`
+  modules, companion CLI, MV3 extension package, browser protocol fixtures, and
+  their dedicated CI job no longer ship. This also removes the crate's `axum`
+  dependency. Browser automation remains a host concern that can be exposed
+  through the existing `ToolInvoker` capability.
+
 ### Fixed
 
 - A node that failed once and then **succeeded on retry** is no longer reported

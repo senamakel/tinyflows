@@ -3,10 +3,8 @@ use serde_json::Value;
 
 /// Why a tool call failed.
 ///
-/// A closed set of stable snake_case codes, following
-/// [`BrowserErrorCode`](crate::browser::protocol::BrowserErrorCode)'s precedent:
-/// a caller — human or model — can branch on the code, and the message is for
-/// reading rather than parsing.
+/// A closed set of stable snake_case codes: a caller — human or model — can
+/// branch on the code, and the message is for reading rather than parsing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
