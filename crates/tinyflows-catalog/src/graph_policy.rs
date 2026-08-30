@@ -22,37 +22,18 @@
 //! has actually wired to a dispatcher. "This host does not deliver webhooks
 //! yet" is a fact about that host and belongs in its own overlay.
 
-use serde::{Deserialize, Serialize};
-use tinyflows::model::{NodeKind, WorkflowGraph};
-
-/// The trigger discriminator carried in a `trigger` node's
-/// `config.trigger_kind`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TriggerKind {
-    Manual,
-    Schedule,
-    Webhook,
-    AppEvent,
-    Form,
-    ExecuteByWorkflow,
-    ChatMessage,
-    Evaluation,
-    System,
-}
+use tinyflows::model::{NodeKind, TriggerKind, WorkflowGraph};
 
 /// Whether `graph`'s trigger fires **without a human in the loop** — i.e. on
 /// a timer, an inbound webhook, or a connected-app event, as opposed to
 /// `manual` (only ever fired by an explicit `flows_run`). Used by
-/// [`flows_create`] (issue B29 — save/enable safety, Rule 1) to decide
-/// whether a freshly-saved flow may persist `enabled: true` or must persist
-/// `enabled: false` until the user arms it explicitly via
-/// `flows_set_enabled`.
+/// a host to decide whether a freshly-saved flow may persist `enabled: true`
+/// or must persist `enabled: false` until the author arms it explicitly.
 ///
-/// Deliberately broader than [`trigger_kind_fires`]: `webhook` is not yet
-/// wired to auto-dispatch in this host (see that fn's doc), but it WILL fire
-/// unattended the moment it is — so a webhook-trigger flow must not be handed
-/// to the user pre-armed either. Returns `false` for a graph with no single
+/// Deliberately broader than "which kinds does this host dispatch today":
+/// a host that has not wired webhooks yet WILL fire them unattended the moment
+/// it does, so a webhook-trigger flow must not be handed to the author
+/// pre-armed either. Returns `false` for a graph with no single
 /// resolvable trigger node or no `trigger_kind` discriminator (never a
 /// surprise — it never self-fires).
 pub fn trigger_is_automatic(graph: &WorkflowGraph) -> bool {
@@ -74,7 +55,7 @@ pub fn trigger_is_automatic(graph: &WorkflowGraph) -> bool {
 /// Whether `graph` contains a node that can produce a real outbound side
 /// effect — `tool_call` (a curated integration action), `http_request`, or
 /// `code` (sandboxed but Turing-complete, can reach the network). Used by
-/// [`flows_create`] (issue B29, Rule 2) to force `require_approval: true` on
+/// a host to force `require_approval: true` on
 /// any graph that can act on the world, regardless of what the caller
 /// passed. A graph built only from `trigger` / `agent` / `transform` /
 /// `condition` / data-flow nodes is read-only and unaffected.
@@ -87,10 +68,9 @@ pub fn graph_has_outbound_side_effect(graph: &WorkflowGraph) -> bool {
     })
 }
 
-/// Shared Rule 2 enforcement (issue B29, and its `flows_update` compound-bypass
-/// closure): forces `require_approval` to `true` when `graph` contains an
+/// Shared side-effect enforcement: forces `require_approval` to `true` when `graph` contains an
 /// outbound side-effect node, no matter what the caller asked for. Used by both
-/// [`flows_create`] and [`flows_update`] so a flow can never persist
+/// the create and the update paths so a flow can never persist
 /// `require_approval: false` alongside a `tool_call` / `http_request` / `code`
 /// node — on create OR on a later edit that *adds* such a node to a
 /// previously-read-only graph.
@@ -109,7 +89,7 @@ pub fn enforce_side_effect_approval(
     (effective_require_approval, was_forced)
 }
 
-/// Whether `graph` has anything for [`flows_run`] to actually *do* — i.e. at
+/// Whether `graph` has anything for a run to actually *do* — i.e. at
 /// least one non-`trigger` node **reachable from the trigger** by following
 /// directed edges. A graph made of nothing but a bare `trigger` node (or a
 /// `trigger` plus unreachable/disconnected nodes — even ones wired to each
@@ -117,8 +97,7 @@ pub fn enforce_side_effect_approval(
 /// cleanly while producing no work whatsoever — the exact live finding this
 /// guards: a trigger-only flow reported `status="completed"
 /// pending_approvals=0` having done nothing, which reads as a successful
-/// automation to anyone not staring at the node count. Used by `flows_run`
-/// to attach a human-readable note to an otherwise-silent "success".
+/// automation to anyone not staring at the node count. A host uses it to attach a human-readable note to an otherwise-silent "success".
 ///
 /// Deliberately a reachability walk rather than "any edge at all exists":
 /// `nodes.len() > 1 && !edges.is_empty()` would count a disconnected
