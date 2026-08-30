@@ -392,11 +392,7 @@ pub(super) fn map_code(params: &Value, warnings: &mut Vec<String>, n8n_name: &st
     Value::Object(cfg)
 }
 
-fn map_code_node(
-    params: &Value,
-    warnings: &mut Vec<String>,
-    n8n_name: &str,
-) -> (NodeKind, Value) {
+fn map_code_node(params: &Value, warnings: &mut Vec<String>, n8n_name: &str) -> (NodeKind, Value) {
     let mut config = map_code(params, warnings, n8n_name);
     let incompatible = config
         .get("source")

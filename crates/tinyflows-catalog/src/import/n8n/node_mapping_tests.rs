@@ -258,11 +258,7 @@ fn code_node_with_n8n_globals_or_top_level_return_warns() {
 #[test]
 fn incompatible_n8n_code_is_a_placeholder_not_an_executable_code_node() {
     let mut warnings = Vec::new();
-    let (kind, cfg) = map_code_node(
-        &json!({ "jsCode": "return items;" }),
-        &mut warnings,
-        "Code",
-    );
+    let (kind, cfg) = map_code_node(&json!({ "jsCode": "return items;" }), &mut warnings, "Code");
     assert_eq!(kind, NodeKind::Transform);
     assert_eq!(cfg["_n8n_import"]["original_type"], json!("code"));
 
