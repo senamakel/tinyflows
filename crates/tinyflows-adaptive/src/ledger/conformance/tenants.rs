@@ -19,7 +19,33 @@ pub async fn run_tenants(global: &dyn Ledger, a: &dyn Ledger, b: &dyn Ledger) {
     workflow_scores_do_not_bleed_between_tenants(a, b).await;
     a_tenant_writing_does_not_move_the_global_score(global, a).await;
     an_episode_id_alone_does_not_reach_another_tenants_attempts(a, b).await;
+    identical_episode_ids_are_stored_once_per_tenant(a, b).await;
     naming_another_tenants_lesson_id_does_not_move_its_score(global, a, b).await;
+}
+
+async fn identical_episode_ids_are_stored_once_per_tenant(a: &dyn Ledger, b: &dyn Ledger) {
+    let mut for_a = episode("ep-shared-id", EpisodeStatus::Running, 1, 0);
+    for_a.goal.text = "tenant a goal".to_string();
+    let mut for_b = episode("ep-shared-id", EpisodeStatus::Running, 2, 0);
+    for_b.goal.text = "tenant b goal".to_string();
+
+    a.save_episode(&for_a).await.expect("save tenant a");
+    b.save_episode(&for_b).await.expect("save tenant b");
+
+    let got_a = a
+        .episode("ep-shared-id")
+        .await
+        .expect("read tenant a")
+        .expect("tenant a episode");
+    let got_b = b
+        .episode("ep-shared-id")
+        .await
+        .expect("read tenant b")
+        .expect("tenant b episode");
+    assert_eq!(got_a.goal.text, "tenant a goal");
+    assert_eq!(got_a.attempt, 1);
+    assert_eq!(got_b.goal.text, "tenant b goal");
+    assert_eq!(got_b.attempt, 2);
 }
 
 async fn naming_another_tenants_lesson_id_does_not_move_its_score(
@@ -177,4 +203,3 @@ async fn a_tenant_writing_does_not_move_the_global_score(global: &dyn Ledger, a:
         "the global bucket is its own bucket, not a union of every tenant's"
     );
 }
-
