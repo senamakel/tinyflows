@@ -179,7 +179,7 @@ fn an_expression_that_is_not_a_node_binding_is_not_second_guessed() {
     assert!(failures(&graph).is_empty(), "{:?}", failures(&graph));
 }
 
-include!("gates/indexed_binding_tests.rs");
+include!("indexed_binding_tests.rs");
 
 // ---- the error surface ----
 
