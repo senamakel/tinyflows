@@ -455,14 +455,8 @@ fn list_enabled_flows_excludes_disabled() {
 
     let enabled_flow =
         create_flow(&dir, "enabled".to_string(), trigger_graph(), false, true).unwrap();
-    let disabled_flow = create_flow(
-        &dir,
-        "disabled".to_string(),
-        trigger_graph(),
-        false,
-        true,
-    )
-    .unwrap();
+    let disabled_flow =
+        create_flow(&dir, "disabled".to_string(), trigger_graph(), false, true).unwrap();
     set_enabled(&dir, &disabled_flow.id, false).unwrap();
 
     let (enabled, skipped) = list_enabled_flows(&dir).unwrap();
@@ -574,30 +568,9 @@ fn list_flow_runs_orders_newest_first_and_is_scoped_to_flow() {
     let flow_a = create_flow(&dir, "a".to_string(), trigger_graph(), false, true).unwrap();
     let flow_b = create_flow(&dir, "b".to_string(), trigger_graph(), false, true).unwrap();
 
-    insert_flow_run(
-        &dir,
-        "run-a1",
-        &flow_a.id,
-        "run-a1",
-        "2026-01-01T00:00:00Z",
-    )
-    .unwrap();
-    insert_flow_run(
-        &dir,
-        "run-a2",
-        &flow_a.id,
-        "run-a2",
-        "2026-01-02T00:00:00Z",
-    )
-    .unwrap();
-    insert_flow_run(
-        &dir,
-        "run-b1",
-        &flow_b.id,
-        "run-b1",
-        "2026-01-01T00:00:00Z",
-    )
-    .unwrap();
+    insert_flow_run(&dir, "run-a1", &flow_a.id, "run-a1", "2026-01-01T00:00:00Z").unwrap();
+    insert_flow_run(&dir, "run-a2", &flow_a.id, "run-a2", "2026-01-02T00:00:00Z").unwrap();
+    insert_flow_run(&dir, "run-b1", &flow_b.id, "run-b1", "2026-01-01T00:00:00Z").unwrap();
 
     let runs_a = list_flow_runs(&dir, &flow_a.id, 10).unwrap();
     assert_eq!(runs_a.len(), 2);
@@ -760,10 +733,7 @@ fn insert_flow_run_auto_prunes_beyond_retention_cap() {
         )
         .unwrap();
     }
-    assert_eq!(
-        list_flow_runs(&dir, &flow.id, cap * 2).unwrap().len(),
-        cap
-    );
+    assert_eq!(list_flow_runs(&dir, &flow.id, cap * 2).unwrap().len(), cap);
 
     // One more insert should trigger the retention prune, keeping <= cap.
     let extra = "run-extra";
@@ -860,7 +830,7 @@ fn upsert_suggestions_preserves_user_status_on_rerun() {
     let dismissed = list_suggestions(&dir, Some(SuggestionStatus::Dismissed), 50).unwrap();
     assert_eq!(dismissed.len(), 1);
     assert_eq!(dismissed[0].title, "Alpha (refined)"); // pitch fields refreshed
-                                                       // …but it is NOT back in the active `New` list.
+    // …but it is NOT back in the active `New` list.
     let active = list_suggestions(&dir, Some(SuggestionStatus::New), 50).unwrap();
     assert!(active.is_empty());
 }
@@ -879,9 +849,11 @@ fn list_suggestions_without_status_returns_all() {
     upsert_suggestions(&dir, &[sample_suggestion("s1", "Alpha")]).unwrap();
     set_suggestion_status(&dir, "s1", SuggestionStatus::Built).unwrap();
     // Filtered to `New` → empty; unfiltered → present.
-    assert!(list_suggestions(&dir, Some(SuggestionStatus::New), 50)
-        .unwrap()
-        .is_empty());
+    assert!(
+        list_suggestions(&dir, Some(SuggestionStatus::New), 50)
+            .unwrap()
+            .is_empty()
+    );
     assert_eq!(list_suggestions(&dir, None, 50).unwrap().len(), 1);
 }
 
@@ -954,30 +926,9 @@ fn list_running_run_ids_excludes_rows_started_at_or_after_the_floor() {
     let dir = test_dir(&tmp);
     let flow = create_flow(&dir, "demo".to_string(), trigger_graph(), false, true).unwrap();
 
-    insert_flow_run(
-        &dir,
-        "run-old",
-        &flow.id,
-        "run-old",
-        "2026-01-01T00:00:00Z",
-    )
-    .unwrap();
-    insert_flow_run(
-        &dir,
-        "run-at",
-        &flow.id,
-        "run-at",
-        "2026-01-01T00:00:05Z",
-    )
-    .unwrap();
-    insert_flow_run(
-        &dir,
-        "run-new",
-        &flow.id,
-        "run-new",
-        "2026-01-01T00:00:09Z",
-    )
-    .unwrap();
+    insert_flow_run(&dir, "run-old", &flow.id, "run-old", "2026-01-01T00:00:00Z").unwrap();
+    insert_flow_run(&dir, "run-at", &flow.id, "run-at", "2026-01-01T00:00:05Z").unwrap();
+    insert_flow_run(&dir, "run-new", &flow.id, "run-new", "2026-01-01T00:00:09Z").unwrap();
 
     // The floor is exclusive: a row stamped exactly at the boot floor was
     // inserted by THIS process (`start_flow_run_row` anchors the floor before
@@ -1095,10 +1046,7 @@ fn expire_parked_runs_returns_only_rows_it_actually_flipped() {
         "only the row whose guarded UPDATE matched may be reported as swept"
     );
     assert_eq!(
-        get_flow_run(&dir, "claimed-run")
-            .unwrap()
-            .unwrap()
-            .status,
+        get_flow_run(&dir, "claimed-run").unwrap().unwrap().status,
         "running",
         "the claimed run must keep executing, untouched by the sweep"
     );
@@ -1148,8 +1096,7 @@ fn list_flows_skips_a_row_whose_schema_version_is_newer_than_this_build_supports
     let dir = test_dir(&tmp);
 
     let good = create_flow(&dir, "good".to_string(), trigger_graph(), false, true).unwrap();
-    let too_new =
-        create_flow(&dir, "too-new".to_string(), trigger_graph(), false, true).unwrap();
+    let too_new = create_flow(&dir, "too-new".to_string(), trigger_graph(), false, true).unwrap();
     let newer_schema_json = serde_json::json!({
         "schema_version": 999,
         "name": "from-the-future",
@@ -1377,14 +1324,8 @@ fn schema_initializes_independently_for_each_distinct_database_path() {
 
     assert_eq!(list_flows(&dir_a).unwrap().0.len(), 1);
     assert_eq!(list_flows(&dir_b).unwrap().0.len(), 1);
-    assert_eq!(
-        get_flow(&dir_a, &flow_a.id).unwrap().unwrap().id,
-        flow_a.id
-    );
-    assert_eq!(
-        get_flow(&dir_b, &flow_b.id).unwrap().unwrap().id,
-        flow_b.id
-    );
+    assert_eq!(get_flow(&dir_a, &flow_a.id).unwrap().unwrap().id, flow_a.id);
+    assert_eq!(get_flow(&dir_b, &flow_b.id).unwrap().unwrap().id, flow_b.id);
 }
 
 /// R-m8 regression: gating the DDL behind a per-path "already initialized" set

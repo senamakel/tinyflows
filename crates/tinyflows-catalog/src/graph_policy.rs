@@ -131,7 +131,6 @@ pub fn graph_has_actionable_nodes(graph: &WorkflowGraph) -> bool {
         .any(|n| n.kind != NodeKind::Trigger)
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -146,11 +145,14 @@ mod tests {
         }))
         .expect("trigger-only graph");
         if let Some(kind) = kind {
-            g.nodes.push(serde_json::from_value(json!({
-                "id": "n", "kind": kind, "name": "N", "config": {}
-            }))
-            .expect("second node"));
-            g.edges = serde_json::from_value(json!([{ "from_node": "t", "to_node": "n" }])).expect("edge");
+            g.nodes.push(
+                serde_json::from_value(json!({
+                    "id": "n", "kind": kind, "name": "N", "config": {}
+                }))
+                .expect("second node"),
+            );
+            g.edges = serde_json::from_value(json!([{ "from_node": "t", "to_node": "n" }]))
+                .expect("edge");
         }
         g
     }
@@ -210,7 +212,10 @@ mod tests {
         assert_eq!(enforce_side_effect_approval(&acting, true), (true, false));
 
         let readonly = graph(json!({}), Some(NodeKind::Agent));
-        assert_eq!(enforce_side_effect_approval(&readonly, false), (false, false));
+        assert_eq!(
+            enforce_side_effect_approval(&readonly, false),
+            (false, false)
+        );
         assert_eq!(enforce_side_effect_approval(&readonly, true), (true, false));
     }
 
@@ -238,7 +243,8 @@ mod tests {
             ]))
             .expect("orphan nodes"),
         );
-        g.edges = serde_json::from_value(json!([{ "from_node": "a", "to_node": "b" }])).expect("orphan edge");
+        g.edges = serde_json::from_value(json!([{ "from_node": "a", "to_node": "b" }]))
+            .expect("orphan edge");
         assert!(!graph_has_actionable_nodes(&g));
     }
 }

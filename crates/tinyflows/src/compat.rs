@@ -56,16 +56,13 @@ pub const UNSUPPORTED_NESTED_CONDITIONAL_FAN_IN: &str = "unsupported_nested_cond
 pub const UNSUPPORTED_MAIN_PORT_CONDITIONAL_FAN_IN: &str =
     "unsupported_main_port_conditional_fan_in";
 
-
 /// Every unsafe topology in `graph`, including its inline `sub_workflow`
 /// children, to the nesting depth the graph itself declares.
 ///
 /// An empty result is a pass. See the module doc for what "unsafe" means here
 /// and why it is refused rather than warned about.
 #[must_use]
-pub fn errors(
-    graph: &WorkflowGraph,
-) -> Vec<CompatibilityError> {
+pub fn errors(graph: &WorkflowGraph) -> Vec<CompatibilityError> {
     errors_with_max_depth(graph, max_sub_workflow_depth(graph))
 }
 
@@ -79,10 +76,7 @@ pub fn errors(
 /// the engine's runtime depth counter is one budget shared across the whole
 /// inline-plus-referenced call chain, so a fan-in the child's own cap would
 /// not reach can still be reached from the root.
-pub fn errors_with_max_depth(
-    graph: &WorkflowGraph,
-    max_depth: u64,
-) -> Vec<CompatibilityError> {
+pub fn errors_with_max_depth(graph: &WorkflowGraph, max_depth: u64) -> Vec<CompatibilityError> {
     let mut errors = Vec::new();
     collect_errors(graph, 0, max_depth, &mut errors);
     errors
@@ -134,9 +128,7 @@ fn collect_errors(
     }
 }
 
-fn graph_errors(
-    graph: &WorkflowGraph,
-) -> Vec<CompatibilityError> {
+fn graph_errors(graph: &WorkflowGraph) -> Vec<CompatibilityError> {
     let Some(trigger) = graph.trigger() else {
         return Vec::new();
     };
@@ -374,7 +366,6 @@ fn reaches_deterministically_via_port(
         .filter(|edge| edge.from_node == brancher && edge.from_port == port)
         .any(|edge| reaches_on_main_edges(graph, &edge.to_node, target, stop))
 }
-
 
 #[cfg(test)]
 #[path = "compat_tests.rs"]

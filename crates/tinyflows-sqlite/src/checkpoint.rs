@@ -19,9 +19,9 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use rusqlite::{params, Connection, OptionalExtension};
-use serde::de::DeserializeOwned;
+use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 use tinyflows::graph::checkpoint::merge_writes;
 use tinyflows::graph::error::{GraphError, Result};

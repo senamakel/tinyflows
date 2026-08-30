@@ -92,8 +92,7 @@ impl BuilderRequest {
 }
 
 /// A leading directive that frames the turn's persistence contract.
-const DIRECTIVE_PROPOSE: &str =
-    "Design a tinyflows automation and return a workflow proposal for me to review. \
+const DIRECTIVE_PROPOSE: &str = "Design a tinyflows automation and return a workflow proposal for me to review. \
      Do not save, enable, or run anything.";
 
 const DIRECTIVE_REVISE: &str = "Revise this tinyflows automation and return the revised proposal. Do not save \
@@ -397,10 +396,7 @@ mod tests {
         // drop the "can't change their memory" guarantee this agent's tool
         // scope depends on (no `memory_store` in agent.toml).
         assert!(
-            contains_normalized(
-                STANDING_PROMPT,
-                "Read-only — you can't change their memory"
-            ),
+            contains_normalized(STANDING_PROMPT, "Read-only — you can't change their memory"),
             "standing prompt must state the memory read-only guarantee, not just mention memory_recall"
         );
 

@@ -165,7 +165,9 @@ fn an_inline_sub_workflow_child_is_walked_and_its_refusal_is_attributed() {
     let errors = errors(&g);
     assert_eq!(errors.len(), 1, "{errors:?}");
     assert!(
-        errors[0].message.starts_with("Inline sub_workflow node 'call'"),
+        errors[0]
+            .message
+            .starts_with("Inline sub_workflow node 'call'"),
         "{}",
         errors[0].message
     );

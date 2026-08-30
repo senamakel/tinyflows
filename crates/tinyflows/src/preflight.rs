@@ -94,12 +94,9 @@ pub async fn unresolvable_tool_args(
     let observer = Arc::new(CapturingObserver::default());
     let observer_dyn: Arc<dyn crate::observability::RunObserver> = observer.clone();
     let run = crate::engine::run_with_observer(&compiled, json!({}), &caps, &observer_dyn);
-    if tokio::time::timeout(
-        std::time::Duration::from_secs(RUN_TIMEOUT_SECS),
-        run,
-    )
-    .await
-    .is_err()
+    if tokio::time::timeout(std::time::Duration::from_secs(RUN_TIMEOUT_SECS), run)
+        .await
+        .is_err()
     {
         // Timed out — a different class of problem than this gate exists to
         // catch; never block authoring on it here.
@@ -386,7 +383,6 @@ pub fn mock_opaque_tool_call_upstream_ref<'a>(
     }
     Some(node.id.as_str())
 }
-
 
 #[cfg(test)]
 #[path = "preflight_tests.rs"]

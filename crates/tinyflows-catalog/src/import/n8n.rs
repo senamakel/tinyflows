@@ -27,7 +27,7 @@
 //! (unmapped type, untranslated expression, synthesized/demoted trigger) is
 //! reported as a warning string the UI surfaces next to the imported draft.
 
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use tinyflows::model::{Edge, Node, NodeKind, Position, WorkflowGraph};
 
 /// The outcome of mapping an n8n workflow: the best-effort tinyflows graph plus
@@ -622,11 +622,7 @@ fn slug(name: &str) -> String {
             }
         })
         .collect();
-    if s.is_empty() {
-        "node".to_string()
-    } else {
-        s
-    }
+    if s.is_empty() { "node".to_string() } else { s }
 }
 
 #[cfg(test)]

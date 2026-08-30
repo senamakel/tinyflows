@@ -285,11 +285,7 @@ fn a_prose_prompt_beside_real_messages_is_not_refused() {
         } },
     ]));
 
-    assert!(
-        failures(&graph).is_empty(),
-        "{:?}",
-        failures(&graph)
-    );
+    assert!(failures(&graph).is_empty(), "{:?}", failures(&graph));
 }
 
 /// The escape hatch is the presence of messages that actually carry the turn.
