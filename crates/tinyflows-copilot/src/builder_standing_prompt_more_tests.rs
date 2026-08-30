@@ -1,7 +1,6 @@
 //! Standing-prompt content assertions: reply hygiene, agent-ref selection,
 //! and the working-memory read/write split.
 
-
 use super::contains_normalized;
 
 /// narration, no draft-then-restate, lead with substance. Without these
@@ -314,4 +313,3 @@ fn standing_prompt_states_flows_cannot_write_user_memory_but_can_write_flow_memo
          get silently marked done"
     );
 }
-

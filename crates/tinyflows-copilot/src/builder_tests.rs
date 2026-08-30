@@ -138,6 +138,8 @@ fn build_is_propose_only_and_injects_flow_id_as_context() {
     assert!(p.contains("END-TO-END"));
 }
 
+#[path = "builder_standing_prompt_more_tests.rs"]
+mod standing_prompt_more_tests;
 /// The standing archetype (`prompt.md`, the always-loaded system prompt —
 /// as opposed to the per-turn directives rendered above) carries the same
 /// B27 banned-phrase regression, plus positive coverage for the plain-
@@ -148,8 +150,6 @@ fn build_is_propose_only_and_injects_flow_id_as_context() {
 
 #[path = "builder_standing_prompt_tests.rs"]
 mod standing_prompt_tests;
-#[path = "builder_standing_prompt_more_tests.rs"]
-mod standing_prompt_more_tests;
 
 #[test]
 fn repair_includes_run_id_error_and_failing_nodes() {

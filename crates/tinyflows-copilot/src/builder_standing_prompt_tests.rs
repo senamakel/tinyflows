@@ -1,6 +1,5 @@
 //! Standing-prompt content assertions: the plain-language / read-only-memory framing.
 
-
 use super::contains_normalized;
 
 #[test]
@@ -258,4 +257,3 @@ fn standing_prompt_teaches_plain_language_and_readonly_memory() {
         );
     }
 }
-
