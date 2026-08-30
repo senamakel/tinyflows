@@ -27,8 +27,8 @@
 //! (unmapped type, untranslated expression, synthesized/demoted trigger) is
 //! reported as a warning string the UI surfaces next to the imported draft.
 
-use serde_json::{Map, Value, json};
-use tinyflows::model::{Edge, Node, NodeKind, Position, WorkflowGraph};
+use serde_json::{Map, Value};
+use tinyflows::model::{Edge, Node, WorkflowGraph};
 
 /// The outcome of mapping an n8n workflow: the best-effort tinyflows graph plus
 /// the list of advisory warnings collected during the mapping.
@@ -210,11 +210,11 @@ use graph::{map_connections, parse_position, reconcile_triggers, slug};
 use node_mapping::map_node;
 
 #[cfg(test)]
-use expr::{jq_field, json_path_to_jq, translate_config, translate_expr, untranslated_warning};
+use expr::{jq_field, translate_expr};
 #[cfg(test)]
 use graph::output_port_name;
 #[cfg(test)]
-use node_mapping::{map_code, map_http_request, trigger_config};
+use node_mapping::{map_code, map_http_request};
 
 #[cfg(test)]
 #[path = "n8n_tests.rs"]
