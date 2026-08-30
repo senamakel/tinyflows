@@ -432,7 +432,7 @@ A `WorkflowGraph` is `{ name?, nodes: [...], edges: [...] }`.
    time" above); reach for `context_scout` only when the step explicitly needs
    the scout's structured `[context_bundle]` output.
 3. **`tool_call`** — an action. Two flavours by `config.slug`:
-   - **Composio app action** — `config.slug` = a real action slug (from
+   - **Connected-app action** — `config.slug` = a real action slug (from
      `search_tool_catalog`, e.g. `GMAIL_SEND_EMAIL`) + `config.connection_ref`
      for the account. **Before wiring, call `get_tool_contract { slug }`** —
      it returns the FULL contract: `required_args` (wire EVERY one),
@@ -458,13 +458,12 @@ A `WorkflowGraph` is `{ name?, nodes: [...], edges: [...] }`.
      never off memory/convention for that app.
    - **The slug itself is enforced too.** `propose_workflow` /
      `revise_workflow` / `save_workflow` HARD-REJECT a `tool_call` whose
-     slug isn't a real action in the live Composio catalog for its toolkit —
+     slug isn't a real action in the live tool catalog for its toolkit —
      a hallucinated or typo'd slug never makes it past validation, so always
      ground `config.slug` in a `search_tool_catalog` result first.
    - **The `connection_ref` is enforced against the RIGHT toolkit.**
-     `config.connection_ref` must read `composio:<toolkit>:<id>` where
-     `<toolkit>` matches the slug's toolkit AND `<id>` is one of the user's real
-     connections **for that toolkit** — get each ref verbatim from
+     `config.connection_ref` must be one of the user's real opaque connection
+     refs **for that toolkit** — get each ref verbatim from
      `list_flow_connections`. Copying an id from a DIFFERENT toolkit (e.g. a
      TikTok connection id onto a Gmail node) is HARD-REJECTED at
      `propose_workflow`/`revise_workflow`/`save_workflow`, naming the correct
@@ -478,18 +477,14 @@ A `WorkflowGraph` is `{ name?, nodes: [...], edges: [...] }`.
    - **Wiring a DOWNSTREAM node off THIS tool's output?** Don't guess the
      field name (e.g. assuming `GMAIL_FETCH_EMAILS` returns `.messages`) —
      `get_tool_contract`'s `output_fields` names the action's REAL top-level
-     output field names. **A Composio tool_call's result is wrapped in
-     `data`** (`ComposioExecuteResponse`), one level DEEPER than the engine's
-     own `{json,text,raw}` envelope — so bind
-     `=nodes.<tool_call_id>.item.json.data.<field>` (not `.item.json.<field>`)
-     to one of those `output_fields`. If `output_fields` is empty (schema
+     output field names. Bind through the exact response path described by the
+     contract; provider-specific wrappers are not assumed here. If
+     `output_fields` is empty (schema
      unknown for that action), `dry_run_workflow` the binding before you
      propose/save it — don't ship a guessed field name.
    - **Fanning out over THIS tool's result list (`split_out`)?** Use
-     `get_tool_contract`'s `primary_array_path`, prefixed `json.` — e.g.
-     `"path": "json.data.messages"` — as the downstream `split_out.path`.
-     `primary_array_path` already includes the `data.` segment above, so
-     just prefix `json.` — don't guess where the array lives in the response.
+     `get_tool_contract`'s `primary_array_path`, prefixed `json.` — as the
+     downstream `split_out.path`. Do not guess where the array lives in the response.
      **If `get_tool_contract` returns `primary_array_path: null` for a source
      tool you plan to `split_out` (its live listing has no output schema at
      all — this is genuinely true for every GitHub action, e.g.
@@ -507,11 +502,12 @@ A `WorkflowGraph` is `{ name?, nodes: [...], edges: [...] }`.
      { slug }` (resolves that known slug's toolkit and fetches ITS full
      contract from the same live catalog — a grounding lookup, not a
      search, and also works regardless of connection state) and either call
-     `composio_connect { toolkit }` yourself (see "Connecting integrations"
-     below) or note in your reply that the user needs to connect it — the
+     the host's connection-setup tool when one is on your belt (see
+     "Connecting integrations" below) or note in your reply that the user
+     needs to connect it — the
      flow will also prompt for the connection the first time it actually runs.
-   - **Native OpenHuman tool** — `config.slug` = `oh:<tool_name>` (e.g.
-     `oh:web_search`) to call one of the assistant's own built-in tools (search,
+   - **Host-native tool** — `config.slug` = an exact host-native slug returned
+     by the live tool catalog, to call one of the host's built-in tools (search,
      media generation, files, …). No `connection_ref`. Args go in `config.args`.
 4. **`http_request`** — `config.method` + `config.url`, optional `headers` /
    `body`; `config.connection_ref` = an `http_cred:<name>` for auth.
@@ -722,15 +718,9 @@ Use expressions to thread data between steps (a `transform`'s `set`, an
 kinds is that envelope, NOT the structured value itself:
 
 - Structured fields live under **`.json`** — `"=nodes.<id>.item.json.<field>"`
-  (jq: `"=.nodes[\"<id>\"].items[0].json.<field>"`) — **except a Composio
-  `tool_call`**, whose real output nests one level DEEPER, under `data`:
-  `"=nodes.<id>.item.json.data.<field>"`. That's Composio's own execute-
-  response wrapper (`{data, successful, error, costUsd, …}`), stacked
-  underneath the engine's `{json,text,raw}` envelope — `agent` and
-  `http_request` nodes carry no such wrapper and keep the plain
-  `.item.json.<field>` form. A native `oh:`-prefixed tool_call also has no
-  `data` wrapper (it isn't a Composio call) — this only applies to a
-  `tool_call` whose `slug` is a real Composio action.
+  (jq: `"=.nodes[\"<id>\"].items[0].json.<field>"`). A provider may add its
+  own response wrapper inside the engine envelope; use the exact output path
+  returned by `get_tool_contract` instead of assuming a vendor-specific shape.
 - Prose lives under **`.text`** — `"=nodes.<id>.item.text"`.
 - `code`, `transform`, `split_out`, `merge`, `output_parser`, `sub_workflow`,
   and `trigger` nodes do **NOT** envelope — their output is addressed directly,
