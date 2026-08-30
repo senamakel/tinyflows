@@ -1,9 +1,9 @@
 //! The [`Flow`] entity: a saved automation workflow definition.
 //!
-//! Wraps `tinyflows::model::WorkflowGraph` with the metadata OpenHuman needs to
-//! store, list, and track runs for a saved flow. The graph itself is the
-//! portable, tinyflows-owned contract (validated + migrated on load); this
-//! struct is the OpenHuman-side record around it.
+//! Wraps `tinyflows::model::WorkflowGraph` with the metadata any host needs to
+//! store, list, and track runs for a saved flow. The graph is the portable
+//! engine contract (validated and migrated on load); these are the records
+//! around it.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -37,7 +37,7 @@ impl FlowRunTrigger {
 }
 
 /// The result of validating a candidate `tinyflows` graph without persisting
-/// it — returned by `openhuman.flows_validate` (PHASE 3c) and used to surface
+/// it — returned by a host's validate route and used to surface
 /// structural errors and non-fatal warnings (e.g. "this trigger kind never
 /// fires automatically yet") to an authoring surface *before* a flow is saved.
 ///
@@ -98,7 +98,7 @@ pub struct FlowValidationError {
 }
 
 /// The result of importing a workflow definition (native tinyflows JSON or an
-/// n8n export) via `openhuman.flows_import` (PHASE 4d) — the normalized,
+/// n8n export) via a host's import route — the normalized,
 /// migrated + validated [`WorkflowGraph`] plus any non-fatal import warnings
 /// (unmapped n8n node types, untranslated expressions, a synthesized/demoted
 /// trigger, …).
@@ -197,7 +197,7 @@ pub struct FlowDraft {
     pub updated_at: String,
 }
 
-/// A saved automation workflow: a `tinyflows` graph plus OpenHuman-side
+/// A saved automation workflow: a `tinyflows` graph plus catalog-side
 /// bookkeeping (enablement, run history summary).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Flow {
@@ -221,8 +221,8 @@ pub struct Flow {
     /// approval gate does NOT auto-allow this flow's `TrustedAutomation
     /// { Workflow }` trust root — every external_effect tool/HTTP call the
     /// flow makes still parks for a real decision, regardless of how the run
-    /// was triggered. See `src/openhuman/security/approval/gate.rs` and
-    /// `src/openhuman/agent/turn_origin.rs::TrustedAutomationSource::Workflow`.
+    /// was triggered. A host that gates tool calls on human approval reads this
+    /// to decide whether a run may act unattended.
     #[serde(default)]
     pub require_approval: bool,
 }
@@ -268,7 +268,7 @@ pub struct FlowRunStep {
 }
 
 /// A resolvable connection the flows UI / agent picker can attach to a node's
-/// `connection_ref`. Aggregated by `openhuman.flows_list_connections` from two
+/// `connection_ref`. Aggregated by a host's connection-listing route from two
 /// host-side sources:
 ///
 /// - **Composio connected accounts** (`kind = "composio"`) — each active OAuth
