@@ -374,7 +374,6 @@ where
             serde_json::to_string(namespace).map_err(|e| sqlite_err("encode namespace", e))?;
         let conn = self.conn.clone();
         let thread_id = thread_id.to_string();
-        let limit = limit;
         tokio::task::spawn_blocking(move || -> Result<Vec<CheckpointTuple<State>>> {
             let (records, writes) = {
                 let conn = lock_conn(&conn)?;
