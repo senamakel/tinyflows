@@ -1,18 +1,19 @@
-//! SQLite persistence for the `flows::` domain.
+//! SQLite persistence for the flow catalog.
 //!
-//! Mirrors `src/openhuman/cron/store.rs`'s idiom: a `with_connection` helper
-//! opens (and migrates) a dedicated SQLite database under the workspace, and
-//! every public function takes `&Config` first and returns `anyhow::Result<T>`.
+//! Every entry point takes the catalog **directory** as its first argument and
+//! returns `anyhow::Result<T>`; `flows.db` is created and migrated inside it on
+//! first use. A host passes whichever directory it keeps workflow state in — the
+//! crate knows nothing about how that path was chosen.
 //!
 //! Two tables:
 //! - `flow_definitions` — one row per saved [`Flow`], with the graph stored as
 //!   JSON text (`graph_json`).
-//! - `flow_state` — a generic namespaced key/value table backing
-//!   `tinyflows::caps::StateStore` (see `src/openhuman/flows/tinyflows/caps.rs`).
+//! - `flow_state` — a generic namespaced key/value table a host binds to
+//!   `tinyflows::caps::StateStore`.
 //!
-//! There is deliberately **no** `flow_checkpoints` table here: the crate's own
-//! `tinyagents::SqliteCheckpointer` owns checkpoint persistence in a separate
-//! `checkpoints.db` (see `src/openhuman/flows/tinyflows/mod.rs::open_flow_checkpointer`).
+//! There is deliberately **no** `flow_checkpoints` table here: engine
+//! checkpoints live in their own `checkpoints.db`, written by
+//! [`crate::checkpoint`].
 
 use tinyflows_catalog::{
     Flow, FlowRevision, FlowRun, FlowRunStep, FlowSuggestion, SuggestionStatus,
@@ -744,7 +745,7 @@ fn sql_conversion_error<E: std::error::Error + Send + Sync + 'static>(err: E) ->
 /// Loads a value from the `flow_state` KV table, scoped to `namespace`.
 ///
 /// Backs `tinyflows::caps::StateStore::load` via
-/// `src/openhuman/flows/tinyflows/caps.rs::FlowStateStore`.
+/// a host's `tinyflows::caps::StateStore` binding.
 pub fn kv_get(dir: &Path, namespace: &str, key: &str) -> Result<Option<serde_json::Value>> {
     with_connection(dir, |conn| {
         let mut stmt =
@@ -765,7 +766,7 @@ pub fn kv_get(dir: &Path, namespace: &str, key: &str) -> Result<Option<serde_jso
 /// Stores a value into the `flow_state` KV table, scoped to `namespace`.
 ///
 /// Backs `tinyflows::caps::StateStore::store` via
-/// `src/openhuman/flows/tinyflows/caps.rs::FlowStateStore`.
+/// a host's `tinyflows::caps::StateStore` binding.
 pub fn kv_set(
     dir: &Path,
     namespace: &str,
