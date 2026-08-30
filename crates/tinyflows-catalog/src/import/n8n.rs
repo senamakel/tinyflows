@@ -33,7 +33,7 @@ use tinyflows::model::{Edge, Node, NodeKind, Position, WorkflowGraph};
 /// The outcome of mapping an n8n workflow: the best-effort tinyflows graph plus
 /// the list of advisory warnings collected during the mapping.
 #[derive(Debug)]
-pub(crate) struct N8nImportResult {
+pub struct N8nImportResult {
     /// The mapped graph (still passed through `migrate` + `validate` by the
     /// caller before it is handed to the UI).
     pub graph: WorkflowGraph,
@@ -46,7 +46,7 @@ pub(crate) struct N8nImportResult {
 /// native tinyflows `WorkflowGraph` — used by `flows_import`'s auto-detect. The
 /// tell-tales are a top-level `connections` object and/or nodes carrying an
 /// `n8n-nodes-base.*`/`type`-style discriminator (tinyflows nodes use `kind`).
-pub(crate) fn looks_like_n8n(value: &Value) -> bool {
+pub fn looks_like_n8n(value: &Value) -> bool {
     if value.get("connections").map(Value::is_object) == Some(true) {
         return true;
     }
@@ -64,7 +64,7 @@ pub(crate) fn looks_like_n8n(value: &Value) -> bool {
 /// Never returns `Err` for an unrecognized node type — those become annotated
 /// placeholders. `Err` is reserved for input that is not shaped like an n8n
 /// export at all (e.g. `nodes` is not an array).
-pub(crate) fn map_n8n_workflow(value: &Value) -> Result<N8nImportResult, String> {
+pub fn map_n8n_workflow(value: &Value) -> Result<N8nImportResult, String> {
     let mut warnings: Vec<String> = Vec::new();
 
     let name = value

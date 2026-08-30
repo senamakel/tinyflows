@@ -44,7 +44,7 @@ static BUILD_TURNS: LazyLock<Mutex<HashMap<String, BuildTurn>>> =
 /// still-present entry here means an earlier turn's cleanup hasn't run yet —
 /// the newer registration should win either way, matching `run_registry`'s
 /// duplicate-key handling.
-pub(crate) fn register_build_turn(
+pub fn register_build_turn(
     thread_id: String,
     request_id: Option<String>,
     token: CancellationToken,
@@ -68,7 +68,7 @@ pub(crate) fn register_build_turn(
 /// request is a no-op rather than killing a newer turn. `None` cancels
 /// unscoped (whatever turn is on the thread). Returns whether a turn was found
 /// and signalled.
-pub(crate) fn cancel_build_turn_scoped(thread_id: &str, request_id: Option<&str>) -> bool {
+pub fn cancel_build_turn_scoped(thread_id: &str, request_id: Option<&str>) -> bool {
     let guard = BUILD_TURNS.lock().unwrap_or_else(|e| e.into_inner());
     let Some(turn) = guard.get(thread_id) else {
         tracing::debug!(
@@ -107,7 +107,7 @@ pub(crate) fn cancel_build_turn_scoped(thread_id: &str, request_id: Option<&str>
 /// cleanup runs, and unregistering unconditionally would clobber that newer
 /// turn's entry out from under it. `None` unregisters unconditionally. Call on
 /// every `flows_build` exit path (success, error, timeout, cancel).
-pub(crate) fn unregister_build_turn(thread_id: &str, request_id: Option<&str>) {
+pub fn unregister_build_turn(thread_id: &str, request_id: Option<&str>) {
     let mut guard = BUILD_TURNS.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(rid) = request_id {
         match guard.get(thread_id) {

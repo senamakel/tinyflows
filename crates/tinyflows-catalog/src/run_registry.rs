@@ -47,7 +47,7 @@ static IN_FLIGHT: LazyLock<Mutex<HashMap<String, (u64, CancellationToken)>>> =
 /// is genuinely executing, take its "parked/stale" branch, and drop the
 /// checkpoint out from under it — the exact bug class this registry exists to
 /// prevent.
-pub(crate) fn register(run_id: &str) -> (CancellationToken, RunGuard) {
+pub fn register(run_id: &str) -> (CancellationToken, RunGuard) {
     let token = CancellationToken::new();
     let registration = NEXT_REGISTRATION.fetch_add(1, Ordering::Relaxed);
     let displaced = IN_FLIGHT
@@ -76,7 +76,7 @@ pub(crate) fn register(run_id: &str) -> (CancellationToken, RunGuard) {
 /// Returns `true` when a live run was signalled, `false` when no run with that
 /// id is currently in flight (e.g. it already settled, or is a parked
 /// `pending_approval` row with no executing task).
-pub(crate) fn cancel(run_id: &str) -> bool {
+pub fn cancel(run_id: &str) -> bool {
     let guard = IN_FLIGHT.lock().unwrap_or_else(|e| e.into_inner());
     match guard.get(run_id) {
         Some((_registration, token)) => {
@@ -96,7 +96,7 @@ pub(crate) fn cancel(run_id: &str) -> bool {
 /// genuinely orphaned `running` row (left by a prior process — not in flight)
 /// from one a freshly-started run in this process legitimately owns, so the
 /// sweep never reconciles a live run out from under itself.
-pub(crate) fn is_in_flight(run_id: &str) -> bool {
+pub fn is_in_flight(run_id: &str) -> bool {
     IN_FLIGHT
         .lock()
         .unwrap_or_else(|e| e.into_inner())
@@ -104,7 +104,7 @@ pub(crate) fn is_in_flight(run_id: &str) -> bool {
 }
 
 /// RAII guard that removes a run's entry from the in-flight registry on drop.
-pub(crate) struct RunGuard {
+pub struct RunGuard {
     run_id: String,
     registration: u64,
 }
