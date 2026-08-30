@@ -215,6 +215,10 @@ use expr::{jq_field, translate_expr};
 use graph::output_port_name;
 #[cfg(test)]
 use node_mapping::{map_code, map_http_request};
+#[cfg(test)]
+use serde_json::json;
+#[cfg(test)]
+use tinyflows::model::{NodeKind, Position};
 
 #[cfg(test)]
 #[path = "n8n_tests.rs"]
