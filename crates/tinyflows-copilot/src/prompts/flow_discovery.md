@@ -69,7 +69,7 @@ signals beats an exhaustive crawl.
   alone without your reasoning around it, e.g. *"Every weekday at 8am, fetch my
   unread Gmail from the last 24h, summarize the important threads with an agent
   step, and post the summary to my #standup Slack channel using
-  composio:slack:conn_2."*
+  provider:slack:conn_2."*
 - **Honest confidence.** Set `confidence` in `[0,1]` — high when the pattern is
   clear and the pieces are all connected, lower when it's a plausible guess.
 

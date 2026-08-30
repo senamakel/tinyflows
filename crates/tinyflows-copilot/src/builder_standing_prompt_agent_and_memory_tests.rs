@@ -195,8 +195,8 @@ fn standing_prompt_keeps_minimal_graph_warning_alongside_specialist_guidance() {
 /// Regression guard for the shipped prompt bug this test was added with:
 /// the standing prompt used to claim an `agent` node "can also **read and
 /// write the user's memory at run time**". Both halves were false. A plain
-/// `agent` node is a single completion through `OpenHumanLlm::complete`
-/// (`tinyflows/caps.rs`) — no tool loop, so it can neither read nor write
+/// `agent` node is a single completion through the host's LLM capability — no
+/// tool loop, so it can neither read nor write
 /// memory. Told otherwise, the builder authored a plain agent node
 /// prompted to "recall the user's preference", and the model FABRICATED
 /// one: the step silently invented context instead of failing, which is

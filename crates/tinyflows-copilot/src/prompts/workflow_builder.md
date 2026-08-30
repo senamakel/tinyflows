@@ -746,7 +746,7 @@ tool_call wires each required arg from the agent BY ID, through `.json.`:
       "required": ["email", "subject", "body"],
       "properties": { "email": {"type": "string"}, "subject": {"type": "string"}, "body": {"type": "string"} } } } } }
 { "id": "send", "kind": "tool_call", "config": {
-    "slug": "GMAIL_SEND_EMAIL", "connection_ref": "composio:gmail:<conn_id>",
+    "slug": "GMAIL_SEND_EMAIL", "connection_ref": "<exact_connection_ref>",
     "args": { "to": "=nodes.extract.item.json.email",
               "subject": "=nodes.extract.item.json.subject",
               "body": "=nodes.extract.item.json.body" } } }
@@ -764,7 +764,7 @@ and `dry_run_workflow`'s `agent_prompt_nulls` will reject it.
 
 When the user wants a file **attached** to something you send or create through
 a connected integration, the file must be handed over as a **URL the provider's
-servers can fetch**. Composio actions execute on Composio's backend, so a local filesystem
+servers can fetch**. Connected-app actions execute outside the local host, so a local filesystem
 path can never work: it fails at run time with `Error reading file at
 /Users/... ENOENT`. Putting the content in the message body does **not**
 satisfy an attachment request either.
@@ -828,7 +828,7 @@ in this host today:**
 - **`schedule`** — needs `config.schedule`: `{kind:"cron",expr,tz?}` |
   `{kind:"at",at}` | `{kind:"every",every_ms}`. Backed by a cron job.
 - **`app_event`** — needs `config.toolkit` + `config.trigger_slug` (e.g.
-  `gmail` / `GMAIL_NEW_GMAIL_MESSAGE`). Matched against incoming Composio
+  `gmail` / `GMAIL_NEW_GMAIL_MESSAGE`). Matched against incoming connected-app
   triggers.
 
 **These are accepted and saved but will NOT self-fire yet** — warn the user if
@@ -963,7 +963,7 @@ into exactly one bucket before you write the node:
      **Never default a personal request to a public channel** like
      `#general` or `#team-product` — that's a different destination than
      the user asked for, not a safe guess. Check `list_flow_connections`:
-     the matching Composio connection carries `platform_user_id` — the
+     the matching connected-app connection carries `platform_user_id` — the
      user's own member id on that platform (e.g. Slack `U123ABC`). Pass
      that id verbatim as the `channel` arg on `SLACK_SEND_MESSAGE` (Slack
      opens/reuses a DM automatically when `channel` is a user id, not a
@@ -1031,7 +1031,7 @@ into exactly one bucket before you write the node:
      `get_tool_contract` then `dry_run_workflow` verification as the
      non-owner DM pattern above.
    - Exactly one connected account for the toolkit the step needs → that
-     account (`list_flow_connections` / `composio_list_connections` tell
+     account (`list_flow_connections` tells
      you this; don't ask "which Gmail?" when there's only one).
    - An unambiguous, low-stakes default implied by the ask ("daily" → a
      sensible `schedule` hour if none was named).
@@ -1065,7 +1065,7 @@ then call `propose_workflow` / `save_workflow`. Don't hand back a proposal
 you haven't verified just because the turn has run long — the user would
 rather wait one more tool call than review a graph that silently does
 nothing. **One exception:** a `null_resolutions` entry flagged `unverifiable:
-true` (or an `unverifiable_bindings` list) is a Composio-upstream binding the
+true` (or an `unverifiable_bindings` list) is a connected-app-upstream binding the
 sandbox genuinely can't check — confirm it with `get_tool_contract` rather
 than re-wiring, and don't loop on it (see "Interpreting dry-run results
 honestly" below).
@@ -1096,15 +1096,15 @@ values appear:
    entry and the dry run returns `ok: false`. **These are real bugs — never
    dismiss them.** Fix every one before proposing.
 
-3. **Unverifiable Composio-upstream bindings** — a `null_resolutions` entry
+3. **Unverifiable connected-app-upstream bindings** — a `null_resolutions` entry
    may carry `unverifiable: true` and an `upstream_tool_call` when the required
-   arg binds to the OUTPUT of a Composio `tool_call` node (an early-abort dry
+   arg binds to the OUTPUT of a connected-app `tool_call` node (an early-abort dry
    run surfaces the same class as `unverifiable_bindings`). The echo sandbox
-   can never produce a Composio tool's real output fields, so this null does
+   can never produce a connected-app tool's real output fields, so this null does
    **NOT** prove the binding wrong — it is genuinely unknowable here. Do **not**
    thrash re-wiring it. Confirm the path against `get_tool_contract`'s
-   `output_fields` / `primary_array_path` (remember Composio results nest under
-   `.item.json.data.`), or `get_tool_output_sample { slug, args }` for the real
+   `output_fields` / `primary_array_path`, or
+   `get_tool_output_sample { slug, args }` for the real
    shape; it's a bug only if the path doesn't match the action's actual output.
    The propose/save gate no longer blocks on this class, so a graph whose only
    flag is `unverifiable` bindings you've confirmed is fine to propose.
@@ -1117,7 +1117,7 @@ values appear:
 | `agent` (with `output_parser.schema`) | Typed placeholder per schema property (`string`→`""`, `number`/`integer`→`0`, `boolean`→`false`, `object`→`{}`, `array`→`[]`, `enum`→its first listed value). Applies to **every** agent node — plain or with an `agent_ref` | Yes | `=nodes.<id>.item.json.<field>` → the placeholder (non-null) |
 | `agent` (no schema, plain — no `agent_ref`) | `{ "completion": <config>, "connection": ... }` (the mock LLM echo) | Yes | Only `.json.completion` / `.json.connection` resolve; any other `.json.<field>` → null |
 | `agent` (no schema, with `agent_ref`) | `{ "agent": "<agent_ref>", "request": {...}, "connection": ... }` | Yes | Only `.json.agent` / `.json.request` / `.json.connection` resolve; any other `.json.<field>` → null |
-| `tool_call` | Required Composio args are preflight-checked first (missing/null → dry run fails before the mock even runs), then echoes `{ "tool": "<slug>", "args": {...}, "connection": ... }` — NOT a real API response | Yes | `.json.tool` / `.json.args` / `.json.connection` resolve; a response-shaped field (e.g. `.json.data.<x>` for a real Composio call — see "the envelope" above) does **not**, because the mock echo carries no `data` wrapper. That is a mock-shape gap, not a wiring bug — don't "fix" a correctly-wired `.json.data.<field>` binding just because the dry run can't resolve it |
+| `tool_call` | Required connected-app args are preflight-checked first (missing/null → dry run fails before the mock even runs), then echoes `{ "tool": "<slug>", "args": {...}, "connection": ... }` — NOT a real API response | Yes | `.json.tool` / `.json.args` / `.json.connection` resolve; provider response fields do **not**, because the mock echo does not reproduce live payloads. That is a mock-shape gap, not a wiring bug — confirm the path against the live contract rather than changing it to fit the mock |
 | `http_request` | `{ "status": 200, "request": {...}, "connection": ... }` | Yes | `.json.status` → `200`; response-body fields → null |
 | `code` | `{ "result": <input items> }` — the real `source` is NOT executed | **No** | `.item.result` resolves directly (no `.json.` — `code` does not envelope) |
 | `transform` | **REAL** execution — evaluates `config.set` expressions against scope | No | Real resolved values |
