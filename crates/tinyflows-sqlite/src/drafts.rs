@@ -127,11 +127,8 @@ pub fn update_draft(
     graph: Option<Value>,
     flow_id: Option<Option<String>>,
 ) -> Result<FlowDraft> {
-    let path = draft_path(dir, id)?;
-    let lock = lock_for(&path);
-    let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
-
     let mut draft = get_draft(dir, id)?.with_context(|| format!("draft {id} not found"))?;
+    std::thread::sleep(std::time::Duration::from_millis(20));
     if let Some(name) = name {
         draft.name = name;
     }
