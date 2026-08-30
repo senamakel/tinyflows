@@ -164,3 +164,79 @@ fn nodes_unreachable_from_the_trigger_do_not_count_as_actionable() {
         serde_json::from_value(json!([{ "from_node": "a", "to_node": "b" }])).expect("orphan edge");
     assert!(!graph_has_actionable_nodes(&g));
 }
+
+// ---- a sub_workflow hides its work behind one node ----
+
+/// Not looking inside is how `trigger → sub_workflow` saves with no approval
+/// gate while the child sends the email — the exact failure this rule exists to
+/// stop.
+#[test]
+fn an_inline_sub_workflow_child_that_acts_is_a_side_effect() {
+    let child = json!({
+        "name": "child",
+        "nodes": [
+            { "id": "t", "kind": "trigger", "name": "T", "config": {} },
+            { "id": "send", "kind": "tool_call", "name": "Send",
+              "config": { "slug": "GMAIL_SEND_EMAIL" } }
+        ],
+        "edges": []
+    });
+    let g: WorkflowGraph = serde_json::from_value(json!({
+        "name": "parent",
+        "nodes": [
+            { "id": "t", "kind": "trigger", "name": "T", "config": {} },
+            { "id": "call", "kind": "sub_workflow", "name": "Call",
+              "config": { "workflow": child } }
+        ],
+        "edges": []
+    }))
+    .expect("parent graph");
+
+    assert!(graph_has_outbound_side_effect(&g));
+    assert_eq!(enforce_side_effect_approval(&g, false), (true, true));
+}
+
+/// A read-only child must not force approval, or the rule fires on everything
+/// and stops meaning anything.
+#[test]
+fn an_inline_sub_workflow_child_that_only_reads_is_not_a_side_effect() {
+    let child = json!({
+        "name": "child",
+        "nodes": [
+            { "id": "t", "kind": "trigger", "name": "T", "config": {} },
+            { "id": "shape", "kind": "transform", "name": "Shape", "config": {} }
+        ],
+        "edges": []
+    });
+    let g: WorkflowGraph = serde_json::from_value(json!({
+        "name": "parent",
+        "nodes": [
+            { "id": "t", "kind": "trigger", "name": "T", "config": {} },
+            { "id": "call", "kind": "sub_workflow", "name": "Call",
+              "config": { "workflow": child } }
+        ],
+        "edges": []
+    }))
+    .expect("parent graph");
+
+    assert!(!graph_has_outbound_side_effect(&g));
+}
+
+/// A saved child cannot be seen from here, so the honest answer is "possibly".
+/// This rule fails closed: a false positive costs one approval prompt, a false
+/// negative lets a flow act unreviewed.
+#[test]
+fn a_reference_to_a_saved_workflow_counts_as_a_side_effect() {
+    let g: WorkflowGraph = serde_json::from_value(json!({
+        "name": "parent",
+        "nodes": [
+            { "id": "t", "kind": "trigger", "name": "T", "config": {} },
+            { "id": "call", "kind": "sub_workflow", "name": "Call",
+              "config": { "workflow_id": "review-and-fix" } }
+        ],
+        "edges": []
+    }))
+    .expect("parent graph");
+
+    assert!(graph_has_outbound_side_effect(&g));
+}
