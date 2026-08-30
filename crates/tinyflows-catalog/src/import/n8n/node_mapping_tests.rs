@@ -166,6 +166,21 @@ fn invalid_textual_json_body_makes_the_http_node_a_placeholder() {
 }
 
 #[test]
+fn untranslated_json_body_expression_makes_the_http_node_a_placeholder() {
+    let mut warnings = Vec::new();
+    let (kind, cfg) = map_http_request_node(
+        &json!({ "jsonBody": "={{ $json.payload + 1 }}" }),
+        &mut warnings,
+        "Expression HTTP",
+    );
+    assert_eq!(kind, NodeKind::Transform);
+    assert_eq!(
+        cfg["_n8n_import"]["untranslated"]["jsonBody"],
+        json!("={{ $json.payload + 1 }}")
+    );
+}
+
+#[test]
 fn unsupported_http_parts_are_all_preserved_for_repair() {
     let mut warnings = Vec::new();
     let (_, cfg) = map_http_request_node(
@@ -338,10 +353,18 @@ fn incompatible_n8n_code_is_a_placeholder_not_an_executable_code_node() {
         "const word = \"return\"; module.exports = word;",
         "// return is discussed here\nmodule.exports = input;",
         "const id = (value) => { return value; }; module.exports = id(input);",
+        "function pick({value}) { return value; } module.exports = pick(input);",
     ] {
         let (kind, _) = map_code_node(&json!({ "jsCode": source }), &mut Vec::new(), "Portable");
         assert_eq!(kind, NodeKind::Code, "source was downgraded: {source}");
     }
+
+    let (kind, _) = map_code_node(
+        &json!({ "jsCode": "console.log(`${$json.id}`);" }),
+        &mut Vec::new(),
+        "n8n template",
+    );
+    assert_eq!(kind, NodeKind::Transform);
 }
 
 #[test]
