@@ -175,9 +175,9 @@ pub async fn unresolvable_tool_args(
             // fields (`.item.json.data.<field>` for Composio, `.item.json.<field>`
             // for a native tool), so a downstream binding to one resolves `null`
             // here even when the wiring is perfectly correct. Hard-rejecting it
-            // (WS6) would block a possibly-correct graph from ever being proposed
+            // would block a possibly-correct graph from ever being proposed
             // — the exact false-negative the transcript audit caught, and the one
-            // that made this gate reject #5148's own native-attachment chain.
+            // that made this gate reject correct native-attachment chains.
             // Downgrade to a debug-logged skip; `dry_run_workflow` remains the
             // surface that reports it (as an `unverifiable` diagnostic the agent
             // can act on via get_tool_contract / get_tool_output_sample).
@@ -380,7 +380,7 @@ pub fn mock_opaque_tool_call_upstream_ref<'a>(
     // A `=`-derived slug is a dynamic runtime slug we can't reason about. But a
     // host-native tool_call IS opaque-echoed by the mock exactly like a
     // Composio one, so its downstream null is equally unverifiable, not broken —
-    // do NOT exclude it (that exclusion made the gate reject #5148's own chain).
+    // do NOT exclude it; that exclusion used to reject correct native chains.
     if slug.starts_with('=') {
         return None;
     }

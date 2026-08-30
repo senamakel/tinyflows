@@ -42,6 +42,7 @@ use crate::model::{NodeKind, WorkflowGraph};
 pub fn failures(graph: &WorkflowGraph) -> Vec<String> {
     let mut failures = agent_prompt_failures(graph);
     failures.extend(binding_failures(graph));
+    failures.extend(agent_schema_failures(graph));
     failures.extend(code_language_failures(graph));
     failures
 }
@@ -105,6 +106,18 @@ fn agent_prompt_failures(graph: &WorkflowGraph) -> Vec<String> {
         if node.kind != NodeKind::Agent {
             continue;
         }
+        // A node that declares real `messages` never runs on `prompt` at all —
+        // both completion paths fall through to the messages array once the
+        // prompt resolves to null. Refusing the graph for a vestigial `prompt`
+        // beside real messages would be a refusal with no failure behind it.
+        let messages_supply_the_turn = node
+            .config
+            .get("messages")
+            .and_then(|v| v.as_array())
+            .is_some_and(|entries| !entries.is_empty());
+        if messages_supply_the_turn {
+            continue;
+        }
         // `instruction` is the alias hosts commonly use for the same field, and
         // the engine accepts it, so it has to be checked too.
         for key in ["prompt", "instruction"] {
@@ -154,6 +167,65 @@ fn binding_failures(graph: &WorkflowGraph) -> Vec<String> {
                     target_id = binding.node_id,
                 ));
             }
+        }
+    }
+    failures
+}
+
+/// Tool-call arguments bound to an agent field the agent never produces.
+///
+/// An `agent` node's structured output is whatever its `output_parser.schema`
+/// declares — that is the shape the node's own sub-port validates and repairs a
+/// completion into. A binding that reads a field the schema does not declare is
+/// therefore reading a field that cannot exist, and resolves to null every time.
+///
+/// Scoped to a `tool_call`'s `args` on purpose, and the scope is the whole
+/// distinction worth drawing: an agent's own free-text prompt has no schema to
+/// check against, so prose that merely mentions a path is left alone. A null
+/// tool argument is a call made wrong; a vaguer prompt is a worse answer.
+///
+/// Only the first path segment is compared. A schema declares its top-level
+/// properties; how deep a value nests below one is the model's business.
+fn agent_schema_failures(graph: &WorkflowGraph) -> Vec<String> {
+    let mut failures = Vec::new();
+    for node in &graph.nodes {
+        if node.kind != NodeKind::ToolCall {
+            continue;
+        }
+        let Some(args) = node.config.get("args") else {
+            continue;
+        };
+        for (location, expr) in collect_expressions(args) {
+            let Some(binding) = parse_node_binding(&expr) else {
+                continue;
+            };
+            let Some(target) = bindings::node_of(graph, &binding.node_id) else {
+                continue;
+            };
+            if target.kind != NodeKind::Agent {
+                continue;
+            }
+            let field = binding
+                .field_path
+                .split('.')
+                .next()
+                .unwrap_or(&binding.field_path);
+            let declared = target
+                .config
+                .get("output_parser")
+                .and_then(|parser| parser.get("schema"))
+                .filter(|schema| !schema.is_null())
+                .and_then(|schema| schema.get("properties"))
+                .and_then(|properties| properties.as_object())
+                .is_some_and(|properties| properties.contains_key(field));
+            if declared {
+                continue;
+            }
+            failures.push(format!(
+                "node '{}': `{location}` (`{expr}`) reads `{field}` from agent node                  `{target_id}`, whose `output_parser.schema` does not declare it — the agent's                  structured output has no such field, so this resolves to null at run time.                  Fix: declare `{field}` in node `{target_id}`'s `output_parser.schema`, or bind                  to a field it already declares.",
+                node.id,
+                target_id = binding.node_id,
+            ));
         }
     }
     failures
