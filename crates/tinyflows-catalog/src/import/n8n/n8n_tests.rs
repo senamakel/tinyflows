@@ -412,7 +412,11 @@ fn if_node_with_untranslatable_conditions_warns_and_preserves_them() {
     // the author to rebuild from, and a warning is raised.
     assert!(cfg.get("field").is_none());
     assert!(cfg["_n8n_import"]["conditions"].is_object());
-    assert!(warnings.iter().any(|w| w.contains("IF") && w.contains("conditions")));
+    assert!(
+        warnings
+            .iter()
+            .any(|w| w.contains("IF") && w.contains("conditions"))
+    );
 }
 
 #[test]
@@ -426,13 +430,21 @@ fn switch_node_with_untranslatable_rules_warns_and_preserves_them() {
     assert!(cfg.get("field").is_none());
     assert!(cfg.get("expression").is_none());
     assert!(cfg["_n8n_import"]["rules"].is_object());
-    assert!(warnings.iter().any(|w| w.contains("Switch") && w.contains("rules")));
+    assert!(
+        warnings
+            .iter()
+            .any(|w| w.contains("Switch") && w.contains("rules"))
+    );
 }
 
 #[test]
 fn split_out_maps_field_to_split_out_to_path() {
     let mut warnings = Vec::new();
-    let cfg = map_split_out(&json!({ "fieldToSplitOut": "data.items" }), &mut warnings, "Split");
+    let cfg = map_split_out(
+        &json!({ "fieldToSplitOut": "data.items" }),
+        &mut warnings,
+        "Split",
+    );
     assert_eq!(cfg["path"], json!("data.items"));
     assert!(cfg.get("fieldToSplitOut").is_none());
 }
@@ -500,8 +512,15 @@ fn cron_node_maps_cron_expression_to_schedule() {
         &mut warnings,
         "Cron",
     );
-    assert_eq!(cfg["schedule"], json!({ "kind": "cron", "expr": "0 9 * * *" }));
-    assert!(!warnings.iter().any(|w| w.contains("could not be translated")));
+    assert_eq!(
+        cfg["schedule"],
+        json!({ "kind": "cron", "expr": "0 9 * * *" })
+    );
+    assert!(
+        !warnings
+            .iter()
+            .any(|w| w.contains("could not be translated"))
+    );
 }
 
 #[test]
@@ -513,8 +532,15 @@ fn interval_node_maps_unit_and_value_to_every_ms() {
         &mut warnings,
         "Interval",
     );
-    assert_eq!(cfg["schedule"], json!({ "kind": "every", "every_ms": 900000.0 }));
-    assert!(!warnings.iter().any(|w| w.contains("could not be translated")));
+    assert_eq!(
+        cfg["schedule"],
+        json!({ "kind": "every", "every_ms": 900000.0 })
+    );
+    assert!(
+        !warnings
+            .iter()
+            .any(|w| w.contains("could not be translated"))
+    );
 }
 
 #[test]
@@ -532,7 +558,11 @@ fn schedule_trigger_maps_a_cron_expression_rule() {
         cfg["schedule"],
         json!({ "kind": "cron", "expr": "*/5 * * * *" })
     );
-    assert!(!warnings.iter().any(|w| w.contains("could not be translated")));
+    assert!(
+        !warnings
+            .iter()
+            .any(|w| w.contains("could not be translated"))
+    );
 }
 
 #[test]

@@ -148,7 +148,8 @@ fn derive_schedule(params: &Value) -> Option<Value> {
         params.get("unit").and_then(Value::as_str),
         params.get("value").and_then(Value::as_f64),
     ) {
-        return interval_to_every_ms(unit, value).map(|ms| json!({ "kind": "every", "every_ms": ms }));
+        return interval_to_every_ms(unit, value)
+            .map(|ms| json!({ "kind": "every", "every_ms": ms }));
     }
     let first_rule = params
         .get("rule")
@@ -167,7 +168,11 @@ fn derive_schedule(params: &Value) -> Option<Value> {
     let value = first_rule
         .get(field)
         .and_then(Value::as_f64)
-        .or_else(|| first_rule.get(interval_key.as_str()).and_then(Value::as_f64))
+        .or_else(|| {
+            first_rule
+                .get(interval_key.as_str())
+                .and_then(Value::as_f64)
+        })
         .or_else(|| first_rule.get("value").and_then(Value::as_f64))?;
     interval_to_every_ms(field, value).map(|ms| json!({ "kind": "every", "every_ms": ms }))
 }
