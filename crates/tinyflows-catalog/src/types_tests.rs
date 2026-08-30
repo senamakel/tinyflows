@@ -115,8 +115,7 @@ fn flow_suggestion_round_trips_through_json() {
     let s = FlowSuggestion {
         id: "sug_abc".to_string(),
         title: "Auto-file email receipts".to_string(),
-        one_liner: "When a Gmail receipt arrives, add a row to your expenses sheet."
-            .to_string(),
+        one_liner: "When a Gmail receipt arrives, add a row to your expenses sheet.".to_string(),
         rationale: "You forward receipts to yourself most weeks.".to_string(),
         trigger_hint: Some("app_event".to_string()),
         steps_outline: vec![

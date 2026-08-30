@@ -16,8 +16,8 @@ fn graph(trigger_config: serde_json::Value, kind: Option<NodeKind>) -> WorkflowG
             }))
             .expect("second node"),
         );
-        g.edges = serde_json::from_value(json!([{ "from_node": "t", "to_node": "n" }]))
-            .expect("edge");
+        g.edges =
+            serde_json::from_value(json!([{ "from_node": "t", "to_node": "n" }])).expect("edge");
     }
     g
 }
@@ -113,7 +113,7 @@ fn nodes_unreachable_from_the_trigger_do_not_count_as_actionable() {
         ]))
         .expect("orphan nodes"),
     );
-    g.edges = serde_json::from_value(json!([{ "from_node": "a", "to_node": "b" }]))
-        .expect("orphan edge");
+    g.edges =
+        serde_json::from_value(json!([{ "from_node": "a", "to_node": "b" }])).expect("orphan edge");
     assert!(!graph_has_actionable_nodes(&g));
 }

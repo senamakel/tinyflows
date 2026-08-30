@@ -104,7 +104,6 @@ impl<State> SqliteCheckpointer<State> {
     pub fn schema_sql() -> &'static str {
         SCHEMA
     }
-
 }
 
 /// Locks `conn`. Every [`Checkpointer`] method below moves its work onto
@@ -377,81 +376,82 @@ where
         let thread_id = thread_id.to_string();
         let limit = limit;
         tokio::task::spawn_blocking(move || -> Result<Vec<CheckpointTuple<State>>> {
-        let (records, writes) = {
-            let conn = lock_conn(&conn)?;
-            let mut stmt = conn
-                .prepare(
-                    "SELECT record FROM checkpoints
+            let (records, writes) = {
+                let conn = lock_conn(&conn)?;
+                let mut stmt = conn
+                    .prepare(
+                        "SELECT record FROM checkpoints
                      WHERE thread_id = ?1 AND namespace = ?2 ORDER BY seq ASC",
-                )
-                .map_err(|e| sqlite_err("prepare state_history", e))?;
-            let rows = stmt
-                .query_map(params![thread_id, namespace_json], |row| {
-                    row.get::<_, String>(0)
-                })
-                .map_err(|e| sqlite_err("query state_history", e))?;
-            let mut records: Vec<Checkpoint<State>> = Vec::new();
-            for row in rows {
-                let json = row.map_err(|e| sqlite_err("read record row", e))?;
-                records
-                    .push(serde_json::from_str(&json).map_err(|e| sqlite_err("decode record", e))?);
-            }
-            let writes = read_writes_by_checkpoint(&conn, &thread_id, &namespace_json)?;
-            (records, writes)
-        };
-        if records.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        // Last write wins for a re-used id, matching `get`.
-        let mut by_id: std::collections::HashMap<String, Checkpoint<State>> =
-            std::collections::HashMap::with_capacity(records.len());
-        let mut cursor: Option<String> = None;
-        for record in records {
-            cursor = Some(record.checkpoint_id.clone());
-            by_id.insert(record.checkpoint_id.clone(), record);
-        }
-
-        let mut out = Vec::new();
-        while let Some(id) = cursor {
-            // Written as a nested `if` rather than the source's let-chain:
-            // this crate is edition 2021, where let-chains do not parse.
-            if let Some(limit) = limit {
-                if out.len() >= limit {
-                    break;
+                    )
+                    .map_err(|e| sqlite_err("prepare state_history", e))?;
+                let rows = stmt
+                    .query_map(params![thread_id, namespace_json], |row| {
+                        row.get::<_, String>(0)
+                    })
+                    .map_err(|e| sqlite_err("query state_history", e))?;
+                let mut records: Vec<Checkpoint<State>> = Vec::new();
+                for row in rows {
+                    let json = row.map_err(|e| sqlite_err("read record row", e))?;
+                    records.push(
+                        serde_json::from_str(&json).map_err(|e| sqlite_err("decode record", e))?,
+                    );
                 }
+                let writes = read_writes_by_checkpoint(&conn, &thread_id, &namespace_json)?;
+                (records, writes)
+            };
+            if records.is_empty() {
+                return Ok(Vec::new());
             }
-            // `remove` doubles as the cycle guard: each id is visited once.
-            let Some(checkpoint) = by_id.remove(&id) else {
-                break;
-            };
-            cursor = checkpoint.parent_checkpoint_id.clone();
-            let config = CheckpointConfig {
-                thread_id: checkpoint.thread_id.clone(),
-                checkpoint_id: Some(checkpoint.checkpoint_id.clone()),
-                namespace: checkpoint.namespace.clone(),
-            };
-            let parent_config =
-                checkpoint
-                    .parent_checkpoint_id
-                    .as_ref()
-                    .map(|parent| CheckpointConfig {
-                        thread_id: checkpoint.thread_id.clone(),
-                        checkpoint_id: Some(parent.clone()),
-                        namespace: checkpoint.namespace.clone(),
-                    });
-            let pending_writes = writes
-                .get(&checkpoint.checkpoint_id)
-                .cloned()
-                .unwrap_or_else(|| checkpoint.pending_writes.clone());
-            out.push(CheckpointTuple {
-                config,
-                checkpoint,
-                parent_config,
-                pending_writes,
-            });
-        }
-        Ok(out)
+
+            // Last write wins for a re-used id, matching `get`.
+            let mut by_id: std::collections::HashMap<String, Checkpoint<State>> =
+                std::collections::HashMap::with_capacity(records.len());
+            let mut cursor: Option<String> = None;
+            for record in records {
+                cursor = Some(record.checkpoint_id.clone());
+                by_id.insert(record.checkpoint_id.clone(), record);
+            }
+
+            let mut out = Vec::new();
+            while let Some(id) = cursor {
+                // Written as a nested `if` rather than the source's let-chain:
+                // this crate is edition 2021, where let-chains do not parse.
+                if let Some(limit) = limit {
+                    if out.len() >= limit {
+                        break;
+                    }
+                }
+                // `remove` doubles as the cycle guard: each id is visited once.
+                let Some(checkpoint) = by_id.remove(&id) else {
+                    break;
+                };
+                cursor = checkpoint.parent_checkpoint_id.clone();
+                let config = CheckpointConfig {
+                    thread_id: checkpoint.thread_id.clone(),
+                    checkpoint_id: Some(checkpoint.checkpoint_id.clone()),
+                    namespace: checkpoint.namespace.clone(),
+                };
+                let parent_config =
+                    checkpoint
+                        .parent_checkpoint_id
+                        .as_ref()
+                        .map(|parent| CheckpointConfig {
+                            thread_id: checkpoint.thread_id.clone(),
+                            checkpoint_id: Some(parent.clone()),
+                            namespace: checkpoint.namespace.clone(),
+                        });
+                let pending_writes = writes
+                    .get(&checkpoint.checkpoint_id)
+                    .cloned()
+                    .unwrap_or_else(|| checkpoint.pending_writes.clone());
+                out.push(CheckpointTuple {
+                    config,
+                    checkpoint,
+                    parent_config,
+                    pending_writes,
+                });
+            }
+            Ok(out)
         })
         .await
         .map_err(|e| sqlite_err("join blocking state_history task", e))?
@@ -513,9 +513,7 @@ where
             let mut out = Vec::new();
             for row in rows {
                 let json = row.map_err(|e| sqlite_err("read record row", e))?;
-                out.push(
-                    serde_json::from_str(&json).map_err(|e| sqlite_err("decode record", e))?,
-                );
+                out.push(serde_json::from_str(&json).map_err(|e| sqlite_err("decode record", e))?);
             }
             Ok(out)
         })
