@@ -8,6 +8,25 @@
 use crate::model::{NodeKind, WorkflowGraph};
 use serde_json::Value;
 
+/// The envelope's own accessors.
+///
+/// Reading `.item.text` off an agent is not a mistake — it is how you get the
+/// completion text, and `.item.raw` is the untouched response. A binding whose
+/// first path segment is one of these is addressing the envelope itself, not a
+/// field the author forgot to reach through it.
+pub const ENVELOPE_FIELDS: [&str; 3] = ["json", "text", "raw"];
+
+/// Whether `field_path` addresses the envelope itself rather than something
+/// inside it.
+///
+/// Only the first segment counts: `text` is the envelope, `text_body` is a
+/// field someone is trying to read through it and has forgotten the `.json`.
+#[must_use]
+pub fn reads_the_envelope_itself(field_path: &str) -> bool {
+    let first = field_path.split('.').next().unwrap_or(field_path);
+    ENVELOPE_FIELDS.contains(&first)
+}
+
 /// Node kinds whose output is wrapped in the engine's `{json, text, raw}`
 /// envelope.
 ///

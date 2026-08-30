@@ -155,6 +155,12 @@ fn binding_failures(graph: &WorkflowGraph) -> Vec<String> {
             let Some(target) = bindings::node_of(graph, &binding.node_id) else {
                 continue;
             };
+            // `.item.text` / `.item.raw` / `.item.json` address the envelope
+            // itself, which is the correct way to read an agent's completion
+            // text or an untouched response — not a missing `.json`.
+            if bindings::reads_the_envelope_itself(&binding.field_path) {
+                continue;
+            }
             if bindings::wraps_output(&target.kind) && !binding.through_envelope {
                 failures.push(format!(
                     "node '{}': `{location}` (`{expr}`) reads `.item.{path}` from {article} node \

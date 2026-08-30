@@ -427,3 +427,58 @@ fn a_tool_arg_bound_to_a_transform_node_is_not_schema_checked() {
 
     assert!(failures(&graph).is_empty(), "{:?}", failures(&graph));
 }
+
+// ---- the envelope's own accessors are not envelope violations ----
+
+/// `.item.text` is how you read an agent's completion text, and `.item.raw` the
+/// untouched response. Flagging either as "you forgot `.json`" refuses a
+/// correct graph — and the suggested fix, `.item.json.text`, is a path that
+/// does not exist.
+#[test]
+fn reading_the_envelopes_own_fields_off_an_agent_is_accepted() {
+    for field in ["text", "raw", "json"] {
+        let graph = graph(json!([
+            { "id": "draft", "kind": "agent", "name": "Draft", "config": {} },
+            { "id": "shape", "kind": "transform", "name": "Shape",
+              "config": { "set": { "out": format!("=nodes.draft.item.{field}") } } },
+        ]));
+
+        assert!(
+            failures(&graph).is_empty(),
+            "`.item.{field}` addresses the envelope itself: {:?}",
+            failures(&graph)
+        );
+    }
+}
+
+/// Only the first segment is the envelope. `text_body` is a real field someone
+/// is reading through the envelope and has forgotten the `.json` on, so it must
+/// still be refused — the exemption is for the accessor, not for any name that
+/// happens to start with one.
+#[test]
+fn a_field_merely_prefixed_like_an_envelope_accessor_is_still_refused() {
+    let graph = graph(json!([
+        { "id": "draft", "kind": "agent", "name": "Draft", "config": {} },
+        { "id": "shape", "kind": "transform", "name": "Shape",
+          "config": { "set": { "out": "=nodes.draft.item.text_body" } } },
+    ]));
+
+    let failures = failures(&graph);
+    assert_eq!(failures.len(), 1, "{failures:?}");
+    assert!(failures[0].contains("{json, text, raw}"), "{failures:?}");
+}
+
+/// Reading a nested path *through* the envelope accessor stays fine.
+#[test]
+fn a_nested_path_under_an_envelope_accessor_is_accepted() {
+    let graph = graph(json!([
+        { "id": "draft", "kind": "agent", "name": "Draft", "config": {
+            "output_parser": { "schema": { "type": "object",
+                "properties": { "body": { "type": "string" } } } }
+        } },
+        { "id": "shape", "kind": "transform", "name": "Shape",
+          "config": { "set": { "out": "=nodes.draft.item.json.body" } } },
+    ]));
+
+    assert!(failures(&graph).is_empty(), "{:?}", failures(&graph));
+}
