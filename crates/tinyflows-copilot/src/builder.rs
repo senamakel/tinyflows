@@ -1,19 +1,20 @@
-//! Server-side turn-prompt construction for the `workflow_builder` agent.
+//! Turn-brief construction for a workflow-authoring turn.
 //!
-//! This is the Rust home of what used to live in the frontend
-//! (`app/src/lib/flows/workflowBuilderPrompt.ts`): the natural-language brief
-//! that kicks off a builder turn. Moving it here makes the builder a
-//! first-class backend agent — `flows::ops::flows_build` runs the agent
-//! directly (like the Flow Scout), instead of the frontend crafting delegate
-//! strings and relying on the chat orchestrator to route them.
+//! One [`BuilderRequest`] — a mode, the user's instruction, and whatever base
+//! graph and handles the host already has — becomes the natural-language brief
+//! that opens the turn. The host runs the turn; this decides what it is asked.
 //!
-//! Persistence contract: every mode is PROPOSE-ONLY — saving always stays
-//! behind the user's explicit action (the copilot panel's Accept, then the
-//! canvas's own Save). [`BuildMode::Build`] is the instant-create path (the
-//! host already made the blank flow), so its brief injects that flow id as
-//! future-turn context but explicitly forbids `save_workflow` on this turn:
-//! rejecting the proposal must leave the flow's persisted graph untouched
-//! (see issue #4596). Enabling/disabling a flow is never in scope here.
+//! Persistence contract: every mode is PROPOSE-ONLY. Saving stays behind the
+//! author's explicit action, and the brief says so. [`BuildMode::Build`] is the
+//! instant-create path, where a host has already made a blank flow: its brief
+//! injects that flow id as context for later turns and *explicitly forbids*
+//! saving onto it during this one, because rejecting the proposal must leave
+//! the flow's persisted graph untouched. Enabling or disabling a flow is never
+//! in scope.
+//!
+//! A host is free to accept a proposal on the author's behalf — the medulla
+//! plane does exactly that, with its own guards — but that is the host's
+//! decision layered on a brief that told the model not to, not a mode here.
 
 use serde::Deserialize;
 use serde_json::Value;
@@ -366,7 +367,7 @@ mod tests {
     /// `memory_recall` guidance if the prompt is ever rewritten.
     #[test]
     fn standing_prompt_teaches_plain_language_and_readonly_memory() {
-        const STANDING_PROMPT: &str = include_str!("prompt.md");
+        const STANDING_PROMPT: &str = crate::prompts::WORKFLOW_BUILDER;
 
         // Negative (B27): the phantom "review card" phrasing must never
         // reappear in the standing prompt either.
@@ -632,7 +633,7 @@ mod tests {
     /// choosing to narrate in its output, so a prompt rule is the fix.)
     #[test]
     fn standing_prompt_teaches_reply_hygiene() {
-        const STANDING_PROMPT: &str = include_str!("prompt.md");
+        const STANDING_PROMPT: &str = crate::prompts::WORKFLOW_BUILDER;
 
         for rule in [
             "finished reply",
@@ -658,7 +659,7 @@ mod tests {
     /// "ask about everything".
     #[test]
     fn standing_prompt_teaches_resolution_first_self_resolution() {
-        const STANDING_PROMPT: &str = include_str!("prompt.md");
+        const STANDING_PROMPT: &str = crate::prompts::WORKFLOW_BUILDER;
 
         for rule in [
             "asking is the last resort",
@@ -687,7 +688,7 @@ mod tests {
     /// and see concrete examples of when a plain agent node isn't enough.
     #[test]
     fn standing_prompt_teaches_specialist_agent_ref_selection() {
-        const STANDING_PROMPT: &str = include_str!("prompt.md");
+        const STANDING_PROMPT: &str = crate::prompts::WORKFLOW_BUILDER;
 
         for rule in [
             "list_agent_profiles",
@@ -713,7 +714,7 @@ mod tests {
     /// requests that don't need a bundle at all.
     #[test]
     fn standing_prompt_teaches_flow_memory_agent_as_general_context_route() {
-        const STANDING_PROMPT: &str = include_str!("prompt.md");
+        const STANDING_PROMPT: &str = crate::prompts::WORKFLOW_BUILDER;
 
         assert!(
             contains_normalized(STANDING_PROMPT, "flow_memory_agent"),
@@ -754,7 +755,7 @@ mod tests {
     /// future capability.
     #[test]
     fn standing_prompt_links_agent_ref_to_the_full_tool_loop() {
-        const STANDING_PROMPT: &str = include_str!("prompt.md");
+        const STANDING_PROMPT: &str = crate::prompts::WORKFLOW_BUILDER;
 
         assert!(
             contains_normalized(STANDING_PROMPT, "specialist")
@@ -773,7 +774,7 @@ mod tests {
     /// and the stale wording actively discouraged using `agent_ref` at all.
     #[test]
     fn standing_prompt_has_no_stale_agent_ref_followup_language() {
-        const STANDING_PROMPT: &str = include_str!("prompt.md");
+        const STANDING_PROMPT: &str = crate::prompts::WORKFLOW_BUILDER;
 
         for banned in [
             "is a follow-up",
@@ -789,39 +790,13 @@ mod tests {
         }
     }
 
-    /// `list_agent_profiles`'s own tool description used to discourage
-    /// `agent_ref` with stale "follow-up"/"for now" wording (issue B37, Gap
-    /// 1) — pin that it now correctly describes the harness's full tool
-    /// loop instead.
-    #[test]
-    fn list_agent_profiles_tool_description_has_no_stale_followup_language() {
-        use crate::openhuman::flows::builder_tools::ListAgentProfilesTool;
-        use crate::openhuman::tools::traits::Tool;
-
-        let description = ListAgentProfilesTool::new().description().to_string();
-
-        for banned in ["is a follow-up", "for now"] {
-            assert!(
-                !description.contains(banned),
-                "list_agent_profiles description must not carry the stale \
-                 phrasing `{banned}` — an agent_ref step already gets the \
-                 selected specialist's full tool loop"
-            );
-        }
-        assert!(
-            description.contains("tool loop"),
-            "list_agent_profiles description must describe agent_ref as running \
-             the specialist's full tool loop"
-        );
-    }
-
     /// Guard against over-fragmentation: the minimal-graph rule (don't chain
     /// agents doing the same kind of work) must survive alongside the new
     /// specialist guidance (do pick a specialist when the step needs tools
     /// the plain agent lacks) — neither should crowd the other out.
     #[test]
     fn standing_prompt_keeps_minimal_graph_warning_alongside_specialist_guidance() {
-        const STANDING_PROMPT: &str = include_str!("prompt.md");
+        const STANDING_PROMPT: &str = crate::prompts::WORKFLOW_BUILDER;
 
         assert!(
             contains_normalized(STANDING_PROMPT, "minimal viable graph"),
@@ -851,7 +826,7 @@ mod tests {
     /// wording that produced that, so it can never be reintroduced verbatim.
     #[test]
     fn standing_prompt_does_not_claim_plain_agent_nodes_reach_memory() {
-        const STANDING_PROMPT: &str = include_str!("prompt.md");
+        const STANDING_PROMPT: &str = crate::prompts::WORKFLOW_BUILDER;
 
         for banned in [
             "read and write the user's\n   memory at run time",
@@ -890,7 +865,7 @@ mod tests {
     /// that needs to branch on a recalled value.
     #[test]
     fn standing_prompt_teaches_the_four_working_memory_read_paths() {
-        const STANDING_PROMPT: &str = include_str!("prompt.md");
+        const STANDING_PROMPT: &str = crate::prompts::WORKFLOW_BUILDER;
 
         for rule in [
             "A `memory` node",
@@ -928,7 +903,7 @@ mod tests {
     /// entirely and instead reaches for the real mechanism.
     #[test]
     fn standing_prompt_states_flows_cannot_write_user_memory_but_can_write_flow_memory() {
-        const STANDING_PROMPT: &str = include_str!("prompt.md");
+        const STANDING_PROMPT: &str = crate::prompts::WORKFLOW_BUILDER;
 
         assert!(
             contains_normalized(STANDING_PROMPT, "can never WRITE the user's memory"),

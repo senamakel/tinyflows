@@ -2569,6 +2569,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "tinyflows-copilot"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "tinyflows-sqlite"
 version = "0.1.0"
 dependencies = [
