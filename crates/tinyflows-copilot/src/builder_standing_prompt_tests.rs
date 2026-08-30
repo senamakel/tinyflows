@@ -260,4 +260,3 @@ fn standing_prompt_teaches_plain_language_and_readonly_memory() {
     }
 }
 
-/// The standing prompt must teach reply hygiene: no deliberation
