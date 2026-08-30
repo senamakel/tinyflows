@@ -300,3 +300,10 @@ fn with_immediate_transaction<T>(
         }
     }
 }
+
+#[cfg(test)]
+pub(crate) mod test_support;
+
+#[cfg(test)]
+#[path = "schema_tests.rs"]
+mod tests;
