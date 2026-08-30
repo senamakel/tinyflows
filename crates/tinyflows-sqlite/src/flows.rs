@@ -14,11 +14,9 @@
 //! `tinyagents::SqliteCheckpointer` owns checkpoint persistence in a separate
 //! `checkpoints.db` (see `src/openhuman/flows/tinyflows/mod.rs::open_flow_checkpointer`).
 
-use crate::openhuman::config::Config;
-use crate::openhuman::flows::types::{
-    FlowRevision, FlowRun, FlowRunStep, FlowSuggestion, SuggestionStatus,
+use tinyflows_catalog::{
+    Flow, FlowRevision, FlowRun, FlowRunStep, FlowSuggestion, SuggestionStatus,
 };
-use crate::openhuman::flows::Flow;
 use anyhow::{Context, Result};
 use chrono::Utc;
 use rusqlite::{params, Connection};
@@ -199,8 +197,8 @@ fn init_schema(conn: &Connection) -> Result<()> {
 /// Opens (creating/migrating as needed — once per process per database file,
 /// see [`ensure_schema_initialized`]) the flows SQLite database and runs `f`
 /// against the connection.
-fn with_connection<T>(config: &Config, f: impl FnOnce(&Connection) -> Result<T>) -> Result<T> {
-    let db_path = config.workspace_dir.join("flows").join("flows.db");
+fn with_connection<T>(dir: &Path, f: impl FnOnce(&Connection) -> Result<T>) -> Result<T> {
+    let db_path = dir.join("flows.db");
     if let Some(parent) = db_path.parent() {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("Failed to create flows directory: {}", parent.display()))?;
@@ -266,9 +264,9 @@ const FLOW_DEFINITION_COLUMNS: &str = "id, name, graph_json, enabled, created_at
      last_run_at, last_status, require_approval";
 
 /// Inserts or fully replaces a flow definition row.
-pub fn upsert_flow(config: &Config, flow: &Flow) -> Result<()> {
+pub fn upsert_flow(dir: &Path, flow: &Flow) -> Result<()> {
     let graph_json = serde_json::to_string(&flow.graph).context("Failed to serialize graph")?;
-    with_connection(config, |conn| {
+    with_connection(dir, |conn| {
         conn.execute(
             "INSERT INTO flow_definitions
                 (id, name, graph_json, enabled, created_at, updated_at, last_run_at, last_status, require_approval)
@@ -306,7 +304,7 @@ pub fn upsert_flow(config: &Config, flow: &Flow) -> Result<()> {
 /// duplicate inert until explicitly enabled). `last_run_at`/`last_status` are
 /// reset to `None` — run history does not carry over. Returns the persisted
 /// copy.
-pub fn insert_duplicate_flow(config: &Config, source: &Flow, new_name: String) -> Result<Flow> {
+pub fn insert_duplicate_flow(dir: &Path, source: &Flow, new_name: String) -> Result<Flow> {
     let now = Utc::now().to_rfc3339();
     let flow = Flow {
         id: Uuid::new_v4().to_string(),
@@ -319,7 +317,7 @@ pub fn insert_duplicate_flow(config: &Config, source: &Flow, new_name: String) -
         last_status: None,
         require_approval: source.require_approval,
     };
-    upsert_flow(config, &flow)?;
+    upsert_flow(dir, &flow)?;
     tracing::debug!(target: "flows", source_id = %source.id, new_id = %flow.id, "[flows] inserted duplicate flow (disabled)");
     Ok(flow)
 }
@@ -327,13 +325,13 @@ pub fn insert_duplicate_flow(config: &Config, source: &Flow, new_name: String) -
 /// Creates a brand-new [`Flow`] row from a name + validated graph, stamping
 /// fresh id/timestamps, and returns the persisted record.
 ///
-/// `enabled` is decided by the caller ([`crate::openhuman::flows::ops::flows_create`],
+/// `enabled` is decided by the caller (`ops::flows_create`,
 /// issue B29 — save/enable safety): a graph with an automatic trigger
 /// (`schedule` / `app_event` / `webhook`) is created disabled so it cannot
 /// silently arm itself live and unattended; a `manual`-triggered graph is
 /// created enabled since it only ever runs on explicit `flows_run`.
 pub fn create_flow(
-    config: &Config,
+    dir: &Path,
     name: String,
     graph: tinyflows::model::WorkflowGraph,
     require_approval: bool,
@@ -351,15 +349,15 @@ pub fn create_flow(
         last_status: None,
         require_approval,
     };
-    upsert_flow(config, &flow)?;
+    upsert_flow(dir, &flow)?;
     Ok(flow)
 }
 
 /// Loads one flow by id, running its stored `graph_json` through
 /// `tinyflows::migrate::migrate` before deserializing so a graph persisted
 /// under an older `schema_version` is upgraded on read.
-pub fn get_flow(config: &Config, id: &str) -> Result<Option<Flow>> {
-    with_connection(config, |conn| {
+pub fn get_flow(dir: &Path, id: &str) -> Result<Option<Flow>> {
+    with_connection(dir, |conn| {
         let mut stmt = conn.prepare(&format!(
             "SELECT {FLOW_DEFINITION_COLUMNS} FROM flow_definitions WHERE id = ?1"
         ))?;
@@ -421,8 +419,8 @@ fn list_flow_rows(conn: &Connection, where_clause: &str) -> Result<(Vec<Flow>, u
 /// not be decoded and were left out of `flows` (R-M4). Callers must not treat
 /// a non-zero `skipped` as a reason to fail; they must surface it loudly
 /// instead (see [`list_flow_rows`]).
-pub fn list_flows(config: &Config) -> Result<(Vec<Flow>, usize)> {
-    with_connection(config, |conn| list_flow_rows(conn, ""))
+pub fn list_flows(dir: &Path) -> Result<(Vec<Flow>, usize)> {
+    with_connection(dir, |conn| list_flow_rows(conn, ""))
 }
 
 /// Lists only enabled flows, migrating each graph on read (see [`get_flow`]).
@@ -435,13 +433,13 @@ pub fn list_flows(config: &Config) -> Result<(Vec<Flow>, usize)> {
 ///
 /// Returns `(flows, skipped)` — see [`list_flows`]. A corrupt row here must
 /// not take down `app_event` dispatch for every *other* enabled flow (R-M4).
-pub fn list_enabled_flows(config: &Config) -> Result<(Vec<Flow>, usize)> {
-    with_connection(config, |conn| list_flow_rows(conn, "WHERE enabled = 1"))
+pub fn list_enabled_flows(dir: &Path) -> Result<(Vec<Flow>, usize)> {
+    with_connection(dir, |conn| list_flow_rows(conn, "WHERE enabled = 1"))
 }
 
 /// Deletes a flow by id. Returns an error if no such flow exists.
-pub fn remove_flow(config: &Config, id: &str) -> Result<()> {
-    let changed = with_connection(config, |conn| {
+pub fn remove_flow(dir: &Path, id: &str) -> Result<()> {
+    let changed = with_connection(dir, |conn| {
         conn.execute("DELETE FROM flow_definitions WHERE id = ?1", params![id])
             .context("Failed to delete flow definition")
     })?;
@@ -453,9 +451,9 @@ pub fn remove_flow(config: &Config, id: &str) -> Result<()> {
 }
 
 /// Toggles a flow's `enabled` flag, returning the updated record.
-pub fn set_enabled(config: &Config, id: &str, enabled: bool) -> Result<Flow> {
+pub fn set_enabled(dir: &Path, id: &str, enabled: bool) -> Result<Flow> {
     let now = Utc::now().to_rfc3339();
-    let changed = with_connection(config, |conn| {
+    let changed = with_connection(dir, |conn| {
         conn.execute(
             "UPDATE flow_definitions SET enabled = ?1, updated_at = ?2 WHERE id = ?3",
             params![if enabled { 1 } else { 0 }, now, id],
@@ -466,7 +464,7 @@ pub fn set_enabled(config: &Config, id: &str, enabled: bool) -> Result<Flow> {
         anyhow::bail!("flow '{id}' not found");
     }
     tracing::debug!(flow_id = %id, enabled, "[flows] set_enabled");
-    get_flow(config, id)?.ok_or_else(|| anyhow::anyhow!("flow '{id}' not found after update"))
+    get_flow(dir, id)?.ok_or_else(|| anyhow::anyhow!("flow '{id}' not found after update"))
 }
 
 /// How many revision snapshots to retain per flow (audit F6). Older ones are
@@ -529,7 +527,7 @@ impl std::fmt::Display for FlowUpdateError {
 /// `enabled_override` supplied by the caller can never re-arm a graph this
 /// check disarms — the disarm always wins.
 pub fn update_flow_graph(
-    config: &Config,
+    dir: &Path,
     id: &str,
     name: String,
     graph: tinyflows::model::WorkflowGraph,
@@ -538,7 +536,7 @@ pub fn update_flow_graph(
     force_disarm_if_automatic: bool,
     expected_updated_at: Option<&str>,
 ) -> std::result::Result<Flow, FlowUpdateError> {
-    let current = get_flow(config, id)
+    let current = get_flow(dir, id)
         .map_err(FlowUpdateError::Store)?
         .ok_or(FlowUpdateError::NotFound)?;
 
@@ -585,7 +583,7 @@ pub fn update_flow_graph(
         enabled_override.unwrap_or(current.enabled)
     };
 
-    with_connection(config, |conn| {
+    with_connection(dir, |conn| {
         // Guarded UPDATE keyed on the observed updated_at (race-safe even
         // without an explicit expected version) — a concurrent writer that
         // moved updated_at makes this match 0 rows. Targeted columns only, so a
@@ -638,7 +636,7 @@ pub fn update_flow_graph(
     .map_err(|e| {
         if e.to_string().contains("__conflict__") {
             // Re-read to hand back the current state.
-            match get_flow(config, id) {
+            match get_flow(dir, id) {
                 Ok(Some(f)) => FlowUpdateError::Conflict(Box::new(f)),
                 Ok(None) => FlowUpdateError::NotFound,
                 Err(e) => FlowUpdateError::Store(e),
@@ -648,14 +646,14 @@ pub fn update_flow_graph(
         }
     })?;
 
-    get_flow(config, id)
+    get_flow(dir, id)
         .map_err(FlowUpdateError::Store)?
         .ok_or(FlowUpdateError::NotFound)
 }
 
 /// Lists a flow's revision snapshots, newest first, up to `limit`.
-pub fn list_revisions(config: &Config, flow_id: &str, limit: usize) -> Result<Vec<FlowRevision>> {
-    with_connection(config, |conn| {
+pub fn list_revisions(dir: &Path, flow_id: &str, limit: usize) -> Result<Vec<FlowRevision>> {
+    with_connection(dir, |conn| {
         let mut stmt = conn.prepare(
             "SELECT id, flow_id, graph_json, name, require_approval, created_at \
              FROM flow_revisions WHERE flow_id = ?1 ORDER BY created_at DESC, id DESC LIMIT ?2",
@@ -669,11 +667,11 @@ pub fn list_revisions(config: &Config, flow_id: &str, limit: usize) -> Result<Ve
 
 /// Fetches one revision by id (scoped to `flow_id`), or `None`.
 pub fn revision_by_id(
-    config: &Config,
+    dir: &Path,
     flow_id: &str,
     revision_id: &str,
 ) -> Result<Option<FlowRevision>> {
-    with_connection(config, |conn| {
+    with_connection(dir, |conn| {
         let mut stmt = conn.prepare(
             "SELECT id, flow_id, graph_json, name, require_approval, created_at \
              FROM flow_revisions WHERE flow_id = ?1 AND id = ?2",
@@ -702,9 +700,9 @@ fn map_revision_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<FlowRevision> {
 
 /// Records the outcome of a `flows_run` invocation onto the flow's summary
 /// fields (`last_run_at` / `last_status`).
-pub fn record_run(config: &Config, id: &str, status: &str) -> Result<()> {
+pub fn record_run(dir: &Path, id: &str, status: &str) -> Result<()> {
     let now = Utc::now().to_rfc3339();
-    let changed = with_connection(config, |conn| {
+    let changed = with_connection(dir, |conn| {
         conn.execute(
             "UPDATE flow_definitions SET last_run_at = ?1, last_status = ?2 WHERE id = ?3",
             params![now, status, id],
@@ -747,8 +745,8 @@ fn sql_conversion_error<E: std::error::Error + Send + Sync + 'static>(err: E) ->
 ///
 /// Backs `tinyflows::caps::StateStore::load` via
 /// `src/openhuman/flows/tinyflows/caps.rs::FlowStateStore`.
-pub fn kv_get(config: &Config, namespace: &str, key: &str) -> Result<Option<serde_json::Value>> {
-    with_connection(config, |conn| {
+pub fn kv_get(dir: &Path, namespace: &str, key: &str) -> Result<Option<serde_json::Value>> {
+    with_connection(dir, |conn| {
         let mut stmt =
             conn.prepare("SELECT value FROM flow_state WHERE namespace = ?1 AND key = ?2")?;
         let mut rows = stmt.query(params![namespace, key])?;
@@ -769,13 +767,13 @@ pub fn kv_get(config: &Config, namespace: &str, key: &str) -> Result<Option<serd
 /// Backs `tinyflows::caps::StateStore::store` via
 /// `src/openhuman/flows/tinyflows/caps.rs::FlowStateStore`.
 pub fn kv_set(
-    config: &Config,
+    dir: &Path,
     namespace: &str,
     key: &str,
     value: &serde_json::Value,
 ) -> Result<()> {
     let raw = serde_json::to_string(value).context("Failed to serialize flow state value")?;
-    with_connection(config, |conn| {
+    with_connection(dir, |conn| {
         conn.execute(
             "INSERT INTO flow_state (namespace, key, value) VALUES (?1, ?2, ?3)
              ON CONFLICT(namespace, key) DO UPDATE SET value = excluded.value",
@@ -794,8 +792,8 @@ pub fn kv_set(
 /// preferred over `kv_set(.., json!([]))` because an absent key reads back as
 /// `None` (an unambiguous "nothing pending"), matching what a fresh flow that
 /// never ran a dedup node also reads back as.
-pub fn kv_delete(config: &Config, namespace: &str, key: &str) -> Result<()> {
-    with_connection(config, |conn| {
+pub fn kv_delete(dir: &Path, namespace: &str, key: &str) -> Result<()> {
+    with_connection(dir, |conn| {
         conn.execute(
             "DELETE FROM flow_state WHERE namespace = ?1 AND key = ?2",
             params![namespace, key],
@@ -828,13 +826,13 @@ pub const MAX_FLOW_RUNS_PER_FLOW: usize = 100;
 /// kept as two columns because they answer two different questions (row
 /// identity vs. the checkpointer key `flows_resume` needs).
 pub fn insert_flow_run(
-    config: &Config,
+    dir: &Path,
     id: &str,
     flow_id: &str,
     thread_id: &str,
     started_at: &str,
 ) -> Result<()> {
-    with_connection(config, |conn| {
+    with_connection(dir, |conn| {
         conn.execute(
             "INSERT INTO flow_runs (id, flow_id, thread_id, status, started_at)
              VALUES (?1, ?2, ?3, 'running', ?4)",
@@ -865,8 +863,8 @@ pub fn insert_flow_run(
 ///
 /// `keep` is clamped to at least 1. Exposed for the manual `flows_prune_runs`
 /// sweep; the new-run insert path calls the connection-scoped helper directly.
-pub fn prune_flow_runs(config: &Config, flow_id: &str, keep: usize) -> Result<usize> {
-    with_connection(config, |conn| prune_flow_runs_conn(conn, flow_id, keep))
+pub fn prune_flow_runs(dir: &Path, flow_id: &str, keep: usize) -> Result<usize> {
+    with_connection(dir, |conn| prune_flow_runs_conn(conn, flow_id, keep))
 }
 
 /// Connection-scoped core of [`prune_flow_runs`] — see its doc. Kept separate so
@@ -918,7 +916,7 @@ fn prune_flow_runs_conn(conn: &Connection, flow_id: &str, keep: usize) -> Result
 /// write passes `None`, which clears any stale pin once the row leaves
 /// `pending_approval` (a settled row has no further use for it).
 pub fn finish_flow_run(
-    config: &Config,
+    dir: &Path,
     id: &str,
     status: &str,
     finished_at: &str,
@@ -930,7 +928,7 @@ pub fn finish_flow_run(
     let steps_json = serde_json::to_string(steps).context("Failed to serialize flow run steps")?;
     let pending_json = serde_json::to_string(pending_approvals)
         .context("Failed to serialize flow run pending approvals")?;
-    with_connection(config, |conn| {
+    with_connection(dir, |conn| {
         let updated = conn
             .execute(
                 "UPDATE flow_runs SET status = ?1, finished_at = ?2, steps_json = ?3, \
@@ -977,9 +975,9 @@ pub fn finish_flow_run(
 /// persisted list stays one entry per node. No-op if the run's start row
 /// hasn't been inserted yet (nothing to update) — mirrors the best-effort
 /// contract of the run-row writers in `flows::ops`.
-pub fn upsert_flow_run_step(config: &Config, run_id: &str, step: &FlowRunStep) -> Result<()> {
+pub fn upsert_flow_run_step(dir: &Path, run_id: &str, step: &FlowRunStep) -> Result<()> {
     use rusqlite::OptionalExtension;
-    with_connection(config, |conn| {
+    with_connection(dir, |conn| {
         with_immediate_transaction(conn, |conn| {
             let existing: Option<String> = conn
                 .query_row(
@@ -1070,12 +1068,12 @@ fn with_immediate_transaction<T>(
 /// comparison here. Best-effort by contract at the call site: the update runs
 /// under the same WAL + `busy_timeout` connection as every other write.
 pub fn expire_parked_runs(
-    config: &Config,
+    dir: &Path,
     cutoff: &str,
     now: &str,
     error_msg: &str,
 ) -> Result<Vec<(String, String)>> {
-    with_connection(config, |conn| {
+    with_connection(dir, |conn| {
         let mut stmt = conn.prepare(
             "SELECT id, flow_id FROM flow_runs
              WHERE status = 'pending_approval'
@@ -1119,7 +1117,7 @@ pub fn expire_parked_runs(
 /// whose `started_at` is strictly **before** `started_before` (RFC3339). Used by
 /// the boot-time orphan sweep (bug B42): after a crash/restart no in-process
 /// task is executing these rows, so
-/// [`crate::openhuman::flows::ops::sweep_orphaned_running_runs_on_boot`]
+/// `ops::sweep_orphaned_running_runs_on_boot`
 /// reconciles each one that isn't backed by a live in-flight run to a terminal
 /// `'interrupted'` via [`mark_run_interrupted`].
 ///
@@ -1132,10 +1130,10 @@ pub fn expire_parked_runs(
 /// string, so the lexicographic `<` matches chronological order (same
 /// comparison the parked-run TTL sweep already relies on).
 pub fn list_running_run_ids(
-    config: &Config,
+    dir: &Path,
     started_before: &str,
 ) -> Result<Vec<(String, String)>> {
-    with_connection(config, |conn| {
+    with_connection(dir, |conn| {
         let mut stmt = conn.prepare(
             "SELECT id, flow_id FROM flow_runs WHERE status = 'running' AND started_at < ?1",
         )?;
@@ -1161,12 +1159,12 @@ pub fn list_running_run_ids(
 /// than a weaker production write.
 #[cfg(test)]
 pub fn force_run_status_for_test(
-    config: &Config,
+    dir: &Path,
     id: &str,
     status: &str,
     error: Option<&str>,
 ) -> Result<()> {
-    with_connection(config, |conn| {
+    with_connection(dir, |conn| {
         conn.execute(
             "UPDATE flow_runs SET status = ?1, error = ?2 WHERE id = ?3",
             params![status, error, id],
@@ -1187,11 +1185,11 @@ pub fn force_run_status_for_test(
 /// non-test way to reach this state other than a cross-version downgrade.
 #[cfg(test)]
 pub fn force_corrupt_graph_json_for_test(
-    config: &Config,
+    dir: &Path,
     flow_id: &str,
     raw_graph_json: &str,
 ) -> Result<()> {
-    with_connection(config, |conn| {
+    with_connection(dir, |conn| {
         let changed = conn
             .execute(
                 "UPDATE flow_definitions SET graph_json = ?1 WHERE id = ?2",
@@ -1204,7 +1202,7 @@ pub fn force_corrupt_graph_json_for_test(
 }
 
 /// Flips a parked `'pending_approval'` row to `'running'` for the duration of a
-/// [`crate::openhuman::flows::ops::flows_resume`], guarded by a
+/// `ops::flows_resume`, guarded by a
 /// `status = 'pending_approval'` predicate so a run cancelled or expired
 /// concurrently is never revived. Returns `true` when a row was actually
 /// flipped.
@@ -1217,8 +1215,8 @@ pub fn force_corrupt_graph_json_for_test(
 /// outbound nodes** (R-M1). Marking it `running` moves it out of the sweep's
 /// predicate and into the same lifecycle state a `flows_run` occupies, which is
 /// also what the boot orphan sweep already knows how to reconcile.
-pub fn mark_run_resuming(config: &Config, id: &str) -> Result<bool> {
-    with_connection(config, |conn| {
+pub fn mark_run_resuming(dir: &Path, id: &str) -> Result<bool> {
+    with_connection(dir, |conn| {
         let changed = conn
             .execute(
                 "UPDATE flow_runs SET status = 'running', finished_at = NULL, error = NULL \
@@ -1239,8 +1237,8 @@ pub fn mark_run_resuming(config: &Config, id: &str) -> Result<bool> {
 /// concurrently is never clobbered. Returns `true` when a row was actually
 /// flipped (bug B42 — cancellation-safe finalizer + boot sweep). Best-effort by
 /// contract at the call site.
-pub fn mark_run_interrupted(config: &Config, id: &str, now: &str, reason: &str) -> Result<bool> {
-    with_connection(config, |conn| {
+pub fn mark_run_interrupted(dir: &Path, id: &str, now: &str, reason: &str) -> Result<bool> {
+    with_connection(dir, |conn| {
         let changed = conn
             .execute(
                 "UPDATE flow_runs SET status = 'interrupted', finished_at = ?1, error = ?2 \
@@ -1256,8 +1254,8 @@ pub fn mark_run_interrupted(config: &Config, id: &str, now: &str, reason: &str) 
 }
 
 /// Loads one flow run by id (== thread_id).
-pub fn get_flow_run(config: &Config, id: &str) -> Result<Option<FlowRun>> {
-    with_connection(config, |conn| {
+pub fn get_flow_run(dir: &Path, id: &str) -> Result<Option<FlowRun>> {
+    with_connection(dir, |conn| {
         let mut stmt = conn.prepare(&format!(
             "SELECT {FLOW_RUN_COLUMNS} FROM flow_runs WHERE id = ?1"
         ))?;
@@ -1270,8 +1268,8 @@ pub fn get_flow_run(config: &Config, id: &str) -> Result<Option<FlowRun>> {
 }
 
 /// Lists the most recent runs for a flow, newest first.
-pub fn list_flow_runs(config: &Config, flow_id: &str, limit: usize) -> Result<Vec<FlowRun>> {
-    with_connection(config, |conn| {
+pub fn list_flow_runs(dir: &Path, flow_id: &str, limit: usize) -> Result<Vec<FlowRun>> {
+    with_connection(dir, |conn| {
         let lim = i64::try_from(limit.max(1)).context("Run history limit overflow")?;
         let mut stmt = conn.prepare(&format!(
             "SELECT {FLOW_RUN_COLUMNS} FROM flow_runs WHERE flow_id = ?1 \
@@ -1289,8 +1287,8 @@ pub fn list_flow_runs(config: &Config, flow_id: &str, limit: usize) -> Result<Ve
 /// List the most recent runs across ALL flows, newest first (the "All runs"
 /// page). Uses the `idx_flow_runs_started_at` index for the ordering. Each
 /// [`FlowRun`] carries its own `flow_id`, so the UI can group/label by flow.
-pub fn list_all_flow_runs(config: &Config, limit: usize) -> Result<Vec<FlowRun>> {
-    with_connection(config, |conn| {
+pub fn list_all_flow_runs(dir: &Path, limit: usize) -> Result<Vec<FlowRun>> {
+    with_connection(dir, |conn| {
         let lim = i64::try_from(limit.max(1)).context("Run history limit overflow")?;
         let mut stmt = conn.prepare(&format!(
             "SELECT {FLOW_RUN_COLUMNS} FROM flow_runs \
@@ -1344,11 +1342,11 @@ const FLOW_SUGGESTION_COLUMNS: &str = "id, title, one_liner, rationale, trigger_
 /// dismissed idea dismissed and a built idea built across repeated discovery
 /// runs: the `status` and `created_at` columns are deliberately excluded from
 /// the `DO UPDATE SET` list. Returns the number of rows written.
-pub fn upsert_suggestions(config: &Config, suggestions: &[FlowSuggestion]) -> Result<usize> {
+pub fn upsert_suggestions(dir: &Path, suggestions: &[FlowSuggestion]) -> Result<usize> {
     if suggestions.is_empty() {
         return Ok(0);
     }
-    with_connection(config, |conn| {
+    with_connection(dir, |conn| {
         let mut written = 0usize;
         for s in suggestions {
             let steps_json = serde_json::to_string(&s.steps_outline)
@@ -1403,11 +1401,11 @@ pub fn upsert_suggestions(config: &Config, suggestions: &[FlowSuggestion]) -> Re
 /// returned (the UI passes `New` to render the active "Suggested for you"
 /// cards); `None` returns every status.
 pub fn list_suggestions(
-    config: &Config,
+    dir: &Path,
     status: Option<SuggestionStatus>,
     limit: usize,
 ) -> Result<Vec<FlowSuggestion>> {
-    with_connection(config, |conn| {
+    with_connection(dir, |conn| {
         let lim = i64::try_from(limit.max(1)).context("Suggestion limit overflow")?;
         let mut out = Vec::new();
         match status {
@@ -1438,8 +1436,8 @@ pub fn list_suggestions(
 
 /// Updates one suggestion's lifecycle status (dismiss / mark built). Returns
 /// `true` when a row matched, `false` when the id was unknown (already pruned).
-pub fn set_suggestion_status(config: &Config, id: &str, status: SuggestionStatus) -> Result<bool> {
-    with_connection(config, |conn| {
+pub fn set_suggestion_status(dir: &Path, id: &str, status: SuggestionStatus) -> Result<bool> {
+    with_connection(dir, |conn| {
         let changed = conn
             .execute(
                 "UPDATE flow_suggestions SET status = ?1 WHERE id = ?2",
