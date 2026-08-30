@@ -454,8 +454,7 @@ pub(super) fn map_code(params: &Value, warnings: &mut Vec<String>, n8n_name: &st
                 .or_insert_with(|| Value::String(lang.to_string()));
         }
     }
-    if config_uses_n8n_runtime(&Value::Object(cfg.clone()))
-    {
+    if config_uses_n8n_runtime(&Value::Object(cfg.clone())) {
         warnings.push(format!(
             "Node '{n8n_name}' is an n8n code node imported as an editable placeholder — it uses \
              n8n-only globals (`$json`/`$input`/`items`) and/or a top-level `return`, neither of \
