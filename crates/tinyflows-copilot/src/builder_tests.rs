@@ -138,8 +138,8 @@ fn build_is_propose_only_and_injects_flow_id_as_context() {
     assert!(p.contains("END-TO-END"));
 }
 
-#[path = "builder_standing_prompt_more_tests.rs"]
-mod standing_prompt_more_tests;
+#[path = "builder_standing_prompt_agent_and_memory_tests.rs"]
+mod standing_prompt_agent_and_memory_tests;
 #[path = "builder_standing_prompt_tests.rs"]
 mod standing_prompt_tests;
 
