@@ -216,7 +216,9 @@ use graph::output_port_name;
 #[cfg(test)]
 use node_mapping::trigger_config;
 #[cfg(test)]
-use node_mapping::{map_code, map_condition, map_http_request, map_split_out, map_switch};
+use node_mapping::{
+    map_code, map_code_node, map_condition, map_http_request, map_split_out, map_switch,
+};
 #[cfg(test)]
 use serde_json::json;
 #[cfg(test)]
