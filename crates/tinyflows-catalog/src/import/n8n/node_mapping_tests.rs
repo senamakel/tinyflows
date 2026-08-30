@@ -318,6 +318,7 @@ fn incompatible_n8n_code_is_a_placeholder_not_an_executable_code_node() {
         "// return is discussed here\nmodule.exports = input;",
         "const id = (value) => { return value; }; module.exports = id(input);",
         "function pick({value}) { return value; } module.exports = pick(input);",
+        "const helper = { pick(value) { return value; } }; module.exports = helper.pick(input);",
         "module.exports = input.map(function (value) { return value; });",
         "module.exports = input.values.map(value => { return value; });",
         "module.exports = /return/.test(input);",
@@ -361,6 +362,20 @@ fn incompatible_n8n_code_is_a_placeholder_not_an_executable_code_node() {
         &json!({ "jsCode": "console.log(items.length); process.stdin.pipe(process.stdout);" }),
         &mut Vec::new(),
         "Unbound items global",
+    );
+    assert_eq!(kind, NodeKind::Transform);
+
+    let (kind, _) = map_code_node(
+        &json!({ "pythonCode": "def identity(value): return value\nprint(identity(input()))" }),
+        &mut Vec::new(),
+        "Portable Python helper",
+    );
+    assert_eq!(kind, NodeKind::Code);
+
+    let (kind, _) = map_code_node(
+        &json!({ "jsCode": "function count(items) { return items.length; } console.log(items.length);" }),
+        &mut Vec::new(),
+        "Function-local then global items",
     );
     assert_eq!(kind, NodeKind::Transform);
 }
