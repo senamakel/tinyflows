@@ -66,6 +66,20 @@ model::WorkflowGraph  →  validate  →  compiler::compile  →  engine::run
 - `gates/` — authoring gates: what is *guaranteed* wrong with a graph, refused
   before a write rather than surfacing as a silent null at run time. Only the
   host-agnostic ones; a host adds its own via `store::HostPolicy::check_graph`.
+- `compat.rs` — topologies this engine's fan-in lowering cannot execute safely,
+  refused before a run. A third question the other two do not ask: not "is this
+  a well-formed graph" (`validate`) or "are its bindings resolvable" (`gates`),
+  but "can this implementation actually run it". Fails closed.
+- `preflight.rs` (behind `mock`) — the same class of failure as `gates`, caught
+  by *running* the graph against the schema-aware mocks and reading the engine's
+  own per-step null-resolution diagnostics. Three kinds of null are deliberately
+  not reported — trigger-scoped, opaque upstream tool output, and a run that
+  never settled — because each one is a correct graph.
+- `caps/mock_schema_aware.rs` (behind `mock`) — mocks that answer the shape a
+  node *declared* rather than echoing the request. Kept apart from `caps/mock`
+  because they answer different questions: an echo is what an engine test wants
+  and what a graph dry run must not have, since it fails a good graph's own
+  `output_parser` sub-port.
 - `nodes/` — `NodeExecutor` trait + dispatch; `control_flow.rs` (if/switch/merge/
   split_out/…) and `integration.rs` (agent/tool_call/http_request/code/…).
 - `compiler.rs` — compiles a validated graph into runnable form.
@@ -90,6 +104,13 @@ model::WorkflowGraph  →  validate  →  compiler::compile  →  engine::run
   records, so neither sits behind a feature; both are re-exported from
   `store::types` for callers that always reached them there.
 - `error.rs` — shared error types across validate/compile/execute (thiserror).
+
+**Where an authoring check belongs.** Three homes, and the distinction is what
+it costs, not what it is about: `gates` is a pure function of the graph and runs
+on every write; `compat` is likewise pure but answers for the *engine* rather
+than the graph; `preflight` runs the thing. A check that needs a host's
+vocabulary — which agent ids resolve, which tool slugs exist, which integrations
+are connected — belongs in none of them and stays in the host.
 - `lib.rs` — crate surface + module declarations; `main.rs` — thin binary stub.
 
 ## Conventions & invariants (respect these)

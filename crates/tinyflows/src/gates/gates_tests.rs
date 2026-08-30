@@ -103,8 +103,14 @@ fn reading_an_agents_output_without_the_envelope_is_refused() {
 
 #[test]
 fn reading_through_the_envelope_is_accepted() {
+    // The agent declares `title`, so the binding addresses something that will
+    // exist — the envelope is only half of what makes a read resolvable.
     let graph = graph(json!([
-        { "id": "fetch", "kind": "agent", "name": "Fetch", "config": { "prompt": "get it" } },
+        { "id": "fetch", "kind": "agent", "name": "Fetch", "config": {
+            "prompt": "get it",
+            "output_parser": { "schema": { "type": "object",
+                "properties": { "title": { "type": "string" } } } }
+        } },
         { "id": "notify", "kind": "tool_call", "name": "Notify",
           "config": { "slug": "demo:echo",
                       "args": { "text": "=nodes.fetch.item.json.title" } } },
