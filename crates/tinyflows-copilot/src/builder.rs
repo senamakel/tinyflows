@@ -204,10 +204,7 @@ pub fn render_prompt(req: &BuilderRequest) -> String {
                 .filter(|s| !s.is_empty())
             {
                 parts.push(String::new());
-                parts.push(format!(
-                    "Run error:\n{}",
-                    delimited_user_text("error", err)
-                ));
+                parts.push(format!("Run error:\n{}", delimited_user_text("error", err)));
             }
             if !req.failing_node_ids.is_empty() {
                 parts.push(String::new());
