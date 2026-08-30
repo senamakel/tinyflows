@@ -1,5 +1,16 @@
 //! Incremental per-node step persistence for a live flow run.
 
+use anyhow::{Context, Result};
+use chrono::Utc;
+use rusqlite::{Connection, OptionalExtension, params};
+use std::path::Path;
+use tinyflows_catalog::{
+    Flow, FlowRevision, FlowRun, FlowRunStep, FlowSuggestion, SuggestionStatus,
+};
+use uuid::Uuid;
+
+use super::{FlowUpdateError, with_connection};
+
 /// Incrementally upserts a single [`FlowRunStep`] onto a live `flow_runs`
 /// row's `steps_json`, keyed by `node_id` — used by the run observer
 /// (`flows::observability::FlowRunObserver`) to persist each node's step **as

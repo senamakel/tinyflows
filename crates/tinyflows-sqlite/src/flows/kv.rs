@@ -1,6 +1,17 @@
 //! The generic namespaced key/value table a host binds to
 //! `tinyflows::caps::StateStore`.
 
+use anyhow::{Context, Result};
+use chrono::Utc;
+use rusqlite::{Connection, OptionalExtension, params};
+use std::path::Path;
+use tinyflows_catalog::{
+    Flow, FlowRevision, FlowRun, FlowRunStep, FlowSuggestion, SuggestionStatus,
+};
+use uuid::Uuid;
+
+use super::{FlowUpdateError, with_connection};
+
 /// Loads a value from the `flow_state` KV table, scoped to `namespace`.
 ///
 /// Backs `tinyflows::caps::StateStore::load` via

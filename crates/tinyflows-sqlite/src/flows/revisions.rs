@@ -1,6 +1,17 @@
 //! Flow revision history: `update_flow_graph`'s guarded-update-plus-
 //! revision-capture transaction, and reading revisions back.
 
+use anyhow::{Context, Result};
+use chrono::Utc;
+use rusqlite::{Connection, OptionalExtension, params};
+use std::path::Path;
+use tinyflows_catalog::{
+    Flow, FlowRevision, FlowRun, FlowRunStep, FlowSuggestion, SuggestionStatus,
+};
+use uuid::Uuid;
+
+use super::{FlowUpdateError, with_connection};
+
 /// How many revision snapshots to retain per flow (audit F6). Older ones are
 /// pruned on each new capture.
 const MAX_REVISIONS_PER_FLOW: usize = 20;

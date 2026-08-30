@@ -1,6 +1,17 @@
 //! `flow_definitions` CRUD: create, read, list, enable/disable, delete,
 //! duplicate, and last-run bookkeeping (`record_run`).
 
+use anyhow::{Context, Result};
+use chrono::Utc;
+use rusqlite::{Connection, OptionalExtension, params};
+use std::path::Path;
+use tinyflows_catalog::{
+    Flow, FlowRevision, FlowRun, FlowRunStep, FlowSuggestion, SuggestionStatus,
+};
+use uuid::Uuid;
+
+use super::{FlowUpdateError, with_connection};
+
 /// Shared column list for every `flow_definitions` SELECT — keeps
 /// [`map_flow_row`]'s positional `row.get(N)` calls in sync with the query.
 const FLOW_DEFINITION_COLUMNS: &str = "id, name, graph_json, enabled, created_at, updated_at, \

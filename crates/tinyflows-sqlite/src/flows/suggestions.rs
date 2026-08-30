@@ -1,5 +1,16 @@
 //! Authoring suggestions: upsert, list, and status updates.
 
+use anyhow::{Context, Result};
+use chrono::Utc;
+use rusqlite::{Connection, OptionalExtension, params};
+use std::path::Path;
+use tinyflows_catalog::{
+    Flow, FlowRevision, FlowRun, FlowRunStep, FlowSuggestion, SuggestionStatus,
+};
+use uuid::Uuid;
+
+use super::{FlowUpdateError, with_connection};
+
 /// Shared column list for every `flow_suggestions` SELECT — keeps
 /// [`map_suggestion_row`]'s positional `row.get(N)` calls in sync with the query.
 const FLOW_SUGGESTION_COLUMNS: &str = "id, title, one_liner, rationale, trigger_hint, steps_json, \

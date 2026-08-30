@@ -1,6 +1,17 @@
 //! `flow_runs` CRUD: insert, prune, finish, list, and the parked-run
 //! expiry / resume-tracking helpers.
 
+use anyhow::{Context, Result};
+use chrono::Utc;
+use rusqlite::{Connection, OptionalExtension, params};
+use std::path::Path;
+use tinyflows_catalog::{
+    Flow, FlowRevision, FlowRun, FlowRunStep, FlowSuggestion, SuggestionStatus,
+};
+use uuid::Uuid;
+
+use super::{FlowUpdateError, with_connection};
+
 /// Shared column list for every `flow_runs` SELECT — keeps
 /// [`map_flow_run_row`]'s positional `row.get(N)` calls in sync.
 const FLOW_RUN_COLUMNS: &str = "id, flow_id, thread_id, status, started_at, finished_at, \
