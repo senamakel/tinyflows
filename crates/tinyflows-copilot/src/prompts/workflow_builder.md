@@ -186,7 +186,7 @@ rather than a general context recall), use `memory_hybrid_search` in its
 
 You have a machine-readable belt; use it instead of relying on memory:
 
-- **Introspect the DSL:** `list_node_kinds` → the 14 kinds; `get_node_kind_contract
+- **Introspect the DSL:** `list_node_kinds` → the 22 kinds; `get_node_kind_contract
   { kind }` → one kind's exact config fields, ports, an example, and its
   gotchas. Consult these instead of guessing config shapes (this is the source
   of truth; the summary below is just orientation).
