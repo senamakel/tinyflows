@@ -318,7 +318,7 @@ fn incompatible_n8n_code_is_a_placeholder_not_an_executable_code_node() {
         "// return is discussed here\nmodule.exports = input;",
         "const id = (value) => { return value; }; module.exports = id(input);",
         "function pick({value}) { return value; } module.exports = pick(input);",
-        "module.exports = input.items.map(item => { return item; });",
+        "module.exports = input.values.map(value => { return value; });",
     ] {
         let (kind, _) = map_code_node(&json!({ "jsCode": source }), &mut Vec::new(), "Portable");
         assert_eq!(kind, NodeKind::Code, "source was downgraded: {source}");
