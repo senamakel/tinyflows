@@ -160,9 +160,14 @@ fn derive_schedule(params: &Value) -> Option<Value> {
         let expr = first_rule.get("expression").and_then(Value::as_str)?;
         return Some(json!({ "kind": "cron", "expr": expr }));
     }
+    // n8n's `scheduleTrigger` node has spelled the count differently across
+    // versions: a bare unit key (`hours`), `<unit>Interval`
+    // (`hoursInterval`), or a generic `value` — try each in turn.
+    let interval_key = format!("{field}Interval");
     let value = first_rule
         .get(field)
         .and_then(Value::as_f64)
+        .or_else(|| first_rule.get(interval_key.as_str()).and_then(Value::as_f64))
         .or_else(|| first_rule.get("value").and_then(Value::as_f64))?;
     interval_to_every_ms(field, value).map(|ms| json!({ "kind": "every", "every_ms": ms }))
 }
