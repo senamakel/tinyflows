@@ -16,7 +16,7 @@ fn trigger_graph() -> WorkflowGraph {
             kind: NodeKind::Trigger,
             type_version: 1,
             name: "Trigger".to_string(),
-            dir: serde_json::Value::Null,
+            config: serde_json::Value::Null,
             ports: Vec::new(),
             position: None,
         }],
@@ -34,7 +34,7 @@ fn automatic_schedule_graph() -> WorkflowGraph {
             kind: NodeKind::Trigger,
             type_version: 1,
             name: "Trigger".to_string(),
-            dir: serde_json::json!({ "trigger_kind": "schedule", "schedule": "0 9 * * *" }),
+            config: serde_json::json!({ "trigger_kind": "schedule", "schedule": "0 9 * * *" }),
             ports: Vec::new(),
             position: None,
         }],
@@ -1415,7 +1415,7 @@ fn schema_reinitializes_when_the_database_file_is_deleted_at_runtime() {
     assert_eq!(flows.len(), 1, "sanity: the flow was persisted");
 
     // Simulate a workspace reset / manual deletion while the process lives on.
-    let db_path = dir.workspace_dir.join("flows").join("flows.db");
+    let db_path = dir.join("flows.db");
     assert!(
         db_path.exists(),
         "sanity: the flows db exists before deletion"

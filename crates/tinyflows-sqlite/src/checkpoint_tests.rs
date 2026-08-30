@@ -8,7 +8,6 @@
 //! `flows_run` / `flows_resume` actually drive.
 
 use serde_json::json;
-use tempfile::TempDir;
 use tinyflows::graph::ids::NodeId;
 use tinyflows::graph::{Checkpoint, CheckpointConfig, Checkpointer, PendingWrite};
 

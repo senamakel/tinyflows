@@ -158,11 +158,11 @@ pub fn delete_draft(dir: &Path, id: &str) -> Result<bool> {
 /// Serializes a draft to its file, creating the drafts dir if needed. Writes to
 /// a temp file then renames, so a crash mid-write never leaves a corrupt draft.
 fn write_draft(dir: &Path, draft: &FlowDraft) -> Result<()> {
-    let dir = drafts_dir(dir);
-    std::fs::create_dir_all(&dir)
-        .with_context(|| format!("creating drafts dir {}", dir.display()))?;
+    let drafts = drafts_dir(dir);
+    std::fs::create_dir_all(&drafts)
+        .with_context(|| format!("creating drafts dir {}", drafts.display()))?;
     let path = draft_path(dir, &draft.id)?;
-    let tmp = dir.join(format!(".{}.json.tmp", draft.id));
+    let tmp = drafts.join(format!(".{}.json.tmp", draft.id));
     let json = serde_json::to_vec_pretty(draft).context("serializing draft")?;
     std::fs::write(&tmp, &json).with_context(|| format!("writing {}", tmp.display()))?;
     std::fs::rename(&tmp, &path).with_context(|| format!("renaming into {}", path.display()))?;
