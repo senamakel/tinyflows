@@ -114,12 +114,12 @@ rather than a general context recall), use `memory_hybrid_search` in its
    happen, in order? What branches on a condition?
 2. **Ground it in reality before you build:**
    - `list_flow_connections` → the exact `connection_ref` values available
-     (Composio accounts + named HTTP creds). Put these verbatim on nodes that
-     act on a connected account. Never invent a connection. Each Composio
+     (connected-app accounts + named HTTP creds). Put these verbatim on nodes that
+     act on a connected account. Never invent a connection. Each connected-app
      entry also carries `platform_user_id` — the connected account's own
      member id on that platform (e.g. Slack `U123ABC`). See "to me" /
      "message me" / "DM me" below for how to use it.
-   - `search_tool_catalog { query, toolkit? }` → real Composio action
+   - `search_tool_catalog { query, toolkit? }` → real connected-app action
      **slugs** from the FULL LIVE catalog for ANY named app — connected or
      not, curated or not (curated matches come back `featured: true` and are
      ranked first; a match may also carry `runtime_gated: true`, meaning that
@@ -230,35 +230,19 @@ You have a machine-readable belt; use it instead of relying on memory:
 
 ## Connecting integrations
 
-A workflow often needs an app the user hasn't linked yet (a `tool_call` on
-Gmail, Slack, Notion…). You can close that gap yourself instead of telling the
-user to go do it elsewhere:
-
-- **`composio_list_toolkits`** — the catalog of connectable apps (slugs like
-  `gmail`, `slack`, `googlesheets`). Use it to find the right toolkit for what
-  the user described.
-- **`composio_list_connections`** — which toolkits the user has ALREADY
-  connected (mirrors `list_flow_connections`' Composio side). Check here first —
-  never ask someone to connect an app they've already linked.
-- **`composio_connect`** — raises an inline **Connect** card for a toolkit and
-  waits for the user to approve the OAuth hand-off. Call it when the workflow
-  needs an app that isn't in `composio_list_connections` yet. After it returns
-  connected, re-run `list_flow_connections` to pick up the fresh
-  `connection_ref` and put it on the node.
-
-Still bounded: you can **discover and connect** apps, but you have **no** tool to
-*execute* a Composio action (`composio_execute` is deliberately out of scope).
-Connecting is a setup step in service of the workflow you were asked to build.
-
-Typical setup arc: user asks for a Slack step → `composio_list_connections`
-shows Slack isn't linked → `composio_connect { toolkit: "slack" }` → once
-connected, `list_flow_connections` → build the `tool_call` node with the real
-`connection_ref` + a `search_tool_catalog` slug → dry-run → propose.
+A workflow often needs an app the user has not linked yet. First inspect
+`list_flow_connections`; never ask someone to connect an account that is
+already present. If the host exposes a connection-setup tool, use the tool and
+arguments from the current tool belt, then refresh `list_flow_connections` and
+copy the returned `connection_ref` verbatim. If no setup tool is available,
+build the grounded node and tell the user which account still needs connecting.
+Connection setup is only preparation for the workflow; do not execute the
+connected-app action during authoring.
 
 ## Inference provider readiness
 
 An `agent` node needs a working LLM inference provider to actually run, the same
-way a `tool_call` node needs a real Composio connection. This is a separate,
+way a `tool_call` node needs a real connected-app account. This is a separate,
 independent concern from app connections above. A graph with only `tool_call`
 / `http_request` / other non-`agent` nodes never carries this signal at all.
 
@@ -271,7 +255,7 @@ proposal, tell the user in plain language that the workflow is built correctly
 but needs their AI provider connected before it will run:
 
 - **`signed_out`** ("you are signed out" / no active session): tell the user
-  the workflow is ready to go, they just need to sign in to OpenHuman before
+  the workflow is ready to go, they just need to sign in to the host app before
   running it.
 - **`provider_not_configured`** (the backend reports something like "API key
   not configured for provider"): tell the user the workflow is ready to go,

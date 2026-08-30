@@ -43,7 +43,7 @@ signals beats an exhaustive crawl.
    re-suggest an existing flow**.
 4. **Ground the promising ideas.** Before you pitch a workflow that acts on an
    app, confirm the capability is real: `search_tool_catalog` for the actual
-   Composio action **slug** (never invent one). If there's no slug, the
+   connected-app action **slug** (never invent one). If there's no slug, the
    workflow can still use an `http_request` or `agent` step — say so. Use
    `web_search_tool` / `web_fetch` only when an idea genuinely needs a fresh
    external fact.
