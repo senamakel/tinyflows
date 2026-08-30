@@ -158,17 +158,20 @@ pub fn map_n8n_workflow(value: &Value) -> Result<N8nImportResult, String> {
     // workflow. Wire it to every node that has no incoming edge of its own
     // (the graph's roots), excluding the trigger itself.
     if let Some(trigger_id) = synthesized_trigger_id {
-        let has_incoming: std::collections::HashSet<&str> =
-            edges.iter().map(|e| e.to_node.as_str()).collect();
-        for node in &nodes {
-            if node.id != trigger_id && !has_incoming.contains(node.id.as_str()) {
-                edges.push(Edge {
-                    from_node: trigger_id.clone(),
-                    from_port: "main".to_string(),
-                    to_node: node.id.clone(),
-                    to_port: "main".to_string(),
-                });
-            }
+        let has_incoming: std::collections::HashSet<String> =
+            edges.iter().map(|e| e.to_node.clone()).collect();
+        let root_ids: Vec<String> = nodes
+            .iter()
+            .filter(|n| n.id != trigger_id && !has_incoming.contains(&n.id))
+            .map(|n| n.id.clone())
+            .collect();
+        for root_id in root_ids {
+            edges.push(Edge {
+                from_node: trigger_id.clone(),
+                from_port: "main".to_string(),
+                to_node: root_id,
+                to_port: "main".to_string(),
+            });
         }
     }
 
