@@ -9,7 +9,7 @@ use tinyflows_catalog::{Flow, FlowRevision};
 use uuid::Uuid;
 
 use super::definitions::get_flow;
-use super::{with_connection, with_immediate_transaction};
+use super::{sql_conversion_error, with_connection, with_immediate_transaction};
 
 /// How many revision snapshots to retain per flow (audit F6). Older ones are
 /// pruned on each new capture.
@@ -122,8 +122,13 @@ pub fn update_flow_graph(
     let graph_json = serde_json::to_string(&graph)
         .context("Failed to serialize graph")
         .map_err(FlowUpdateError::Store)?;
-    let prior_graph_json =
-        serde_json::to_string(&current.graph).unwrap_or_else(|_| "null".to_string());
+    // Never fall back to a placeholder here: a revision row exists to prove
+    // what the graph looked like before this save, so a serialization
+    // failure must fail the whole save rather than silently write a `null`
+    // graph into the audit trail.
+    let prior_graph_json = serde_json::to_string(&current.graph)
+        .context("Failed to serialize prior graph for revision capture")
+        .map_err(FlowUpdateError::Store)?;
     let now = Utc::now().to_rfc3339();
     let new_enabled = if auto_disarm {
         false
@@ -242,8 +247,13 @@ pub fn revision_by_id(
 
 fn map_revision_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<FlowRevision> {
     let graph_str: String = row.get(2)?;
+    // A stored revision's `graph_json` was written by a successful
+    // `serde_json::to_string` at capture time (see `update_flow_graph`), so a
+    // decode failure here means the row is corrupt — surface it rather than
+    // quietly returning a `null` graph that reads as "empty" instead of
+    // "broken".
     let graph: serde_json::Value =
-        serde_json::from_str(&graph_str).unwrap_or(serde_json::Value::Null);
+        serde_json::from_str(&graph_str).map_err(sql_conversion_error)?;
     Ok(FlowRevision {
         id: row.get(0)?,
         flow_id: row.get(1)?,
