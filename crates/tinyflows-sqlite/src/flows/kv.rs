@@ -2,15 +2,10 @@
 //! `tinyflows::caps::StateStore`.
 
 use anyhow::{Context, Result};
-use chrono::Utc;
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::params;
 use std::path::Path;
-use tinyflows_catalog::{
-    Flow, FlowRevision, FlowRun, FlowRunStep, FlowSuggestion, SuggestionStatus,
-};
-use uuid::Uuid;
 
-use super::{FlowUpdateError, with_connection};
+use super::{sql_conversion_error, with_connection};
 
 /// Loads a value from the `flow_state` KV table, scoped to `namespace`.
 ///
@@ -68,4 +63,3 @@ pub fn kv_delete(dir: &Path, namespace: &str, key: &str) -> Result<()> {
         Ok(())
     })
 }
-

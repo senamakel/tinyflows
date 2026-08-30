@@ -3,14 +3,12 @@
 
 use anyhow::{Context, Result};
 use chrono::Utc;
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, params};
 use std::path::Path;
-use tinyflows_catalog::{
-    Flow, FlowRevision, FlowRun, FlowRunStep, FlowSuggestion, SuggestionStatus,
-};
+use tinyflows_catalog::Flow;
 use uuid::Uuid;
 
-use super::{FlowUpdateError, with_connection};
+use super::{sql_conversion_error, with_connection};
 
 /// Shared column list for every `flow_definitions` SELECT — keeps
 /// [`map_flow_row`]'s positional `row.get(N)` calls in sync with the query.
@@ -221,7 +219,6 @@ pub fn set_enabled(dir: &Path, id: &str, enabled: bool) -> Result<Flow> {
     get_flow(dir, id)?.ok_or_else(|| anyhow::anyhow!("flow '{id}' not found after update"))
 }
 
-
 /// Records the outcome of a `flows_run` invocation onto the flow's summary
 /// fields (`last_run_at` / `last_status`).
 pub fn record_run(dir: &Path, id: &str, status: &str) -> Result<()> {
@@ -260,4 +257,3 @@ fn map_flow_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Flow> {
         require_approval: row.get::<_, i64>(8)? != 0,
     })
 }
-

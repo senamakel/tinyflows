@@ -2,15 +2,11 @@
 //! expiry / resume-tracking helpers.
 
 use anyhow::{Context, Result};
-use chrono::Utc;
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, params};
 use std::path::Path;
-use tinyflows_catalog::{
-    Flow, FlowRevision, FlowRun, FlowRunStep, FlowSuggestion, SuggestionStatus,
-};
-use uuid::Uuid;
+use tinyflows_catalog::{FlowRun, FlowRunStep};
 
-use super::{FlowUpdateError, with_connection};
+use super::{sql_conversion_error, with_connection};
 
 /// Shared column list for every `flow_runs` SELECT — keeps
 /// [`map_flow_run_row`]'s positional `row.get(N)` calls in sync.
@@ -161,7 +157,6 @@ pub fn finish_flow_run(
         Ok(updated > 0)
     })
 }
-
 
 /// Expires every parked `pending_approval` run whose "parked since" timestamp
 /// (`COALESCE(finished_at, started_at)` — a run's `finished_at` is stamped when
@@ -448,4 +443,3 @@ fn map_flow_run_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<FlowRun> {
 // ─────────────────────────────────────────────────────────────────────────────
 // flow_suggestions — discovery-agent workflow suggestions (Flow Scout)
 // ─────────────────────────────────────────────────────────────────────────────
-

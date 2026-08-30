@@ -16,16 +16,10 @@
 //! [`crate::checkpoint`].
 
 use anyhow::{Context, Result};
-use chrono::Utc;
-use rusqlite::{Connection, params};
+use rusqlite::Connection;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
-use tinyflows_catalog::{
-    Flow, FlowRevision, FlowRun, FlowRunStep, FlowSuggestion, SuggestionStatus,
-};
-use uuid::Uuid;
-
 
 mod definitions;
 mod kv;
@@ -274,11 +268,9 @@ fn add_column_if_missing(conn: &Connection, table: &str, name: &str, sql_type: &
     }
 }
 
-
 fn sql_conversion_error<E: std::error::Error + Send + Sync + 'static>(err: E) -> rusqlite::Error {
     rusqlite::Error::ToSqlConversionFailure(Box::new(err))
 }
-
 
 /// Runs `f` inside a `BEGIN IMMEDIATE` / `COMMIT` transaction on `conn`,
 /// rolling back on error. `BEGIN IMMEDIATE` (rather than the default deferred
@@ -308,4 +300,3 @@ fn with_immediate_transaction<T>(
         }
     }
 }
-

@@ -1,15 +1,11 @@
 //! Authoring suggestions: upsert, list, and status updates.
 
 use anyhow::{Context, Result};
-use chrono::Utc;
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::params;
 use std::path::Path;
-use tinyflows_catalog::{
-    Flow, FlowRevision, FlowRun, FlowRunStep, FlowSuggestion, SuggestionStatus,
-};
-use uuid::Uuid;
+use tinyflows_catalog::{FlowSuggestion, SuggestionStatus};
 
-use super::{FlowUpdateError, with_connection};
+use super::{sql_conversion_error, with_connection};
 
 /// Shared column list for every `flow_suggestions` SELECT — keeps
 /// [`map_suggestion_row`]'s positional `row.get(N)` calls in sync with the query.
@@ -160,4 +156,3 @@ fn map_suggestion_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<FlowSuggestio
         source_run_id: row.get(12)?,
     })
 }
-

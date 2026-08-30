@@ -3,14 +3,13 @@
 
 use anyhow::{Context, Result};
 use chrono::Utc;
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::params;
 use std::path::Path;
-use tinyflows_catalog::{
-    Flow, FlowRevision, FlowRun, FlowRunStep, FlowSuggestion, SuggestionStatus,
-};
+use tinyflows_catalog::{Flow, FlowRevision};
 use uuid::Uuid;
 
-use super::{FlowUpdateError, with_connection};
+use super::definitions::get_flow;
+use super::{with_connection, with_immediate_transaction};
 
 /// How many revision snapshots to retain per flow (audit F6). Older ones are
 /// pruned on each new capture.
@@ -254,4 +253,3 @@ fn map_revision_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<FlowRevision> {
         created_at: row.get(5)?,
     })
 }
-
