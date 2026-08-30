@@ -68,9 +68,9 @@ fn uses_n8n_code_globals(source: &str) -> bool {
                 let token = &source[start..index];
                 if token == "function" {
                     pending_function_body = true;
-                } else if ["$json", "$input", "$node", "items"].contains(&token) {
-                    return true;
-                } else if token == "return" && function_depths.is_empty() {
+                } else if ["$json", "$input", "$node", "items"].contains(&token)
+                    || (token == "return" && function_depths.is_empty())
+                {
                     return true;
                 }
             }
