@@ -454,8 +454,7 @@ pub(super) fn map_code(params: &Value, warnings: &mut Vec<String>, n8n_name: &st
                 .or_insert_with(|| Value::String(lang.to_string()));
         }
     }
-    if let Some(source) = cfg.get("source").and_then(Value::as_str)
-        && uses_n8n_code_globals(source)
+    if config_uses_n8n_runtime(&Value::Object(cfg.clone()))
     {
         warnings.push(format!(
             "Node '{n8n_name}' is an n8n code node imported as an editable placeholder — it uses \
@@ -473,10 +472,7 @@ pub(super) fn map_code_node(
     n8n_name: &str,
 ) -> (NodeKind, Value) {
     let mut config = map_code(params, warnings, n8n_name);
-    let incompatible = config
-        .get("source")
-        .and_then(Value::as_str)
-        .is_some_and(uses_n8n_code_globals);
+    let incompatible = config_uses_n8n_runtime(&config);
     if !incompatible {
         return (NodeKind::Code, config);
     }
@@ -490,6 +486,14 @@ pub(super) fn map_code_node(
         );
     }
     (NodeKind::Transform, config)
+}
+
+fn config_uses_n8n_runtime(config: &Value) -> bool {
+    let Some(source) = config.get("source").and_then(Value::as_str) else {
+        return false;
+    };
+    let check_top_level_return = config.get("language").and_then(Value::as_str) != Some("python");
+    uses_n8n_code_globals(source, check_top_level_return)
 }
 
 include!("node_mapping/javascript.rs");

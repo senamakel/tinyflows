@@ -2,11 +2,17 @@
 /// or return convention rather than tinyflows' stdin/stdout contract — a
 /// lightweight lexer. String/comment contents are skipped, and `return` is
 /// incompatible only outside a function body.
-fn uses_n8n_code_globals(source: &str) -> bool {
+fn uses_n8n_code_globals(source: &str, check_top_level_return: bool) -> bool {
     #[derive(Clone, Copy)]
     enum PendingFunctionBody {
         Declaration(usize),
         Arrow,
+    }
+
+    #[derive(Clone, Copy)]
+    struct ItemsBinding {
+        depth: usize,
+        expires_at_semicolon: bool,
     }
 
     let bytes = source.as_bytes();
@@ -16,7 +22,7 @@ fn uses_n8n_code_globals(source: &str) -> bool {
     let mut function_depths = Vec::new();
     let mut pending_function_body = None;
     let mut pending_variable_declaration = false;
-    let mut items_bound = false;
+    let mut items_bindings = Vec::new();
     while index < bytes.len() {
         let starts_comment = bytes[index] == b'/'
             && matches!(bytes.get(index + 1), Some(b'/') | Some(b'*'));
@@ -53,7 +59,7 @@ fn uses_n8n_code_globals(source: &str) -> bool {
                     } else if bytes[index] == b'$' && bytes.get(index + 1) == Some(&b'{') {
                         let start = index + 2;
                         let end = template_expression_end(bytes, start);
-                        if uses_n8n_code_globals(&source[start..end]) {
+                        if uses_n8n_code_globals(&source[start..end], check_top_level_return) {
                             return true;
                         }
                         index = (end + 1).min(bytes.len());
@@ -94,7 +100,12 @@ fn uses_n8n_code_globals(source: &str) -> bool {
                 if function_depths.last() == Some(&brace_depth) {
                     function_depths.pop();
                 }
+                items_bindings.retain(|binding: &ItemsBinding| binding.depth < brace_depth);
                 brace_depth = brace_depth.saturating_sub(1);
+                index += 1;
+            }
+            b';' => {
+                items_bindings.retain(|binding| !binding.expires_at_semicolon);
                 index += 1;
             }
             first if first.is_ascii_alphabetic() || matches!(first, b'_' | b'$') => {
@@ -109,6 +120,12 @@ fn uses_n8n_code_globals(source: &str) -> bool {
                 if token == "function" && previous_significant(bytes, start) != Some(b'.') {
                     pending_function_body = Some(PendingFunctionBody::Declaration(paren_depth));
                     pending_variable_declaration = false;
+                } else if !is_control_keyword(token)
+                    && previous_significant(bytes, start) != Some(b'.')
+                    && method_body_follows(bytes, index)
+                {
+                    pending_function_body = Some(PendingFunctionBody::Declaration(paren_depth));
+                    pending_variable_declaration = false;
                 } else if matches!(token, "const" | "let" | "var") {
                     pending_variable_declaration = true;
                 } else if token == "items" {
@@ -116,15 +133,25 @@ fn uses_n8n_code_globals(source: &str) -> bool {
                         pending_function_body,
                         Some(PendingFunctionBody::Declaration(depth)) if paren_depth > depth
                     );
-                    let arrow_parameter = arrow_follows_parameter(bytes, index);
-                    if pending_variable_declaration || function_parameter || arrow_parameter {
-                        items_bound = true;
-                    } else if !items_bound {
+                    let arrow_parameter = arrow_parameter_scope(bytes, index);
+                    if pending_variable_declaration || function_parameter || arrow_parameter.is_some()
+                    {
+                        let block_scoped_parameter = function_parameter || arrow_parameter == Some(true);
+                        items_bindings.push(ItemsBinding {
+                            depth: brace_depth + usize::from(block_scoped_parameter),
+                            expires_at_semicolon: arrow_parameter == Some(false),
+                        });
+                    } else if !items_bindings
+                        .iter()
+                        .any(|binding| binding.depth <= brace_depth)
+                    {
                         return true;
                     }
                     pending_variable_declaration = false;
                 } else if ["$json", "$input", "$node"].contains(&token)
-                    || (token == "return" && function_depths.is_empty())
+                    || (check_top_level_return
+                        && token == "return"
+                        && function_depths.is_empty())
                 {
                     return true;
                 } else {
@@ -137,21 +164,60 @@ fn uses_n8n_code_globals(source: &str) -> bool {
     false
 }
 
-fn arrow_follows_parameter(bytes: &[u8], mut index: usize) -> bool {
+fn arrow_parameter_scope(bytes: &[u8], mut index: usize) -> Option<bool> {
     while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
         index += 1;
     }
-    if bytes.get(index..index + 2) == Some(b"=>") {
-        return true;
+    if bytes.get(index..index + 2) != Some(b"=>") {
+        let close = bytes[index..].iter().position(|byte| *byte == b')')? + index;
+        index = close + 1;
+        while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
+            index += 1;
+        }
+        if bytes.get(index..index + 2) != Some(b"=>") {
+            return None;
+        }
     }
-    if bytes.get(index) != Some(&b')') {
+    index += 2;
+    while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
+        index += 1;
+    }
+    Some(bytes.get(index) == Some(&b'{'))
+}
+
+fn is_control_keyword(token: &str) -> bool {
+    matches!(token, "if" | "for" | "while" | "switch" | "catch" | "with")
+}
+
+fn method_body_follows(bytes: &[u8], mut index: usize) -> bool {
+    while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
+        index += 1;
+    }
+    if bytes.get(index) != Some(&b'(') {
         return false;
     }
-    index += 1;
-    while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
-        index += 1;
+    let mut depth = 0usize;
+    while index < bytes.len() {
+        match bytes[index] {
+            quote @ (b'\'' | b'"' | b'`') => index = skip_quoted(bytes, index, quote),
+            b'(' => {
+                depth += 1;
+                index += 1;
+            }
+            b')' => {
+                depth = depth.saturating_sub(1);
+                index += 1;
+                if depth == 0 {
+                    while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
+                        index += 1;
+                    }
+                    return bytes.get(index) == Some(&b'{');
+                }
+            }
+            _ => index += 1,
+        }
     }
-    bytes.get(index..index + 2) == Some(b"=>")
+    false
 }
 
 fn is_regex_start(bytes: &[u8], index: usize) -> bool {
