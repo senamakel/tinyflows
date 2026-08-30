@@ -112,7 +112,7 @@ static DRAFT_LOCKS: OnceLock<Mutex<HashMap<PathBuf, &'static Mutex<()>>>> = Once
 fn lock_for(path: &Path) -> &'static Mutex<()> {
     let registry = DRAFT_LOCKS.get_or_init(|| Mutex::new(HashMap::new()));
     let mut registry = registry.lock().unwrap_or_else(|e| e.into_inner());
-    *registry
+    registry
         .entry(path.to_path_buf())
         .or_insert_with(|| Box::leak(Box::new(Mutex::new(()))))
 }
