@@ -316,16 +316,14 @@ pub(super) fn map_http_request(
                 Some(body) => {
                     cfg.insert("body".to_string(), body);
                 }
-                None => {
-                    mark_untranslated_http_config(
-                        &mut cfg,
-                        warnings,
-                        n8n_name,
-                        "body parameters",
-                        "bodyParameters",
-                        body,
-                    )
-                }
+                None => mark_untranslated_http_config(
+                    &mut cfg,
+                    warnings,
+                    n8n_name,
+                    "body parameters",
+                    "bodyParameters",
+                    body,
+                ),
             }
         }
     }
@@ -512,8 +510,7 @@ fn uses_n8n_code_globals(source: &str) -> bool {
             }
             b'/' if bytes.get(index + 1) == Some(&b'*') => {
                 index += 2;
-                while index + 1 < bytes.len()
-                    && !(bytes[index] == b'*' && bytes[index + 1] == b'/')
+                while index + 1 < bytes.len() && !(bytes[index] == b'*' && bytes[index + 1] == b'/')
                 {
                     index += 1;
                 }
