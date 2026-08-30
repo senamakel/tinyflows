@@ -554,8 +554,8 @@ pub fn update_flow_graph(
     // snapshot — a concurrent write between an ops-level read and this call
     // would otherwise let a manual→automatic transition slip past
     // undetected and persist `enabled: true` on an automatic-trigger graph.
-    let now_auto = super::ops::trigger_is_automatic(&graph);
-    let was_auto = super::ops::trigger_is_automatic(&current.graph);
+    let now_auto = tinyflows_catalog::graph_policy::trigger_is_automatic(&graph);
+    let was_auto = tinyflows_catalog::graph_policy::trigger_is_automatic(&current.graph);
     let is_manual_to_auto_transition = now_auto && !was_auto;
     let forced_automatic_disarm = force_disarm_if_automatic && now_auto;
     let auto_disarm = is_manual_to_auto_transition || forced_automatic_disarm;

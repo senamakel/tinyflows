@@ -27,6 +27,9 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = "1.0"
 async-trait = { workspace = true }
+# `checkpoint` only: every SQLite call is a blocking one, moved off the async
+# executor with `spawn_blocking` rather than held on it.
+tokio = { workspace = true }
 chrono = { workspace = true }
 rusqlite = { workspace = true }
 uuid = { workspace = true }

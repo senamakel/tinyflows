@@ -13,6 +13,9 @@
 //!   cancellation tokens; no runtime, no storage.
 //! - [`import`] — best-effort importers that map a foreign automation format
 //!   into a [`tinyflows::model::WorkflowGraph`].
+//! - [`graph_policy`] — the save/run safety predicates over a graph: whether it
+//!   fires unattended, whether it can act on the world, whether it has anything
+//!   to do at all.
 //!
 //! # What is deliberately not here
 //!
@@ -26,6 +29,7 @@
 //! overlay on [`tinyflows::catalog`].
 
 pub mod build_registry;
+pub mod graph_policy;
 pub mod import;
 pub mod run_registry;
 pub mod types;
