@@ -400,7 +400,7 @@ where
                 records
                     .push(serde_json::from_str(&json).map_err(|e| sqlite_err("decode record", e))?);
             }
-            let writes = read_writes_by_checkpoint(&conn, thread_id, &namespace_json)?;
+            let writes = read_writes_by_checkpoint(&conn, &thread_id, &namespace_json)?;
             (records, writes)
         };
         if records.is_empty() {
