@@ -1,7 +1,7 @@
 //! Incremental per-node step persistence for a live flow run.
 
 use anyhow::{Context, Result};
-use rusqlite::{OptionalExtension, params};
+use rusqlite::params;
 use std::path::Path;
 use tinyflows_catalog::FlowRunStep;
 
