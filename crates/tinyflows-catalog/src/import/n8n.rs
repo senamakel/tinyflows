@@ -480,7 +480,10 @@ fn untranslated_warning(n8n_name: &str, raw: &str) -> String {
 /// Ensures the graph has exactly one trigger, mutating `nodes` in place:
 /// - zero triggers → prepend a synthesized `manual` trigger (with a warning);
 /// - multiple triggers → keep the first, demote the rest to placeholders.
-fn reconcile_triggers(nodes: &mut Vec<Node>, warnings: &mut Vec<String>) {
+///
+/// Returns the id of the synthesized trigger, if one was added, so the caller
+/// can wire it to the graph's root nodes once edges are computed.
+fn reconcile_triggers(nodes: &mut Vec<Node>, warnings: &mut Vec<String>) -> Option<String> {
     let trigger_idxs: Vec<usize> = nodes
         .iter()
         .enumerate()
