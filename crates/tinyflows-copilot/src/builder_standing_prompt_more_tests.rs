@@ -1,9 +1,8 @@
 //! Standing-prompt content assertions: reply hygiene, agent-ref selection,
 //! and the working-memory read/write split.
 
-use super::super::*;
-use super::{contains_normalized, normalize_whitespace, req};
-use serde_json::json;
+
+use super::contains_normalized;
 
 /// narration, no draft-then-restate, lead with substance. Without these
 /// the reasoning-tier model narrates its chain of thought in the visible
