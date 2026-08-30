@@ -105,15 +105,11 @@ impl<State> SqliteCheckpointer<State> {
         SCHEMA
     }
 
-    fn lock(&self) -> Result<std::sync::MutexGuard<'_, Connection>> {
-        self.conn.lock().map_err(|_| {
-            GraphError::Checkpoint("sqlite checkpointer: connection lock poisoned".to_string())
-        })
-    }
 }
 
-/// Locks `conn` from inside a [`tokio::task::spawn_blocking`] closure, where
-/// `self.lock()` is unavailable (the closure only owns the cloned `Arc`).
+/// Locks `conn`. Every [`Checkpointer`] method below moves its work onto
+/// [`tokio::task::spawn_blocking`], where only the cloned `Arc` (not `self`)
+/// is available, so this is a free function rather than a method.
 fn lock_conn(conn: &Arc<Mutex<Connection>>) -> Result<std::sync::MutexGuard<'_, Connection>> {
     conn.lock().map_err(|_| {
         GraphError::Checkpoint("sqlite checkpointer: connection lock poisoned".to_string())
