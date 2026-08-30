@@ -127,6 +127,29 @@ fn http_request_normalizes_json_body_named_body_fields_and_headers() {
         "JSON HTTP",
     );
     assert_eq!(cfg["body"], json!({ "ready": true }));
+
+    let cfg = map_http_request(
+        &json!({ "jsonBody": "{\"ready\":true}" }),
+        &mut warnings,
+        "Text JSON HTTP",
+    );
+    assert_eq!(cfg["body"], json!({ "ready": true }));
+}
+
+#[test]
+fn invalid_textual_json_body_makes_the_http_node_a_placeholder() {
+    let mut warnings = Vec::new();
+    let (kind, cfg) = map_http_request_node(
+        &json!({ "jsonBody": "{not json}" }),
+        &mut warnings,
+        "Broken HTTP",
+    );
+    assert_eq!(kind, NodeKind::Transform);
+    assert_eq!(
+        cfg["_n8n_import"]["untranslated_http_config"],
+        json!(true)
+    );
+    assert!(warnings.iter().any(|warning| warning.contains("placeholder")));
 }
 
 #[test]
@@ -263,6 +286,13 @@ fn incompatible_n8n_code_is_a_placeholder_not_an_executable_code_node() {
     assert_eq!(cfg["_n8n_import"]["original_type"], json!("code"));
 
     let (kind, _) = map_code_node(
+        &json!({ "jsCode": "const out = transform(input); return out;" }),
+        &mut warnings,
+        "Late return",
+    );
+    assert_eq!(kind, NodeKind::Transform);
+
+    let (kind, _) = map_code_node(
         &json!({ "jsCode": "process.stdin.pipe(process.stdout);" }),
         &mut Vec::new(),
         "Portable",
@@ -382,4 +412,19 @@ fn multiple_schedule_intervals_warn_instead_of_dropping_cadences() {
     assert!(warnings.iter().any(|warning| {
         warning.contains("Several cadences") && warning.contains("could not be translated")
     }));
+}
+
+#[test]
+fn non_positive_or_sub_millisecond_intervals_are_not_scheduled() {
+    for value in [-1.0, 0.0, 0.000_1] {
+        let mut warnings = Vec::new();
+        let cfg = trigger_config(
+            "schedule",
+            &json!({ "unit": "seconds", "value": value }),
+            &mut warnings,
+            "Invalid interval",
+        );
+        assert!(cfg.get("schedule").is_none(), "value={value}: {cfg}");
+        assert!(warnings.iter().any(|warning| warning.contains("could not be translated")));
+    }
 }
