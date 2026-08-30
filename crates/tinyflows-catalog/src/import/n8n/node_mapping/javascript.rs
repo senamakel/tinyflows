@@ -5,7 +5,7 @@
 fn uses_n8n_code_globals(source: &str) -> bool {
     #[derive(Clone, Copy)]
     enum PendingFunctionBody {
-        Declaration,
+        Declaration(usize),
         Arrow,
     }
 
@@ -75,7 +75,13 @@ fn uses_n8n_code_globals(source: &str) -> bool {
             }
             b'{' => {
                 brace_depth += 1;
-                let is_function_body = pending_function_body.is_some();
+                let is_function_body = matches!(
+                    pending_function_body,
+                    Some(PendingFunctionBody::Arrow)
+                ) || matches!(
+                    pending_function_body,
+                    Some(PendingFunctionBody::Declaration(depth)) if depth == paren_depth
+                );
                 if is_function_body {
                     function_depths.push(brace_depth);
                     pending_function_body = None;
@@ -99,7 +105,7 @@ fn uses_n8n_code_globals(source: &str) -> bool {
                 }
                 let token = &source[start..index];
                 if token == "function" && previous_significant(bytes, start) != Some(b'.') {
-                    pending_function_body = Some(PendingFunctionBody::Declaration);
+                    pending_function_body = Some(PendingFunctionBody::Declaration(paren_depth));
                 } else if ["$json", "$input", "$node"].contains(&token)
                     || (token == "return" && function_depths.is_empty())
                 {
