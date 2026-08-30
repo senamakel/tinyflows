@@ -391,3 +391,180 @@ fn duplicate_node_name_collision_emits_a_warning() {
 }
 
 // ── R-C1 end-to-end: n8n `$json` import passes binding-resolvability ───
+
+// ── Node-mapping fidelity: warn instead of silently mis-executing ──────────
+
+#[test]
+fn if_node_with_untranslatable_conditions_warns_and_preserves_them() {
+    let mut warnings = Vec::new();
+    let cfg = map_condition(
+        &json!({
+            "conditions": {
+                "options": {},
+                "conditions": [{ "leftValue": "={{ $json.status }}", "rightValue": "ok", "operator": { "operation": "equals" } }],
+            }
+        }),
+        &mut warnings,
+        "IF",
+    );
+    // No `field` could be derived, so the node would otherwise silently
+    // route every input the same way; the original conditions are kept for
+    // the author to rebuild from, and a warning is raised.
+    assert!(cfg.get("field").is_none());
+    assert!(cfg["_n8n_import"]["conditions"].is_object());
+    assert!(warnings.iter().any(|w| w.contains("IF") && w.contains("conditions")));
+}
+
+#[test]
+fn switch_node_with_untranslatable_rules_warns_and_preserves_them() {
+    let mut warnings = Vec::new();
+    let cfg = map_switch(
+        &json!({ "rules": { "values": [{ "conditions": {}, "outputKey": "a" }] } }),
+        &mut warnings,
+        "Switch",
+    );
+    assert!(cfg.get("field").is_none());
+    assert!(cfg.get("expression").is_none());
+    assert!(cfg["_n8n_import"]["rules"].is_object());
+    assert!(warnings.iter().any(|w| w.contains("Switch") && w.contains("rules")));
+}
+
+#[test]
+fn split_out_maps_field_to_split_out_to_path() {
+    let mut warnings = Vec::new();
+    let cfg = map_split_out(&json!({ "fieldToSplitOut": "data.items" }), &mut warnings, "Split");
+    assert_eq!(cfg["path"], json!("data.items"));
+    assert!(cfg.get("fieldToSplitOut").is_none());
+}
+
+#[test]
+fn item_lists_only_maps_to_split_out_for_the_split_out_operation() {
+    let wf = json!({
+        "name": "item-lists",
+        "nodes": [
+            { "id": "t", "name": "Manual", "type": "n8n-nodes-base.manualTrigger" },
+            { "id": "s", "name": "Split", "type": "n8n-nodes-base.itemLists",
+              "parameters": { "operation": "splitOutItems", "fieldToSplitOut": "items" } },
+            { "id": "a", "name": "Aggregate", "type": "n8n-nodes-base.itemLists",
+              "parameters": { "operation": "aggregateItems" } }
+        ],
+        "connections": {
+            "Manual": { "main": [[{ "node": "Split", "type": "main", "index": 0 }]] },
+            "Split": { "main": [[{ "node": "Aggregate", "type": "main", "index": 0 }]] }
+        }
+    });
+    let result = map_n8n_workflow(&wf).expect("map");
+    assert_eq!(
+        result.graph.node("s").expect("split node").kind,
+        NodeKind::SplitOut
+    );
+    // A non-split-out operation is not force-mapped to `split_out`; it falls
+    // through to the unmapped-type placeholder like any other unrecognized
+    // config, rather than silently claiming to aggregate.
+    assert_eq!(
+        result.graph.node("a").expect("aggregate node").kind,
+        NodeKind::Transform
+    );
+}
+
+#[test]
+fn code_node_with_n8n_globals_or_top_level_return_warns() {
+    let mut warnings = Vec::new();
+    map_code(&json!({ "jsCode": "return items;" }), &mut warnings, "Code");
+    assert!(
+        warnings
+            .iter()
+            .any(|w| w.contains("Code") && w.contains("n8n-only globals"))
+    );
+
+    let mut clean_warnings = Vec::new();
+    map_code(
+        &json!({ "jsCode": "const x = 1; module.exports = x;" }),
+        &mut clean_warnings,
+        "Clean",
+    );
+    assert!(
+        !clean_warnings
+            .iter()
+            .any(|w| w.contains("n8n-only globals")),
+        "code with no n8n tell-tales should not warn: {clean_warnings:?}"
+    );
+}
+
+#[test]
+fn cron_node_maps_cron_expression_to_schedule() {
+    let mut warnings = Vec::new();
+    let cfg = trigger_config(
+        "schedule",
+        &json!({ "cronExpression": "0 9 * * *" }),
+        &mut warnings,
+        "Cron",
+    );
+    assert_eq!(cfg["schedule"], json!({ "kind": "cron", "expr": "0 9 * * *" }));
+    assert!(!warnings.iter().any(|w| w.contains("could not be translated")));
+}
+
+#[test]
+fn interval_node_maps_unit_and_value_to_every_ms() {
+    let mut warnings = Vec::new();
+    let cfg = trigger_config(
+        "schedule",
+        &json!({ "unit": "minutes", "value": 15 }),
+        &mut warnings,
+        "Interval",
+    );
+    assert_eq!(cfg["schedule"], json!({ "kind": "every", "every_ms": 900000.0 }));
+    assert!(!warnings.iter().any(|w| w.contains("could not be translated")));
+}
+
+#[test]
+fn schedule_trigger_maps_a_cron_expression_rule() {
+    let mut warnings = Vec::new();
+    let cfg = trigger_config(
+        "schedule",
+        &json!({
+            "rule": { "interval": [{ "field": "cronExpression", "expression": "*/5 * * * *" }] }
+        }),
+        &mut warnings,
+        "ScheduleTrigger",
+    );
+    assert_eq!(
+        cfg["schedule"],
+        json!({ "kind": "cron", "expr": "*/5 * * * *" })
+    );
+    assert!(!warnings.iter().any(|w| w.contains("could not be translated")));
+}
+
+#[test]
+fn schedule_trigger_maps_a_fixed_unit_interval_rule() {
+    let mut warnings = Vec::new();
+    let cfg = trigger_config(
+        "schedule",
+        &json!({
+            "rule": { "interval": [{ "field": "hours", "hoursInterval": 2 }] }
+        }),
+        &mut warnings,
+        "ScheduleTrigger",
+    );
+    assert_eq!(
+        cfg["schedule"],
+        json!({ "kind": "every", "every_ms": 7200000.0 })
+    );
+}
+
+#[test]
+fn unrecognized_schedule_shape_warns_instead_of_guessing() {
+    let mut warnings = Vec::new();
+    let cfg = trigger_config(
+        "schedule",
+        &json!({ "rule": { "interval": [{ "field": "weekday", "weekday": 1 }] } }),
+        &mut warnings,
+        "Weekly",
+    );
+    assert!(cfg.get("schedule").is_none());
+    assert!(
+        warnings
+            .iter()
+            .any(|w| w.contains("Weekly") && w.contains("could not be translated"))
+    );
+}
