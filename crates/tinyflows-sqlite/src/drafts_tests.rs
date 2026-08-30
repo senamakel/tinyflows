@@ -104,3 +104,50 @@ fn rejects_path_traversal_ids() {
     assert!(draft_path(&dir, "..").is_err());
     assert!(draft_path(&dir, "ok-123_ID").is_ok());
 }
+
+/// Regression: two concurrent `update_draft` calls patching different fields
+/// of the SAME draft must not lose either patch. Without the per-path lock,
+/// both calls can read the same on-disk version, apply their own field, and
+/// whichever write lands last silently discards the other's change; with the
+/// lock, the second call's read always sees the first call's completed
+/// write, so both patches survive regardless of thread scheduling.
+#[test]
+fn concurrent_updates_to_different_fields_do_not_lose_either_patch() {
+    let tmp = TempDir::new().unwrap();
+    let dir = test_dir(&tmp);
+    let draft = create_draft(
+        &dir,
+        None,
+        "original".into(),
+        sample_graph(),
+        DraftOrigin::Chat,
+    )
+    .unwrap();
+
+    let dir_a = dir.clone();
+    let dir_b = dir.clone();
+    let id_a = draft.id.clone();
+    let id_b = draft.id.clone();
+    let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+    let barrier_a = barrier.clone();
+    let barrier_b = barrier.clone();
+
+    let handle_a = std::thread::spawn(move || {
+        barrier_a.wait();
+        update_draft(&dir_a, &id_a, Some("renamed".into()), None, None).unwrap();
+    });
+    let handle_b = std::thread::spawn(move || {
+        barrier_b.wait();
+        update_draft(&dir_b, &id_b, None, Some(json!({ "patched": true })), None).unwrap();
+    });
+    handle_a.join().unwrap();
+    handle_b.join().unwrap();
+
+    let final_draft = get_draft(&dir, &draft.id).unwrap().expect("draft present");
+    assert_eq!(final_draft.name, "renamed", "name patch must not be lost");
+    assert_eq!(
+        final_draft.graph,
+        json!({ "patched": true }),
+        "graph patch must not be lost"
+    );
+}
