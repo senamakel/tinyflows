@@ -230,12 +230,9 @@ fn standing_prompt_does_not_claim_plain_agent_nodes_reach_memory() {
 
 /// The four mechanisms that DO reach memory from inside a running flow
 /// must all be taught, with the correct binding path for the
-/// deterministic `tool_call` one. A native `oh:` tool result is a
-/// `ToolResult` — `{ content: [{ type, text }], is_error }` — so a
-/// downstream binding dereferences `.item.json.content[0].text`, not the
-/// bare `.item.json.<field>` an agent/`http_request` output would use.
-/// Getting that path wrong is the same class of silent-null failure the
-/// `=`-binding rules exist to stop. #5204 added `flow_memory_agent` as
+/// deterministic `tool_call` one. A host-native tool result is host-defined,
+/// so its contract supplies the downstream binding path rather than the shared
+/// prompt assuming a vendor envelope. #5204 added `flow_memory_agent` as
 /// the PREFERRED general route alongside the deterministic `tool_call`
 /// reads and `context_scout`'s narrower niche; the memory-node feature
 /// (issue #5226) then added the `memory` node itself as the preferred
@@ -247,11 +244,10 @@ fn standing_prompt_teaches_the_four_working_memory_read_paths() {
 
     for rule in [
         "A `memory` node",
-        "oh:memory_recall",
-        "oh:memory_hybrid_search",
+        "host-native memory slug",
+        "inspect the tool contract",
         "flow_memory_agent",
         "context_scout",
-        "=nodes.<id>.item.json.content[0].text",
     ] {
         assert!(
             contains_normalized(STANDING_PROMPT, rule),

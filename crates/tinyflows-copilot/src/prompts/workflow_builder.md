@@ -353,17 +353,15 @@ A `WorkflowGraph` is `{ name?, nodes: [...], edges: [...] }`.
      lookup whose result a **non-reasoning node** needs to branch or bind on,
      e.g. a `condition` gating on whether something was already found. It is a
      verb with static config, not a reasoning step, so it fires exactly once
-     per item and can't loop or decide what to look up next — use `tool_call
-     oh:memory_recall`/`oh:memory_hybrid_search` (below) only when you
-     specifically need that native-tool result shape instead. See "The
+     per item and can't loop or decide what to look up next — use a host-native
+     memory `tool_call` (below) only when you specifically need that tool's
+     result shape instead. See "The
      `memory` node" below for the full operation/scope reference.
-   - **A `tool_call` node** with `config.slug` = `oh:memory_recall` (semantic
-     recall) or `oh:memory_hybrid_search` (keyword/lexical lookup). Same
-     one-shot-read shape as the `memory` node above, but returns a native
-     tool result, so bind downstream off
-     `=nodes.<id>.item.json.content[0].text` — NOT `.item.json.<field>`. Both
-     are valid; prefer the `memory` node for new graphs unless you need this
-     exact output shape.
+   - **A `tool_call` node** using an exact host-native memory slug returned by
+     the live tool catalog. It has the same one-shot-read role as the `memory`
+     node above, but its result shape is host-defined: inspect the tool contract
+     and bind downstream through the documented output path. Prefer the
+     `memory` node for new graphs unless you need the native tool's exact shape.
    - **`config.agent_ref` = `flow_memory_agent`** — the PREFERRED general
      route: any step that needs the user's context, style, history, or
      people → `flow_memory_agent` via `agent_ref`, for ANY use case, not a fixed list.
@@ -627,7 +625,7 @@ item" membership checks are not reliably expressible via semantic `recall` —
 **after** the real action it records, not before — a failed action must never
 be mistaken for a completed one on the next run. See the `agent` node kind's
 "Reading the user's memory at run time" section above for how this node
-relates to `tool_call oh:memory_recall` and `flow_memory_agent` — all three
+relates to a host-native memory `tool_call` and `flow_memory_agent` — all three
 are valid; `memory` is the right choice specifically when a non-reasoning node
 needs to branch on the result.
 
