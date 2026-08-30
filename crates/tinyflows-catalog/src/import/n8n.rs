@@ -513,7 +513,7 @@ fn reconcile_triggers(nodes: &mut Vec<Node>, warnings: &mut Vec<String>) -> Opti
             nodes.insert(
                 0,
                 Node {
-                    id: trigger_id,
+                    id: trigger_id.clone(),
                     kind: NodeKind::Trigger,
                     type_version: 1,
                     name: "Manual Trigger".to_string(),
@@ -522,6 +522,7 @@ fn reconcile_triggers(nodes: &mut Vec<Node>, warnings: &mut Vec<String>) -> Opti
                     position: None,
                 },
             );
+            return Some(trigger_id);
         }
         1 => {}
         _ => {
