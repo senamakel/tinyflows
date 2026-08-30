@@ -17,7 +17,7 @@ fn untranslated_warning(n8n_name: &str, raw: &str) -> String {
 ///
 /// Returns the id of the synthesized trigger, if one was added, so the caller
 /// can wire it to the graph's root nodes once edges are computed.
-fn reconcile_triggers(nodes: &mut Vec<Node>, warnings: &mut Vec<String>) -> Option<String> {
+pub(super) fn reconcile_triggers(nodes: &mut Vec<Node>, warnings: &mut Vec<String>) -> Option<String> {
     let trigger_idxs: Vec<usize> = nodes
         .iter()
         .enumerate()
@@ -89,7 +89,7 @@ fn reconcile_triggers(nodes: &mut Vec<Node>, warnings: &mut Vec<String>) -> Opti
 /// `true` and 1 → `false`; a `switch` source routes output _i_ → `"i"`; every
 /// other source uses `main`. Connections that reference an unknown node are
 /// dropped with a warning.
-fn map_connections(
+pub(super) fn map_connections(
     connections: Option<&Value>,
     name_to_id: &Map<String, Value>,
     nodes: &[Node],
@@ -140,7 +140,7 @@ fn map_connections(
 }
 
 /// The tinyflows output-port name for source `kind`'s n8n output index.
-fn output_port_name(kind: Option<&NodeKind>, index: usize) -> String {
+pub(super) fn output_port_name(kind: Option<&NodeKind>, index: usize) -> String {
     match kind {
         Some(NodeKind::Condition) => {
             if index == 0 {
@@ -161,7 +161,7 @@ fn output_port_name(kind: Option<&NodeKind>, index: usize) -> String {
 }
 
 /// Parses n8n's `position: [x, y]` array into a tinyflows [`Position`].
-fn parse_position(value: Option<&Value>) -> Option<Position> {
+pub(super) fn parse_position(value: Option<&Value>) -> Option<Position> {
     let arr = value?.as_array()?;
     let x = arr.first()?.as_f64()?;
     let y = arr.get(1)?.as_f64()?;
@@ -170,7 +170,7 @@ fn parse_position(value: Option<&Value>) -> Option<Position> {
 
 /// Derives a stable, id-safe slug from an n8n node name when the node carries
 /// no `id` of its own.
-fn slug(name: &str) -> String {
+pub(super) fn slug(name: &str) -> String {
     let s: String = name
         .chars()
         .map(|c| {
