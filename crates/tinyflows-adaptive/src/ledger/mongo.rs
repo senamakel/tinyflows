@@ -204,7 +204,10 @@ fn read_row(doc: &Document) -> LedgerRow {
 fn read_episode(doc: &Document) -> Result<Episode> {
     let scope = text(doc, "scope_key");
     Ok(Episode {
-        id: text(doc, "_id"),
+        id: doc
+            .get_str("id")
+            .map(str::to_string)
+            .unwrap_or_else(|_| text(doc, "_id")),
         goal: serde_json::from_str(&text(doc, "goal"))
             .map_err(|e| LedgerError::Corrupt(e.to_string()))?,
         scope_key: (!scope.is_empty()).then_some(scope),

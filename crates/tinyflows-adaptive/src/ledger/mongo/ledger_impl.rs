@@ -195,9 +195,16 @@ impl Ledger for MongoLedger {
             .map_err(|e| LedgerError::Corrupt(e.to_string()))?;
         self.episodes_c()
             .update_one(
-                doc! { "_id": &episode.id },
+                doc! {
+                    "scope_key": self.bucket(),
+                    "$or": [
+                        { "id": &episode.id },
+                        { "_id": &episode.id },
+                    ],
+                },
                 doc! {
                     "$set": {
+                        "id": &episode.id,
                         "goal": goal,
                         "status": status,
                         "attempt": i64::from(episode.attempt),
@@ -207,6 +214,7 @@ impl Ledger for MongoLedger {
                     // Set once: the handle's scope and the first timestamp are
                     // facts about the episode's creation, not its progress.
                     "$setOnInsert": {
+                        "_id": { "scope_key": self.bucket(), "id": &episode.id },
                         "scope_key": self.bucket(),
                         "started_at": &episode.started_at,
                     },
@@ -220,7 +228,10 @@ impl Ledger for MongoLedger {
     async fn episode(&self, id: &str) -> Result<Option<Episode>> {
         let found = self
             .episodes_c()
-            .find_one(doc! { "_id": id, "scope_key": self.bucket() })
+            .find_one(doc! {
+                "scope_key": self.bucket(),
+                "$or": [{ "id": id }, { "_id": id }],
+            })
             .await?;
         found.as_ref().map(read_episode).transpose()
     }
@@ -322,4 +333,3 @@ impl Ledger for MongoLedger {
         Ok(out)
     }
 }
-
