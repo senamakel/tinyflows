@@ -363,7 +363,7 @@ pub(super) fn map_http_request(
 
 fn contains_expression_string(value: &Value) -> bool {
     match value {
-        Value::String(text) => text.starts_with('='),
+        Value::String(text) => text.starts_with('=') && !text.starts_with("=.item"),
         Value::Array(items) => items.iter().any(contains_expression_string),
         Value::Object(map) => map.values().any(contains_expression_string),
         _ => false,
