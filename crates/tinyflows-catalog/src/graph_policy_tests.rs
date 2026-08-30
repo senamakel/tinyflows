@@ -54,8 +54,13 @@ fn a_webhook_trigger_counts_as_automatic_before_any_host_dispatches_one() {
 }
 
 #[test]
-fn the_three_acting_node_kinds_are_outbound_side_effects() {
-    for kind in [NodeKind::ToolCall, NodeKind::HttpRequest, NodeKind::Code] {
+fn the_four_acting_node_kinds_are_outbound_side_effects() {
+    for kind in [
+        NodeKind::ToolCall,
+        NodeKind::HttpRequest,
+        NodeKind::Code,
+        NodeKind::Shell,
+    ] {
         let label = format!("{kind:?}");
         assert!(
             graph_has_outbound_side_effect(&graph(json!({}), Some(kind))),
