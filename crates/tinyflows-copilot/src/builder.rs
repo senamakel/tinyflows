@@ -138,7 +138,8 @@ pub fn render_prompt(req: &BuilderRequest) -> String {
     let instruction = req.instruction.trim();
     match req.mode {
         BuildMode::Create => {
-            format!("{DIRECTIVE_PROPOSE}\n\nBuild a workflow that does this:\n{instruction}")
+            let instruction_block = delimited_user_text("instruction", instruction);
+            format!("{DIRECTIVE_PROPOSE}\n\nBuild a workflow that does this:\n{instruction_block}")
         }
         BuildMode::Revise => {
             let mut lines = vec![
@@ -162,7 +163,7 @@ pub fn render_prompt(req: &BuilderRequest) -> String {
             }
             lines.push(String::new());
             lines.push("Revise it as follows and return the full revised proposal:".to_string());
-            lines.push(instruction.to_string());
+            lines.push(delimited_user_text("instruction", instruction));
             lines.join("\n")
         }
         BuildMode::Build => {
@@ -182,7 +183,7 @@ pub fn render_prompt(req: &BuilderRequest) -> String {
                 "```",
                 "",
                 "Build a workflow that does this:",
-                instruction,
+                &delimited_user_text("instruction", instruction),
             ]
             .join("\n")
         }
@@ -203,7 +204,10 @@ pub fn render_prompt(req: &BuilderRequest) -> String {
                 .filter(|s| !s.is_empty())
             {
                 parts.push(String::new());
-                parts.push(format!("Run error: {err}"));
+                parts.push(format!(
+                    "Run error:\n{}",
+                    delimited_user_text("error", err)
+                ));
             }
             if !req.failing_node_ids.is_empty() {
                 parts.push(String::new());
@@ -224,7 +228,7 @@ pub fn render_prompt(req: &BuilderRequest) -> String {
             }
             if !instruction.is_empty() {
                 parts.push(String::new());
-                parts.push(instruction.to_string());
+                parts.push(delimited_user_text("instruction", instruction));
             }
             parts.push(String::new());
             parts.push("Return the full corrected proposal.".to_string());
