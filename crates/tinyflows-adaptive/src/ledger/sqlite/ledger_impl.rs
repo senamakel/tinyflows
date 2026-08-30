@@ -111,7 +111,8 @@ impl Ledger for SqliteLedger {
         let mut stmt = conn.prepare(
             "SELECT r.* FROM ledger_rows r
              JOIN lesson_evidence e ON e.row_id = r.id
-             WHERE e.lesson_id = ?1 AND r.scope_key = ?2 ORDER BY r.seq",
+             WHERE e.lesson_id = ?1 AND (r.scope_key = ?2 OR r.scope_key = '')
+             ORDER BY r.seq",
         )?;
         let found = stmt
             .query_map(params![lesson_id, self.bucket()], read_row)?

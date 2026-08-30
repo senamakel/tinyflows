@@ -119,7 +119,10 @@ impl Ledger for MongoLedger {
         }
         let mut found = self
             .rows()
-            .find(doc! { "_id": { "$in": ids }, "scope_key": self.bucket() })
+            .find(doc! {
+                "_id": { "$in": ids },
+                "scope_key": { "$in": [self.bucket(), "", mongodb::bson::Bson::Null] },
+            })
             .sort(doc! { "seq": 1 })
             .await?;
         let mut out = Vec::new();
