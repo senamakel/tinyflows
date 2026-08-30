@@ -117,7 +117,13 @@ pub fn parse_node_binding(expr: &str) -> Option<NodeBinding> {
     };
 
     let rest = rest.strip_prefix('.')?;
-    let (field_path, _) = take_field_path(rest)?;
+    let (field_path, remainder) = take_field_path(rest)?;
+    // The static gates only reject a complete simple binding. A continued jq
+    // program may recover from a missing path (for example with `//`), so its
+    // result is not guaranteed to be null and must be left to evaluation.
+    if !remainder.trim().is_empty() {
+        return None;
+    }
     let through_envelope = through_envelope || matches!(field_path.as_str(), "text" | "raw");
     Some(NodeBinding {
         node_id: node_id.to_string(),
@@ -133,7 +139,7 @@ fn take_identifier(input: &str) -> Option<(&str, &str)> {
         let ok = if index == 0 {
             ch.is_ascii_alphabetic() || ch == '_'
         } else {
-            ch.is_ascii_alphanumeric() || ch == '_'
+            ch.is_ascii_alphanumeric() || ch == '_' || ch == '-'
         };
         if !ok {
             break;
