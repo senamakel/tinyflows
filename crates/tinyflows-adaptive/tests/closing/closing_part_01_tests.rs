@@ -1,3 +1,4 @@
+/// A plan that calls two saved workflows, with the second one's step failing.
 fn composed() -> WorkflowGraph {
     use tinyflows::model::{Edge, Node, NodeKind};
     let call = |id: &str, workflow: &str| Node {

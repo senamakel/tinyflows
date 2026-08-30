@@ -474,5 +474,4 @@ async fn an_episode_with_no_attempts_asks_nothing() {
     assert_eq!(llm.call_count(), 0);
 }
 
-/// A plan that calls two saved workflows, with the second one's step failing.
 include!("closing/closing_part_01_tests.rs");

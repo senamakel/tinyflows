@@ -1,3 +1,8 @@
+/// A child workflow's final run state, in the shape the engine records it.
+///
+/// Raw run-state slots, so items are serialized (`{"json": …}`) — one shape in
+/// from the parent's scope projection, which exposes bare payloads. Getting
+/// that boundary wrong is precisely what `child_answer` has to survive.
 fn child_run_state() -> serde_json::Value {
     json!({
         "run": { "trigger": [], "inputs": { "repo": "acme/thing" } },

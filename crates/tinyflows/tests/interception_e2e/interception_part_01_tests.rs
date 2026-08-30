@@ -1,3 +1,6 @@
+/// The frame can resolve a node's bindings without executing it — the
+/// inspection a breakpoint needs, and the thing that turns "it produced null"
+/// into a pointer at the binding that did.
 #[tokio::test]
 async fn a_frame_resolves_bindings_without_executing() {
     struct Capture(Mutex<Vec<(String, String)>>);

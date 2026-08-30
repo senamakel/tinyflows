@@ -317,9 +317,3 @@ fn the_callable_listing_names_the_inputs_a_call_must_fill() {
         "a cold store offers no `use` list at all, rather than an empty one"
     );
 }
-
-/// A child workflow's final run state, in the shape the engine records it.
-///
-/// Raw run-state slots, so items are serialized (`{"json": …}`) — one shape in
-/// from the parent's scope projection, which exposes bare payloads. Getting
-/// that boundary wrong is precisely what `child_answer` has to survive.

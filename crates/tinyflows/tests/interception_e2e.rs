@@ -389,7 +389,4 @@ async fn a_before_state_patch_is_visible_downstream() {
     );
 }
 
-/// The frame can resolve a node's bindings without executing it — the
-/// inspection a breakpoint needs, and the thing that turns "it produced null"
-/// into a pointer at the binding that did.
 include!("interception_e2e/interception_part_01_tests.rs");
