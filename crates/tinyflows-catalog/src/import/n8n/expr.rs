@@ -2,6 +2,9 @@
 
 use serde_json::{Map, Value};
 
+/// Recursively translates n8n `={{ … }}` expressions inside a config `Value`
+/// into tinyflows' `=`-prefixed jq form where trivially possible; anything not
+/// trivially translatable is left as its raw string and a warning is recorded.
 fn translate_config(value: &Value, warnings: &mut Vec<String>, n8n_name: &str) -> Value {
     match value {
         Value::String(s) => Value::String(translate_expr(s, warnings, n8n_name)),

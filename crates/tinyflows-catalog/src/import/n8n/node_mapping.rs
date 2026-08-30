@@ -134,6 +134,3 @@ fn map_code(params: &Value, warnings: &mut Vec<String>, n8n_name: &str) -> Value
     Value::Object(cfg)
 }
 
-/// Recursively translates n8n `={{ … }}` expressions inside a config `Value`
-/// into tinyflows' `=`-prefixed jq form where trivially possible; anything not
-/// trivially translatable is left as its raw string and a warning is recorded.
