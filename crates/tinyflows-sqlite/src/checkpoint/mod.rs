@@ -32,9 +32,9 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 use tinyflows::graph::error::{GraphError, Result};
-use tinyflows::graph::ids::NodeId;
+use tinyflows::graph::ids::{CheckpointId, NodeId};
 use tinyflows::graph::{
-    Checkpoint, CheckpointConfig, CheckpointId, CheckpointMetadata, CheckpointSource,
+    Checkpoint, CheckpointConfig, CheckpointMetadata, CheckpointSource,
     CheckpointTuple, Checkpointer, PendingWrite,
 };
 
