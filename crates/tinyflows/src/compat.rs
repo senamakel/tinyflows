@@ -31,6 +31,8 @@
 //! catalog; a host that has one walks those itself and passes the remaining
 //! depth in.
 
+use std::collections::HashSet;
+
 use crate::model::{NodeKind, WorkflowGraph};
 
 /// One refusal: a topology the engine cannot execute safely.
@@ -82,7 +84,7 @@ pub fn errors_with_max_depth(
     max_depth: u64,
 ) -> Vec<CompatibilityError> {
     let mut errors = Vec::new();
-    collect_engine_compatibility_errors(graph, 0, max_depth, &mut errors);
+    collect_errors(graph, 0, max_depth, &mut errors);
     errors
 }
 
@@ -100,7 +102,7 @@ pub fn max_sub_workflow_depth(graph: &WorkflowGraph) -> u64 {
         .unwrap_or(crate::engine::MAX_SUB_WORKFLOW_DEPTH)
 }
 
-fn collect_engine_compatibility_errors(
+fn collect_errors(
     graph: &WorkflowGraph,
     depth: u64,
     max_depth: u64,
@@ -119,20 +121,20 @@ fn collect_engine_compatibility_errors(
             continue;
         };
         let Ok(child) = serde_json::from_value::<WorkflowGraph>(inline.clone()) else {
-            // TinyFlows reports malformed inline children as capability errors;
+            // A malformed inline child is reported as a capability error at run time;
             // this gate is specifically for otherwise-deserializable unsafe
             // topologies.
             continue;
         };
         let first_child_error = errors.len();
-        collect_engine_compatibility_errors(&child, depth + 1, max_depth, errors);
+        collect_errors(&child, depth + 1, max_depth, errors);
         for error in &mut errors[first_child_error..] {
             error.message = format!("Inline sub_workflow node '{}': {}", node.id, error.message);
         }
     }
 }
 
-fn graph_engine_compatibility_errors(
+fn graph_errors(
     graph: &WorkflowGraph,
 ) -> Vec<CompatibilityError> {
     let Some(trigger) = graph.trigger() else {
@@ -141,7 +143,7 @@ fn graph_engine_compatibility_errors(
     let mut errors = Vec::new();
 
     // The edges that close a cycle, from the engine's own classifier rather
-    // than a second implementation here — this gate mirrors TinyFlows' fan-in
+    // than a second implementation here — this gate mirrors the fan-in
     // lowering, so the two must agree on which edges count. A back-edge is a
     // loop head's re-entry, not a predecessor it barriers on, and counting it
     // would report every legal loop as an unrelieved fan-in.
