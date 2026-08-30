@@ -346,7 +346,6 @@ fn uses_n8n_code_globals(source: &str) -> bool {
         .iter()
         .any(|needle| source.contains(needle))
         || source
-            .trim_start()
             .split_whitespace()
             .next()
             .is_some_and(|first_word| first_word == "return")
