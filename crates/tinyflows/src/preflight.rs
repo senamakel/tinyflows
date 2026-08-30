@@ -387,3 +387,7 @@ pub fn mock_opaque_tool_call_upstream_ref<'a>(
     Some(node.id.as_str())
 }
 
+
+#[cfg(test)]
+#[path = "preflight_tests.rs"]
+mod tests;
