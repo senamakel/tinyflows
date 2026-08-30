@@ -152,7 +152,11 @@ pub fn parse_node_binding(expr: &str) -> Option<NodeBinding> {
     })
 }
 
-/// The leading `[A-Za-z_][A-Za-z0-9_]*`, and what follows it.
+/// The leading `[A-Za-z_][A-Za-z0-9_-]*`, and what follows it.
+///
+/// Hyphens are accepted after the first character to match the runtime
+/// expression evaluator, where node ids such as `nodes.my-node.item.value`
+/// address a literal node key rather than a subtraction expression.
 fn take_identifier(input: &str) -> Option<(&str, &str)> {
     let mut end = 0;
     for (index, ch) in input.char_indices() {
