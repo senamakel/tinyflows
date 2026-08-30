@@ -54,20 +54,49 @@ pub fn trigger_is_automatic(graph: &WorkflowGraph) -> bool {
 
 /// Whether `graph` contains a node that can produce a real outbound side
 /// effect — `tool_call` (a curated integration action), `http_request`,
-/// `code` (sandboxed but Turing-complete, can reach the network), or `shell`
+/// `code` (sandboxed but Turing-complete, can reach the network), `shell`
 /// (an author-supplied POSIX script run through the host capability, which
-/// can modify files, invoke programs, or reach the network same as `code`).
-/// Used by a host to force `require_approval: true` on
-/// any graph that can act on the world, regardless of what the caller
-/// passed. A graph built only from `trigger` / `agent` / `transform` /
-/// `condition` / data-flow nodes is read-only and unaffected.
+/// can modify files, invoke programs, or reach the network same as `code`),
+/// or an `agent` node that can itself invoke a tool. Used by a host to force
+/// `require_approval: true` on any graph that can act on the world,
+/// regardless of what the caller passed. A graph built only from `trigger` /
+/// data-flow / read-only `agent` nodes is unaffected.
 pub fn graph_has_outbound_side_effect(graph: &WorkflowGraph) -> bool {
     graph.nodes.iter().any(|n| {
         matches!(
             n.kind,
             NodeKind::ToolCall | NodeKind::HttpRequest | NodeKind::Code | NodeKind::Shell
-        )
+        ) || (n.kind == NodeKind::Agent && node_agent_has_tool_grant(graph, n))
     })
+}
+
+/// Whether an `agent` node `n` can invoke a tool at all — the inline
+/// `config.tools` grant it carries itself, or (when it names an
+/// `agent_ref`) the grants on the [`AgentDefinition`] that ref resolves to in
+/// this graph's own registry.
+///
+/// Deliberately conservative: an `agent_ref` this graph does not define is
+/// resolved by the host at run time and may carry its own tool grants that
+/// this crate cannot see — [`tinyflows::nodes::integration::agent_request`]
+/// documents that a node's `tools` only *narrows* what a definition already
+/// grants, never adds to a grant-less definition from elsewhere, so an
+/// unresolvable ref with no inline grant of its own is treated as read-only
+/// here rather than guessed at.
+fn node_agent_has_tool_grant(graph: &WorkflowGraph, n: &Node) -> bool {
+    let inline_tools = n
+        .config
+        .get("tools")
+        .and_then(|v| v.as_array())
+        .is_some_and(|a| !a.is_empty());
+    if inline_tools {
+        return true;
+    }
+    let Some(agent_ref) = n.config.get("agent_ref").and_then(|v| v.as_str()) else {
+        return false;
+    };
+    graph
+        .agent(agent_ref)
+        .is_some_and(|def| !def.tools.is_empty())
 }
 
 /// Shared side-effect enforcement: forces `require_approval` to `true` when `graph` contains an
