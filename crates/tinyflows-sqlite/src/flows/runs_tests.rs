@@ -3,6 +3,7 @@
 
 use super::*;
 use crate::flows::test_support::*;
+use crate::flows::definitions::create_flow;
 use tempfile::TempDir;
 
 #[test]
