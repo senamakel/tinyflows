@@ -35,8 +35,4 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"
-# The checkpoint tests assert byte-for-byte equivalence with the tinyagents
-# checkpointer this store was ported from — that equivalence is the whole point
-# of the port, so the crate it replaces is a dev-dependency here.
-tinyagents = { version = "2.1", features = ["sqlite"] }
 tokio = { workspace = true }

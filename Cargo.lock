@@ -2582,6 +2582,7 @@ dependencies = [
  "tinyflows",
  "tinyflows-catalog",
  "tokio",
+ "tracing",
  "uuid",
 ]
 
