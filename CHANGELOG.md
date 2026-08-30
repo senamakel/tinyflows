@@ -71,16 +71,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   time. Scoped to a `tool_call`'s `args`, and only for a binding that went
   through the envelope, so the envelope gate reports its own failures once.
 
-### Fixed
-
-- **`gates` no longer refuses a prose `prompt` beside real `messages`.** Both
-  completion paths fall through to a non-empty `messages` array once the prompt
-  resolves to null, so the prompt is vestigial and the node runs correctly. The
-  refusal was a false positive, which is the kind that teaches an author to
-  route around a gate.
-
-### Added
-
 - **`RunInput::with_run_id`** — a host names a run with a durable,
   server-generated id, seeded into the run state as `run.id`. The engine's own
   run id is process-local and minted fresh on every call (a resume re-executes,
@@ -358,6 +348,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Breaking:** `Capabilities` gained a `shell` field. Hosts constructing the
   struct literally add `shell: None` (or their own runner).
+
+### Fixed
+
+- **`gates` no longer refuses a prose `prompt` beside real `messages`.** Both
+  completion paths fall through to a non-empty `messages` array once the prompt
+  resolves to null, so the prompt is vestigial and the node runs correctly. The
+  refusal was a false positive, which is the kind that teaches an author to
+  route around a gate.
 
 ## [0.3.0] - YYYY-MM-DD
 
