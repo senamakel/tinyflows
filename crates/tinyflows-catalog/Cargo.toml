@@ -29,6 +29,9 @@ serde_json = { workspace = true }
 # an authoring build is cancelled through. No tokio runtime is required — the
 # registries are plain maps and the token is runtime-agnostic.
 tokio-util = { version = "0.7", default-features = false }
+# Diagnostics only: the registries and the importers log what they refuse and
+# why. No subscriber is installed here — a host that installs none pays nothing.
+tracing = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }

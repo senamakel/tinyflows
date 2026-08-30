@@ -2565,6 +2565,7 @@ dependencies = [
  "serde_json",
  "tinyflows",
  "tokio-util",
+ "tracing",
 ]
 
 [[package]]
