@@ -137,7 +137,7 @@ fn node_agent_has_tool_grant(graph: &WorkflowGraph, n: &Node) -> bool {
     };
     graph
         .agent(agent_ref)
-        .map_or(true, |def| !def.tools.is_empty())
+        .is_none_or(|def| !def.tools.is_empty())
 }
 
 /// Shared side-effect enforcement: forces `require_approval` to `true` when `graph` contains an
