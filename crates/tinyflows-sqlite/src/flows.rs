@@ -589,54 +589,62 @@ pub fn update_flow_graph(
     };
 
     with_connection(dir, |conn| {
-        // Guarded UPDATE keyed on the observed updated_at (race-safe even
-        // without an explicit expected version) — a concurrent writer that
-        // moved updated_at makes this match 0 rows. Targeted columns only, so a
-        // concurrent set_enabled/record_run isn't clobbered (unless this call
-        // itself carries an `enabled_override`, in which case `enabled` is
-        // one of the targeted columns by design).
-        let changed = conn
-            .execute(
-                "UPDATE flow_definitions SET name = ?1, graph_json = ?2, updated_at = ?3, \
+        // The guarded UPDATE, the revision insert, and the prune must commit
+        // as one unit: without a transaction, each `execute` autocommits on
+        // its own, so a failure between the UPDATE and the INSERT (disk full,
+        // a damaged revision table, …) leaves the graph changed with no
+        // revision recorded — silently violating the "every save is
+        // reversible" contract the revision table exists for.
+        with_immediate_transaction(conn, |conn| {
+            // Guarded UPDATE keyed on the observed updated_at (race-safe even
+            // without an explicit expected version) — a concurrent writer that
+            // moved updated_at makes this match 0 rows. Targeted columns only, so a
+            // concurrent set_enabled/record_run isn't clobbered (unless this call
+            // itself carries an `enabled_override`, in which case `enabled` is
+            // one of the targeted columns by design).
+            let changed = conn
+                .execute(
+                    "UPDATE flow_definitions SET name = ?1, graph_json = ?2, updated_at = ?3, \
                  require_approval = ?4, enabled = ?5 WHERE id = ?6 AND updated_at = ?7",
+                    params![
+                        name,
+                        graph_json,
+                        now,
+                        if require_approval { 1 } else { 0 },
+                        if new_enabled { 1 } else { 0 },
+                        id,
+                        current.updated_at,
+                    ],
+                )
+                .context("Failed to update flow")?;
+            if changed == 0 {
+                // Someone raced us between the read and the write.
+                anyhow::bail!("__conflict__");
+            }
+            // Capture the prior graph as a revision, then prune to the cap.
+            let rev_id = Uuid::new_v4().to_string();
+            conn.execute(
+                "INSERT INTO flow_revisions (id, flow_id, graph_json, name, require_approval, \
+             created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                 params![
-                    name,
-                    graph_json,
-                    now,
-                    if require_approval { 1 } else { 0 },
-                    if new_enabled { 1 } else { 0 },
+                    rev_id,
                     id,
-                    current.updated_at,
+                    prior_graph_json,
+                    current.name,
+                    if current.require_approval { 1 } else { 0 },
+                    now,
                 ],
             )
-            .context("Failed to update flow")?;
-        if changed == 0 {
-            // Someone raced us between the read and the write.
-            anyhow::bail!("__conflict__");
-        }
-        // Capture the prior graph as a revision, then prune to the cap.
-        let rev_id = Uuid::new_v4().to_string();
-        conn.execute(
-            "INSERT INTO flow_revisions (id, flow_id, graph_json, name, require_approval, \
-             created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![
-                rev_id,
-                id,
-                prior_graph_json,
-                current.name,
-                if current.require_approval { 1 } else { 0 },
-                now,
-            ],
-        )
-        .context("Failed to record flow revision")?;
-        conn.execute(
-            "DELETE FROM flow_revisions WHERE flow_id = ?1 AND id NOT IN (\
+            .context("Failed to record flow revision")?;
+            conn.execute(
+                "DELETE FROM flow_revisions WHERE flow_id = ?1 AND id NOT IN (\
                 SELECT id FROM flow_revisions WHERE flow_id = ?1 \
                 ORDER BY created_at DESC, id DESC LIMIT ?2)",
-            params![id, MAX_REVISIONS_PER_FLOW as i64],
-        )
-        .context("Failed to prune flow revisions")?;
-        Ok(())
+                params![id, MAX_REVISIONS_PER_FLOW as i64],
+            )
+            .context("Failed to prune flow revisions")?;
+            Ok(())
+        })
     })
     .map_err(|e| {
         if e.to_string().contains("__conflict__") {
