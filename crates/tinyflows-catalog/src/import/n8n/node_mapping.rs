@@ -303,6 +303,8 @@ pub(super) fn map_http_request(
                         warnings,
                         n8n_name,
                         "JSON body text",
+                        "jsonBody",
+                        Value::String(text),
                     ),
                 },
                 body => {
@@ -315,7 +317,14 @@ pub(super) fn map_http_request(
                     cfg.insert("body".to_string(), body);
                 }
                 None => {
-                    mark_untranslated_http_config(&mut cfg, warnings, n8n_name, "body parameters")
+                    mark_untranslated_http_config(
+                        &mut cfg,
+                        warnings,
+                        n8n_name,
+                        "body parameters",
+                        "bodyParameters",
+                        body,
+                    )
                 }
             }
         }
@@ -327,7 +336,14 @@ pub(super) fn map_http_request(
             Some(headers) => {
                 cfg.insert("headers".to_string(), headers);
             }
-            None => mark_untranslated_http_config(&mut cfg, warnings, n8n_name, "headers"),
+            None => mark_untranslated_http_config(
+                &mut cfg,
+                warnings,
+                n8n_name,
+                "headers",
+                "headerParameters",
+                headers,
+            ),
         }
     }
     cfg.entry("method".to_string())
@@ -340,19 +356,22 @@ fn mark_untranslated_http_config(
     warnings: &mut Vec<String>,
     n8n_name: &str,
     part: &str,
+    source_key: &str,
+    source: Value,
 ) {
     warnings.push(format!(
         "Node '{n8n_name}' has HTTP {part} in an n8n shape this importer cannot translate; \
          imported as an editable placeholder. Rebuild the request before enabling the flow."
     ));
-    cfg.insert(
-        "_n8n_import".to_string(),
-        json!({
+    let import = cfg
+        .entry("_n8n_import".to_string())
+        .or_insert_with(|| json!({
             "original_type": "httpRequest",
             "untranslated_http_config": true,
             "note": "HTTP configuration could not be translated safely; rebuild before changing this placeholder to http_request.",
-        }),
-    );
+            "untranslated": {},
+        }));
+    import["untranslated"][source_key] = source;
 }
 
 pub(super) fn map_http_request_node(
