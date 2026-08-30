@@ -144,10 +144,3 @@ fn untranslated_warning(n8n_name: &str, raw: &str) -> String {
          `=`-jq expression."
     )
 }
-
-/// Ensures the graph has exactly one trigger, mutating `nodes` in place:
-/// - zero triggers → prepend a synthesized `manual` trigger (with a warning);
-/// - multiple triggers → keep the first, demote the rest to placeholders.
-///
-/// Returns the id of the synthesized trigger, if one was added, so the caller
-/// can wire it to the graph's root nodes once edges are computed.
