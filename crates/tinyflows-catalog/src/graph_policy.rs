@@ -62,11 +62,53 @@ pub fn trigger_is_automatic(graph: &WorkflowGraph) -> bool {
 /// regardless of what the caller passed. A graph built only from `trigger` /
 /// data-flow / read-only `agent` nodes is unaffected.
 pub fn graph_has_outbound_side_effect(graph: &WorkflowGraph) -> bool {
+    has_outbound_side_effect_to_depth(graph, tinyflows::engine::MAX_SUB_WORKFLOW_DEPTH)
+}
+
+/// [`graph_has_outbound_side_effect`], bounded so a cyclic or pathologically
+/// nested inline chain cannot recurse forever.
+///
+/// A `sub_workflow` hides its work behind one node, and this rule decides
+/// whether a flow may ever run unattended — so not looking inside one is how a
+/// graph that reads `trigger → sub_workflow` saves with no approval gate while
+/// its child sends the email. Both forms the node accepts are covered:
+///
+/// - **`workflow`** (an inline child graph) is descended into, to `depth`.
+/// - **`workflow_id`** (a reference to a *saved* workflow) counts as a side
+///   effect on sight. This crate has no catalog and cannot see what it names,
+///   and the honest answer to "can this act on the world" is "possibly". The
+///   two costs are not symmetric: a false positive asks a human to approve a
+///   run that did not need it, and a false negative lets an unreviewed
+///   workflow act. This rule fails closed, unlike the authoring gates, which
+///   refuse a graph outright and so must only fire on what is certain.
+fn has_outbound_side_effect_to_depth(graph: &WorkflowGraph, depth: u64) -> bool {
     graph.nodes.iter().any(|n| {
-        matches!(
+        if matches!(
             n.kind,
             NodeKind::ToolCall | NodeKind::HttpRequest | NodeKind::Code | NodeKind::Shell
         ) || (n.kind == NodeKind::Agent && node_agent_has_tool_grant(graph, n))
+        {
+            return true;
+        }
+        if n.kind != NodeKind::SubWorkflow {
+            return false;
+        }
+        if n.config.get("workflow_id").is_some() {
+            return true;
+        }
+        let Some(inline) = n.config.get("workflow") else {
+            return false;
+        };
+        if depth == 0 {
+            // Out of budget with a child still unexamined. Same fail-closed
+            // reasoning as an unresolvable `workflow_id`.
+            return true;
+        }
+        match serde_json::from_value::<WorkflowGraph>(inline.clone()) {
+            Ok(child) => has_outbound_side_effect_to_depth(&child, depth - 1),
+            // A child this crate cannot parse is one it cannot clear.
+            Err(_) => true,
+        }
     })
 }
 
