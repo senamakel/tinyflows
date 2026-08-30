@@ -98,17 +98,27 @@ fn synthesizes_manual_trigger_when_none_present() {
         "connections": {}
     });
     let result = map_n8n_workflow(&wf).expect("map");
-    assert_eq!(
-        result
-            .graph
-            .nodes
-            .iter()
-            .filter(|n| n.kind == NodeKind::Trigger)
-            .count(),
-        1
-    );
+    let trigger = result
+        .graph
+        .nodes
+        .iter()
+        .find(|n| n.kind == NodeKind::Trigger)
+        .expect("a trigger was synthesized");
     assert!(result.warnings.iter().any(|w| w.contains("manual trigger")));
     tinyflows::validate::validate(&result.graph).expect("valid graph");
+
+    // The synthesized trigger must be wired to the graph's actual entry
+    // point — otherwise the flow validates but running it executes only the
+    // disconnected trigger and none of the imported workflow.
+    assert!(
+        result
+            .graph
+            .edges
+            .iter()
+            .any(|e| e.from_node == trigger.id && e.to_node == "h"),
+        "synthesized trigger must connect to the imported root node, got edges: {:?}",
+        result.graph.edges
+    );
 }
 
 #[test]
