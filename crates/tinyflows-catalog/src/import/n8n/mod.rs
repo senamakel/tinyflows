@@ -222,6 +222,14 @@ use serde_json::json;
 #[cfg(test)]
 use tinyflows::model::{NodeKind, Position};
 
+// Split along the same seams as the production modules, so a reader finds the
+// test beside the thing it tests.
 #[cfg(test)]
-#[path = "n8n_tests.rs"]
-mod tests;
+#[path = "expr_tests.rs"]
+mod expr_tests;
+#[cfg(test)]
+#[path = "graph_tests.rs"]
+mod graph_tests;
+#[cfg(test)]
+#[path = "node_mapping_tests.rs"]
+mod node_mapping_tests;

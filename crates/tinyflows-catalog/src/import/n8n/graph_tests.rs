@@ -4,7 +4,7 @@
 //! not there. None of those may fail the import — each becomes a warning and a
 //! graph the author can still open.
 
-use super::super::*;
+use super::*;
 
 #[test]
 fn looks_like_n8n_detects_connections_and_typed_nodes() {
@@ -186,4 +186,3 @@ fn duplicate_node_name_collision_emits_a_warning() {
 // ── R-C1 end-to-end: n8n `$json` import passes binding-resolvability ───
 
 // ── Node-mapping fidelity: warn instead of silently mis-executing ──────────
-

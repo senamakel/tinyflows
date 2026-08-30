@@ -3,7 +3,7 @@
 //! An unmapped type is not a failed import: it lands as an annotated placeholder
 //! carrying the original payload, so the graph still loads and validates.
 
-use super::super::*;
+use super::*;
 
 #[test]
 fn maps_if_node_to_condition_with_true_false_ports() {

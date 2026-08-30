@@ -4,7 +4,7 @@
 //! wrong field resolves to null at run time, which is the failure the importer's
 //! warnings exist to keep visible.
 
-use super::super::*;
+use super::*;
 
 #[test]
 fn translates_trivial_json_expression_to_jq() {
@@ -106,4 +106,3 @@ fn plain_string_is_not_treated_as_expression() {
     assert_eq!(translate_expr("hello", &mut warnings, "n"), "hello");
     assert!(warnings.is_empty());
 }
-
