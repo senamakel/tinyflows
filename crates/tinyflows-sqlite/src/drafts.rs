@@ -12,7 +12,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, Weak};
 
 use anyhow::{Context, Result, bail};
 use chrono::Utc;
@@ -102,19 +102,21 @@ pub fn get_draft(dir: &Path, id: &str) -> Result<Option<FlowDraft>> {
 /// this repo already do for their own file) or a CAS check against
 /// `updated_at`, either of which is a larger change than this crate's
 /// internal restructuring should make unasked.
-static DRAFT_LOCKS: OnceLock<Mutex<HashMap<PathBuf, &'static Mutex<()>>>> = OnceLock::new();
+static DRAFT_LOCKS: OnceLock<Mutex<HashMap<PathBuf, Weak<Mutex<()>>>>> = OnceLock::new();
 
-/// Returns the (leaked, process-lifetime) lock for `path`, creating one on
-/// first use. Leaking a `Mutex<()>` per distinct draft path is deliberate and
-/// cheap: a draft file is a bounded, small-cardinality set for the lifetime
-/// of a process, and leaking avoids the lifetime/ownership complexity of
-/// handing out a guard that outlives a shared map entry.
-fn lock_for(path: &Path) -> &'static Mutex<()> {
+/// Returns the shared lock for `path`, creating one on first use. The registry
+/// keeps only weak references and prunes inactive paths on every lookup, so a
+/// process that sees many draft ids does not retain one allocation per id.
+fn lock_for(path: &Path) -> Arc<Mutex<()>> {
     let registry = DRAFT_LOCKS.get_or_init(|| Mutex::new(HashMap::new()));
     let mut registry = registry.lock().unwrap_or_else(|e| e.into_inner());
-    registry
-        .entry(path.to_path_buf())
-        .or_insert_with(|| Box::leak(Box::new(Mutex::new(()))))
+    registry.retain(|_, lock| lock.strong_count() > 0);
+    if let Some(lock) = registry.get(path).and_then(Weak::upgrade) {
+        return lock;
+    }
+    let lock = Arc::new(Mutex::new(()));
+    registry.insert(path.to_path_buf(), Arc::downgrade(&lock));
+    lock
 }
 
 /// Patches a draft's mutable fields (any `Some` is applied), bumps

@@ -121,12 +121,8 @@ fn has_outbound_side_effect_to_depth(graph: &WorkflowGraph, depth: u64) -> bool 
 /// this graph's own registry.
 ///
 /// Deliberately conservative: an `agent_ref` this graph does not define is
-/// resolved by the host at run time and may carry its own tool grants that
-/// this crate cannot see — [`tinyflows::nodes::integration::agent_request`]
-/// documents that a node's `tools` only *narrows* what a definition already
-/// grants, never adds to a grant-less definition from elsewhere, so an
-/// unresolvable ref with no inline grant of its own is treated as read-only
-/// here rather than guessed at.
+/// resolved by the host at run time and may carry tool grants this crate cannot
+/// see. Requiring approval is safer than clearing an opaque host definition.
 fn node_agent_has_tool_grant(graph: &WorkflowGraph, n: &Node) -> bool {
     let inline_tools = n
         .config
@@ -141,7 +137,7 @@ fn node_agent_has_tool_grant(graph: &WorkflowGraph, n: &Node) -> bool {
     };
     graph
         .agent(agent_ref)
-        .is_some_and(|def| !def.tools.is_empty())
+        .map_or(true, |def| !def.tools.is_empty())
 }
 
 /// Shared side-effect enforcement: forces `require_approval` to `true` when `graph` contains an

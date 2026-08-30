@@ -55,9 +55,7 @@ pub(super) fn map_node(
             NodeKind::HttpRequest,
             map_http_request(params, warnings, n8n_name),
         ),
-        "code" | "function" | "functionItem" => {
-            (NodeKind::Code, map_code(params, warnings, n8n_name))
-        }
+        "code" | "function" | "functionItem" => map_code_node(params, warnings, n8n_name),
         "scheduleTrigger" | "cron" | "interval" => (
             NodeKind::Trigger,
             trigger_config("schedule", params, warnings, n8n_name),
@@ -151,11 +149,18 @@ fn derive_schedule(params: &Value) -> Option<Value> {
         return interval_to_every_ms(unit, value)
             .map(|ms| json!({ "kind": "every", "every_ms": ms }));
     }
-    let first_rule = params
+    let rules = params
         .get("rule")
         .and_then(|r| r.get("interval"))
-        .and_then(Value::as_array)
-        .and_then(|a| a.first())?;
+        .and_then(Value::as_array)?;
+    // Tinyflows currently stores one schedule per trigger. Silently choosing
+    // one cadence from an n8n trigger that has several would change when the
+    // imported workflow runs, so leave it unscheduled and let the caller emit
+    // the actionable fallback warning.
+    if rules.len() != 1 {
+        return None;
+    }
+    let first_rule = rules.first()?;
     let field = first_rule.get("field").and_then(Value::as_str)?;
     if field == "cronExpression" {
         let expr = first_rule.get("expression").and_then(Value::as_str)?;
@@ -279,9 +284,50 @@ pub(super) fn map_http_request(
             cfg.insert("method".to_string(), method);
         }
     }
+    if !cfg.contains_key("body") {
+        if let Some(body) = cfg.remove("jsonBody") {
+            cfg.insert("body".to_string(), body);
+        } else if let Some(body) = cfg.remove("bodyParameters") {
+            match named_parameters(&body) {
+                Some(body) => {
+                    cfg.insert("body".to_string(), body);
+                }
+                None => warnings.push(format!(
+                    "Node '{n8n_name}' has HTTP body parameters in an n8n shape this importer \
+                     cannot translate; rebuild `config.body` before enabling the flow."
+                )),
+            }
+        }
+    }
+    if !cfg.contains_key("headers")
+        && let Some(headers) = cfg.remove("headerParameters")
+    {
+        match named_parameters(&headers) {
+            Some(headers) => {
+                cfg.insert("headers".to_string(), headers);
+            }
+            None => warnings.push(format!(
+                "Node '{n8n_name}' has HTTP headers in an n8n shape this importer cannot \
+                 translate; rebuild `config.headers` before enabling the flow."
+            )),
+        }
+    }
     cfg.entry("method".to_string())
         .or_insert_with(|| Value::String("GET".to_string()));
     Value::Object(cfg)
+}
+
+/// Converts n8n's `{parameters:[{name,value}]}` collection to the object shape
+/// tinyflows uses for HTTP bodies and headers.
+fn named_parameters(value: &Value) -> Option<Value> {
+    let entries = value.get("parameters").and_then(Value::as_array)?;
+    let mut mapped = Map::new();
+    for entry in entries {
+        let name = entry.get("name").and_then(Value::as_str)?;
+        let value = entry.get("value").cloned().unwrap_or(Value::Null);
+        mapped.insert(name.to_string(), value);
+    }
+    Some(Value::Object(mapped))
 }
 
 /// Maps n8n `splitOut`/`itemLists` parameters onto tinyflows' `split_out`
@@ -337,13 +383,38 @@ pub(super) fn map_code(params: &Value, warnings: &mut Vec<String>, n8n_name: &st
         && uses_n8n_code_globals(source)
     {
         warnings.push(format!(
-            "Node '{n8n_name}' is an n8n code node imported with its source unchanged — it uses \
+            "Node '{n8n_name}' is an n8n code node imported as an editable placeholder — it uses \
              n8n-only globals (`$json`/`$input`/`items`) and/or a top-level `return`, neither of \
              which tinyflows' code node supports (it reads input from stdin and has no n8n \
              runtime globals). Rewrite the script before enabling the flow."
         ));
     }
     Value::Object(cfg)
+}
+
+fn map_code_node(
+    params: &Value,
+    warnings: &mut Vec<String>,
+    n8n_name: &str,
+) -> (NodeKind, Value) {
+    let mut config = map_code(params, warnings, n8n_name);
+    let incompatible = config
+        .get("source")
+        .and_then(Value::as_str)
+        .is_some_and(uses_n8n_code_globals);
+    if !incompatible {
+        return (NodeKind::Code, config);
+    }
+    if let Value::Object(cfg) = &mut config {
+        cfg.insert(
+            "_n8n_import".to_string(),
+            json!({
+                "original_type": "code",
+                "note": "n8n runtime globals are unavailable; rewrite for tinyflows stdin/stdout before changing this placeholder to code.",
+            }),
+        );
+    }
+    (NodeKind::Transform, config)
 }
 
 /// Whether `source` looks like it relies on n8n's code-node runtime globals

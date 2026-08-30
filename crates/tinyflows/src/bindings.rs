@@ -19,12 +19,11 @@ pub const ENVELOPE_FIELDS: [&str; 3] = ["json", "text", "raw"];
 /// Whether `field_path` addresses the envelope itself rather than something
 /// inside it.
 ///
-/// Only the first segment counts: `text` is the envelope, `text_body` is a
-/// field someone is trying to read through it and has forgotten the `.json`.
+/// The whole path must be an accessor: `text` is the envelope, while
+/// `text.value` tries to descend into a string and is not a valid accessor.
 #[must_use]
 pub fn reads_the_envelope_itself(field_path: &str) -> bool {
-    let first = field_path.split('.').next().unwrap_or(field_path);
-    ENVELOPE_FIELDS.contains(&first)
+    ENVELOPE_FIELDS.contains(&field_path)
 }
 
 /// Node kinds whose output is wrapped in the engine's `{json, text, raw}`
@@ -119,6 +118,7 @@ pub fn parse_node_binding(expr: &str) -> Option<NodeBinding> {
 
     let rest = rest.strip_prefix('.')?;
     let (field_path, _) = take_field_path(rest)?;
+    let through_envelope = through_envelope || matches!(field_path.as_str(), "text" | "raw");
     Some(NodeBinding {
         node_id: node_id.to_string(),
         through_envelope,

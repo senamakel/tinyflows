@@ -94,19 +94,13 @@ pub async fn unresolvable_tool_args(
     let observer = Arc::new(CapturingObserver::default());
     let observer_dyn: Arc<dyn crate::observability::RunObserver> = observer.clone();
     let run = crate::engine::run_with_observer(&compiled, json!({}), &caps, &observer_dyn);
-    if tokio::time::timeout(std::time::Duration::from_secs(RUN_TIMEOUT_SECS), run)
-        .await
-        .is_err()
-    {
-        // Timed out — a different class of problem than this gate exists to
-        // catch; never block authoring on it here.
-        return Vec::new();
+    match tokio::time::timeout(std::time::Duration::from_secs(RUN_TIMEOUT_SECS), run).await {
+        Ok(Ok(_)) => {}
+        // A timeout or sandbox execution error is a different class of
+        // problem. Partial observer diagnostics from a failed run cannot
+        // prove that a binding is invalid, so this best-effort gate skips it.
+        Ok(Err(_)) | Err(_) => return Vec::new(),
     }
-    // A sandbox `Err` outcome here is a compile/capability issue unrelated
-    // to null args (the plain mock invoker never itself fails) — surfaced by
-    // the other gates / `dry_run_workflow` instead; this gate only adds
-    // diagnostics from a run that actually settled, so an error is silently
-    // skipped rather than turned into a (misleading) empty-errors success.
 
     let tool_call_slugs: std::collections::HashMap<&str, &str> = graph
         .nodes

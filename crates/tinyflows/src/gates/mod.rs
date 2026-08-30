@@ -224,15 +224,20 @@ fn agent_schema_failures(graph: &WorkflowGraph) -> Vec<String> {
                 .split('.')
                 .next()
                 .unwrap_or(&binding.field_path);
-            let declared = target
+            let Some(properties) = target
                 .config
                 .get("output_parser")
                 .and_then(|parser| parser.get("schema"))
                 .filter(|schema| !schema.is_null())
                 .and_then(|schema| schema.get("properties"))
                 .and_then(|properties| properties.as_object())
-                .is_some_and(|properties| properties.contains_key(field));
-            if declared {
+            else {
+                // Without a declared schema the agent's runtime response is
+                // host-defined. The field may exist, so it is unverifiable
+                // rather than guaranteed invalid.
+                continue;
+            };
+            if properties.contains_key(field) {
                 continue;
             }
             failures.push(format!(
