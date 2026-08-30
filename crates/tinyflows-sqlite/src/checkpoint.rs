@@ -456,39 +456,48 @@ where
             });
         }
         Ok(out)
+        })
+        .await
+        .map_err(|e| sqlite_err("join blocking state_history task", e))?
     }
 
     async fn list(&self, thread_id: &str) -> Result<Vec<CheckpointMetadata>> {
-        let conn = self.lock()?;
-        let mut stmt = conn
-            .prepare(
-                "SELECT thread_id, checkpoint_id, run_id, parent_checkpoint_id,
+        let conn = self.conn.clone();
+        let thread_id = thread_id.to_string();
+        tokio::task::spawn_blocking(move || -> Result<Vec<CheckpointMetadata>> {
+            let conn = lock_conn(&conn)?;
+            let mut stmt = conn
+                .prepare(
+                    "SELECT thread_id, checkpoint_id, run_id, parent_checkpoint_id,
                         namespace, next_nodes, source, step, has_interrupts
                  FROM checkpoints WHERE thread_id = ?1 ORDER BY seq ASC",
-            )
-            .map_err(|e| sqlite_err("prepare list", e))?;
-        let rows = stmt
-            .query_map(params![thread_id], |row| {
-                Ok(MetaRow {
-                    thread_id: row.get(0)?,
-                    checkpoint_id: row.get(1)?,
-                    run_id: row.get(2)?,
-                    parent_checkpoint_id: row.get(3)?,
-                    namespace_json: row.get(4)?,
-                    next_nodes_json: row.get(5)?,
-                    source: row.get(6)?,
-                    step: row.get(7)?,
-                    has_interrupts: row.get(8)?,
+                )
+                .map_err(|e| sqlite_err("prepare list", e))?;
+            let rows = stmt
+                .query_map(params![thread_id], |row| {
+                    Ok(MetaRow {
+                        thread_id: row.get(0)?,
+                        checkpoint_id: row.get(1)?,
+                        run_id: row.get(2)?,
+                        parent_checkpoint_id: row.get(3)?,
+                        namespace_json: row.get(4)?,
+                        next_nodes_json: row.get(5)?,
+                        source: row.get(6)?,
+                        step: row.get(7)?,
+                        has_interrupts: row.get(8)?,
+                    })
                 })
-            })
-            .map_err(|e| sqlite_err("query list", e))?;
-        let mut out = Vec::new();
-        for row in rows {
-            out.push(row_metadata(
-                row.map_err(|e| sqlite_err("read list row", e))?,
-            )?);
-        }
-        Ok(out)
+                .map_err(|e| sqlite_err("query list", e))?;
+            let mut out = Vec::new();
+            for row in rows {
+                out.push(row_metadata(
+                    row.map_err(|e| sqlite_err("read list row", e))?,
+                )?);
+            }
+            Ok(out)
+        })
+        .await
+        .map_err(|e| sqlite_err("join blocking list task", e))?
     }
 
     async fn get_thread(&self, thread_id: &str) -> Result<Vec<Checkpoint<State>>> {
