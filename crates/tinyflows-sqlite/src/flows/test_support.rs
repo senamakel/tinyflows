@@ -6,14 +6,14 @@ use tinyflows::model::{Node, NodeKind, WorkflowGraph};
 use std::path::PathBuf;
 
 /// The catalog directory a test opens `flows.db` under.
-fn test_dir(tmp: &TempDir) -> PathBuf {
+pub(crate) fn test_dir(tmp: &TempDir) -> PathBuf {
     let dir = tmp.path().join("workspace").join("flows");
     std::fs::create_dir_all(&dir).unwrap();
     dir
 }
 
 
-fn trigger_graph() -> WorkflowGraph {
+pub(crate) fn trigger_graph() -> WorkflowGraph {
     WorkflowGraph {
         nodes: vec![Node {
             id: "t".to_string(),
@@ -32,7 +32,7 @@ fn trigger_graph() -> WorkflowGraph {
 /// An automatic-trigger (`schedule`) graph — `trigger_is_automatic` returns
 /// `true` for this, unlike [`trigger_graph`]'s manual (no `trigger_kind`)
 /// trigger.
-fn automatic_schedule_graph() -> WorkflowGraph {
+pub(crate) fn automatic_schedule_graph() -> WorkflowGraph {
     WorkflowGraph {
         nodes: vec![Node {
             id: "t".to_string(),
