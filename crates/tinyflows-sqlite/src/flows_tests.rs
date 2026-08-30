@@ -650,7 +650,7 @@ fn insert_duplicate_flow_makes_a_disabled_copy_with_new_id_and_same_graph() {
 
 // ── prune_flow_runs ───────────────────────────────────────────────────────
 
-fn seed_run(dir: &Config, flow_id: &str, id: &str, day: u32, status: &str) {
+fn seed_run(dir: &Path, flow_id: &str, id: &str, day: u32, status: &str) {
     let started = format!("2026-01-{day:02}T00:00:00Z");
     insert_flow_run(dir, id, flow_id, id, &started).unwrap();
     if status != "running" {
@@ -1229,12 +1229,12 @@ fn concurrent_step_upserts_do_not_lose_a_step() {
 
     let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
 
-    let config_a = dir.clone();
+    let dir_a = dir.clone();
     let barrier_a = barrier.clone();
     let handle_a = std::thread::spawn(move || {
         barrier_a.wait();
         upsert_flow_run_step(
-            &config_a,
+            &dir_a,
             run_id,
             &FlowRunStep {
                 node_id: "branch-a".to_string(),
@@ -1245,12 +1245,12 @@ fn concurrent_step_upserts_do_not_lose_a_step() {
         )
     });
 
-    let config_b = dir.clone();
+    let dir_b = dir.clone();
     let barrier_b = barrier.clone();
     let handle_b = std::thread::spawn(move || {
         barrier_b.wait();
         upsert_flow_run_step(
-            &config_b,
+            &dir_b,
             run_id,
             &FlowRunStep {
                 node_id: "branch-b".to_string(),
@@ -1368,21 +1368,21 @@ fn schema_initializes_independently_for_each_distinct_database_path() {
     // independent workspace after the first would silently skip schema
     // creation and every write against it would fail with "no such table".
     let tmp_a = TempDir::new().unwrap();
-    let config_a = test_dir(&tmp_a);
-    let flow_a = create_flow(&config_a, "a".to_string(), trigger_graph(), false, true).unwrap();
+    let dir_a = test_dir(&tmp_a);
+    let flow_a = create_flow(&dir_a, "a".to_string(), trigger_graph(), false, true).unwrap();
 
     let tmp_b = TempDir::new().unwrap();
-    let config_b = test_dir(&tmp_b);
-    let flow_b = create_flow(&config_b, "b".to_string(), trigger_graph(), false, true).unwrap();
+    let dir_b = test_dir(&tmp_b);
+    let flow_b = create_flow(&dir_b, "b".to_string(), trigger_graph(), false, true).unwrap();
 
-    assert_eq!(list_flows(&config_a).unwrap().0.len(), 1);
-    assert_eq!(list_flows(&config_b).unwrap().0.len(), 1);
+    assert_eq!(list_flows(&dir_a).unwrap().0.len(), 1);
+    assert_eq!(list_flows(&dir_b).unwrap().0.len(), 1);
     assert_eq!(
-        get_flow(&config_a, &flow_a.id).unwrap().unwrap().id,
+        get_flow(&dir_a, &flow_a.id).unwrap().unwrap().id,
         flow_a.id
     );
     assert_eq!(
-        get_flow(&config_b, &flow_b.id).unwrap().unwrap().id,
+        get_flow(&dir_b, &flow_b.id).unwrap().unwrap().id,
         flow_b.id
     );
 }
