@@ -1,28 +1,27 @@
-//! File-based persistence for [`FlowDraft`]s (audit F5).
+//! File-based persistence for [`FlowDraft`]s.
 //!
-//! Drafts are plain JSON files under `{workspace_dir}/flows/drafts/<id>.json`,
-//! one file per draft — deliberately NOT a SQLite table (no schema/migration,
-//! trivially inspectable and deletable). The draft is the shared working copy
-//! the agent tools (Rust core) and the canvas both read/write by id across
-//! turns and reloads, which rules out frontend-only `localStorage`.
+//! Drafts are plain JSON files under `<dir>/drafts/<id>.json`, one file per
+//! draft — deliberately NOT a SQLite table (no schema, no migration, trivially
+//! inspectable and deletable). A draft is the shared working copy an authoring
+//! agent and a canvas both read and write by id across turns and reloads, which
+//! rules out any client-only storage.
 //!
-//! This module is the thin storage layer; business logic (promote → the
-//! existing create/update gates) lives in [`super::ops`]. The same RPC contract
-//! (`flows_draft_*`) would hold if drafts later migrate into a table.
+//! This module is the storage layer only. Promotion policy — what a draft has
+//! to satisfy before it becomes a saved [`tinyflows_catalog::Flow`] — is the
+//! host's, and stays there.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
 use chrono::Utc;
 use serde_json::Value;
 use uuid::Uuid;
 
-use crate::openhuman::config::Config;
-use crate::openhuman::flows::types::{DraftOrigin, FlowDraft};
+use tinyflows_catalog::{DraftOrigin, FlowDraft};
 
-/// The directory holding draft files, `{workspace_dir}/flows/drafts`.
-fn drafts_dir(config: &Config) -> PathBuf {
-    config.workspace_dir.join("flows").join("drafts")
+/// The directory holding draft files, `<dir>/drafts`.
+fn drafts_dir(dir: &Path) -> PathBuf {
+    dir.join("drafts")
 }
 
 /// Whether `id` is a safe draft-file stem — guards `get`/`update`/`delete`
@@ -37,16 +36,16 @@ fn is_safe_draft_id(id: &str) -> bool {
 }
 
 /// The on-disk path for draft `id` (validated).
-fn draft_path(config: &Config, id: &str) -> Result<PathBuf> {
+fn draft_path(dir: &Path, id: &str) -> Result<PathBuf> {
     if !is_safe_draft_id(id) {
         bail!("invalid draft id: {id:?}");
     }
-    Ok(drafts_dir(config).join(format!("{id}.json")))
+    Ok(drafts_dir(dir).join(format!("{id}.json")))
 }
 
 /// Creates a new draft, writes it to disk, and returns it.
 pub fn create_draft(
-    config: &Config,
+    dir: &Path,
     flow_id: Option<String>,
     name: String,
     graph: Value,
@@ -62,7 +61,7 @@ pub fn create_draft(
         created_at: now.clone(),
         updated_at: now,
     };
-    write_draft(config, &draft)?;
+    write_draft(dir, &draft)?;
     tracing::debug!(
         target: "flows",
         draft_id = %draft.id,
@@ -73,8 +72,8 @@ pub fn create_draft(
 }
 
 /// Reads a draft by id, or `None` if no such file exists.
-pub fn get_draft(config: &Config, id: &str) -> Result<Option<FlowDraft>> {
-    let path = draft_path(config, id)?;
+pub fn get_draft(dir: &Path, id: &str) -> Result<Option<FlowDraft>> {
+    let path = draft_path(dir, id)?;
     match std::fs::read(&path) {
         Ok(bytes) => {
             let draft: FlowDraft =
@@ -90,13 +89,13 @@ pub fn get_draft(config: &Config, id: &str) -> Result<Option<FlowDraft>> {
 /// `updated_at`, persists, and returns the updated draft. Errors if the draft
 /// does not exist.
 pub fn update_draft(
-    config: &Config,
+    dir: &Path,
     id: &str,
     name: Option<String>,
     graph: Option<Value>,
     flow_id: Option<Option<String>>,
 ) -> Result<FlowDraft> {
-    let mut draft = get_draft(config, id)?.with_context(|| format!("draft {id} not found"))?;
+    let mut draft = get_draft(dir, id)?.with_context(|| format!("draft {id} not found"))?;
     if let Some(name) = name {
         draft.name = name;
     }
@@ -107,15 +106,15 @@ pub fn update_draft(
         draft.flow_id = flow_id;
     }
     draft.updated_at = Utc::now().to_rfc3339();
-    write_draft(config, &draft)?;
+    write_draft(dir, &draft)?;
     tracing::debug!(target: "flows", draft_id = %id, "[flows] draft_store: updated draft");
     Ok(draft)
 }
 
 /// Lists all drafts, newest-updated first. Skips (and logs) any corrupt file
 /// rather than failing the whole listing.
-pub fn list_drafts(config: &Config) -> Result<Vec<FlowDraft>> {
-    let dir = drafts_dir(config);
+pub fn list_drafts(dir: &Path) -> Result<Vec<FlowDraft>> {
+    let dir = drafts_dir(dir);
     let entries = match std::fs::read_dir(&dir) {
         Ok(entries) => entries,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
@@ -144,8 +143,8 @@ pub fn list_drafts(config: &Config) -> Result<Vec<FlowDraft>> {
 
 /// Deletes a draft file. Returns `true` if a file was removed, `false` if it
 /// was already absent.
-pub fn delete_draft(config: &Config, id: &str) -> Result<bool> {
-    let path = draft_path(config, id)?;
+pub fn delete_draft(dir: &Path, id: &str) -> Result<bool> {
+    let path = draft_path(dir, id)?;
     match std::fs::remove_file(&path) {
         Ok(()) => {
             tracing::debug!(target: "flows", draft_id = %id, "[flows] draft_store: deleted draft");
@@ -158,11 +157,11 @@ pub fn delete_draft(config: &Config, id: &str) -> Result<bool> {
 
 /// Serializes a draft to its file, creating the drafts dir if needed. Writes to
 /// a temp file then renames, so a crash mid-write never leaves a corrupt draft.
-fn write_draft(config: &Config, draft: &FlowDraft) -> Result<()> {
-    let dir = drafts_dir(config);
+fn write_draft(dir: &Path, draft: &FlowDraft) -> Result<()> {
+    let dir = drafts_dir(dir);
     std::fs::create_dir_all(&dir)
         .with_context(|| format!("creating drafts dir {}", dir.display()))?;
-    let path = draft_path(config, &draft.id)?;
+    let path = draft_path(dir, &draft.id)?;
     let tmp = dir.join(format!(".{}.json.tmp", draft.id));
     let json = serde_json::to_vec_pretty(draft).context("serializing draft")?;
     std::fs::write(&tmp, &json).with_context(|| format!("writing {}", tmp.display()))?;
@@ -180,7 +179,7 @@ mod tests {
         Config {
             workspace_dir: tmp.path().join("workspace"),
             action_dir: tmp.path().join("workspace"),
-            config_path: tmp.path().join("config.toml"),
+            config_path: tmp.path().join("dir.toml"),
             ..Config::default()
         }
     }
@@ -192,16 +191,16 @@ mod tests {
     #[test]
     fn create_get_roundtrip() {
         let tmp = TempDir::new().unwrap();
-        let config = test_config(&tmp);
+        let dir = test_config(&tmp);
         let draft = create_draft(
-            &config,
+            &dir,
             None,
             "My draft".into(),
             sample_graph(),
             DraftOrigin::Chat,
         )
         .unwrap();
-        let loaded = get_draft(&config, &draft.id).unwrap().unwrap();
+        let loaded = get_draft(&dir, &draft.id).unwrap().unwrap();
         assert_eq!(loaded, draft);
         assert_eq!(loaded.name, "My draft");
         assert_eq!(loaded.origin, DraftOrigin::Chat);
@@ -211,16 +210,16 @@ mod tests {
     #[test]
     fn get_missing_is_none() {
         let tmp = TempDir::new().unwrap();
-        let config = test_config(&tmp);
-        assert!(get_draft(&config, "does-not-exist").unwrap().is_none());
+        let dir = test_config(&tmp);
+        assert!(get_draft(&dir, "does-not-exist").unwrap().is_none());
     }
 
     #[test]
     fn update_patches_fields_and_bumps_updated_at() {
         let tmp = TempDir::new().unwrap();
-        let config = test_config(&tmp);
+        let dir = test_config(&tmp);
         let draft = create_draft(
-            &config,
+            &dir,
             None,
             "Old".into(),
             sample_graph(),
@@ -228,7 +227,7 @@ mod tests {
         )
         .unwrap();
         let updated = update_draft(
-            &config,
+            &dir,
             &draft.id,
             Some("New name".into()),
             Some(json!({ "nodes": [], "edges": [] })),
@@ -245,38 +244,38 @@ mod tests {
     #[test]
     fn list_returns_newest_first_and_delete_removes() {
         let tmp = TempDir::new().unwrap();
-        let config = test_config(&tmp);
-        let a = create_draft(&config, None, "A".into(), sample_graph(), DraftOrigin::Chat).unwrap();
+        let dir = test_config(&tmp);
+        let a = create_draft(&dir, None, "A".into(), sample_graph(), DraftOrigin::Chat).unwrap();
         // Bump a second draft's updated_at by updating it after creation.
-        let b = create_draft(&config, None, "B".into(), sample_graph(), DraftOrigin::Chat).unwrap();
-        let b = update_draft(&config, &b.id, Some("B2".into()), None, None).unwrap();
+        let b = create_draft(&dir, None, "B".into(), sample_graph(), DraftOrigin::Chat).unwrap();
+        let b = update_draft(&dir, &b.id, Some("B2".into()), None, None).unwrap();
 
-        let list = list_drafts(&config).unwrap();
+        let list = list_drafts(&dir).unwrap();
         assert_eq!(list.len(), 2);
         assert_eq!(list[0].id, b.id, "newest-updated first");
 
-        assert!(delete_draft(&config, &a.id).unwrap());
+        assert!(delete_draft(&dir, &a.id).unwrap());
         assert!(
-            !delete_draft(&config, &a.id).unwrap(),
+            !delete_draft(&dir, &a.id).unwrap(),
             "second delete is a no-op"
         );
-        assert_eq!(list_drafts(&config).unwrap().len(), 1);
+        assert_eq!(list_drafts(&dir).unwrap().len(), 1);
     }
 
     #[test]
     fn list_on_missing_dir_is_empty() {
         let tmp = TempDir::new().unwrap();
-        let config = test_config(&tmp);
-        assert!(list_drafts(&config).unwrap().is_empty());
+        let dir = test_config(&tmp);
+        assert!(list_drafts(&dir).unwrap().is_empty());
     }
 
     #[test]
     fn rejects_path_traversal_ids() {
         let tmp = TempDir::new().unwrap();
-        let config = test_config(&tmp);
-        assert!(get_draft(&config, "../secret").is_err());
-        assert!(draft_path(&config, "a/b").is_err());
-        assert!(draft_path(&config, "..").is_err());
-        assert!(draft_path(&config, "ok-123_ID").is_ok());
+        let dir = test_config(&tmp);
+        assert!(get_draft(&dir, "../secret").is_err());
+        assert!(draft_path(&dir, "a/b").is_err());
+        assert!(draft_path(&dir, "..").is_err());
+        assert!(draft_path(&dir, "ok-123_ID").is_ok());
     }
 }
