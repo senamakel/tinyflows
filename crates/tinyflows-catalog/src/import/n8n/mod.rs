@@ -210,13 +210,13 @@ mod expr;
 mod graph;
 mod node_mapping;
 
-use graph::{map_connections, reconcile_triggers};
+use graph::{map_connections, parse_position, reconcile_triggers, slug};
 use node_mapping::map_node;
 
 #[cfg(test)]
 use expr::{jq_field, json_path_to_jq, translate_config, translate_expr, untranslated_warning};
 #[cfg(test)]
-use graph::{output_port_name, parse_position, slug};
+use graph::output_port_name;
 #[cfg(test)]
 use node_mapping::{map_code, map_http_request, trigger_config};
 
