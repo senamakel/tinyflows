@@ -15,15 +15,15 @@
 //! checkpoints live in their own `checkpoints.db`, written by
 //! [`crate::checkpoint`].
 
-use tinyflows_catalog::{
-    Flow, FlowRevision, FlowRun, FlowRunStep, FlowSuggestion, SuggestionStatus,
-};
 use anyhow::{Context, Result};
 use chrono::Utc;
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
+use tinyflows_catalog::{
+    Flow, FlowRevision, FlowRun, FlowRunStep, FlowSuggestion, SuggestionStatus,
+};
 use uuid::Uuid;
 
 /// Tracks which flows database files have already had their schema DDL (the
@@ -527,6 +527,10 @@ impl std::fmt::Display for FlowUpdateError {
 /// have gone stale between computing the decision and writing it. An
 /// `enabled_override` supplied by the caller can never re-arm a graph this
 /// check disarms — the disarm always wins.
+// One argument per column this write sets, which is what a row update is. A
+// params struct here would be the row spelled a second time, and every call
+// site would gain a constructor that names the same fields in the same order.
+#[allow(clippy::too_many_arguments)]
 pub fn update_flow_graph(
     dir: &Path,
     id: &str,
@@ -767,12 +771,7 @@ pub fn kv_get(dir: &Path, namespace: &str, key: &str) -> Result<Option<serde_jso
 ///
 /// Backs `tinyflows::caps::StateStore::store` via
 /// a host's `tinyflows::caps::StateStore` binding.
-pub fn kv_set(
-    dir: &Path,
-    namespace: &str,
-    key: &str,
-    value: &serde_json::Value,
-) -> Result<()> {
+pub fn kv_set(dir: &Path, namespace: &str, key: &str, value: &serde_json::Value) -> Result<()> {
     let raw = serde_json::to_string(value).context("Failed to serialize flow state value")?;
     with_connection(dir, |conn| {
         conn.execute(
@@ -916,6 +915,10 @@ fn prune_flow_runs_conn(conn: &Connection, flow_id: &str, keep: usize) -> Result
 /// can refuse if `save_workflow` rewrote the flow in the meantime. Every other
 /// write passes `None`, which clears any stale pin once the row leaves
 /// `pending_approval` (a settled row has no further use for it).
+// One argument per column this write sets, which is what a row update is. A
+// params struct here would be the row spelled a second time, and every call
+// site would gain a constructor that names the same fields in the same order.
+#[allow(clippy::too_many_arguments)]
 pub fn finish_flow_run(
     dir: &Path,
     id: &str,
@@ -1130,10 +1133,7 @@ pub fn expire_parked_runs(
 /// and `run_registry::register`. `started_at` is a fixed-shape UTC RFC3339
 /// string, so the lexicographic `<` matches chronological order (same
 /// comparison the parked-run TTL sweep already relies on).
-pub fn list_running_run_ids(
-    dir: &Path,
-    started_before: &str,
-) -> Result<Vec<(String, String)>> {
+pub fn list_running_run_ids(dir: &Path, started_before: &str) -> Result<Vec<(String, String)>> {
     with_connection(dir, |conn| {
         let mut stmt = conn.prepare(
             "SELECT id, flow_id FROM flow_runs WHERE status = 'running' AND started_at < ?1",
