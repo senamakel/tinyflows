@@ -36,6 +36,16 @@ uuid = { workspace = true }
 # Diagnostics only: what was written, skipped, or found corrupt on disk.
 tracing = { workspace = true }
 
+[features]
+default = []
+# Off by default; exposes the two fixture-only writers (`force_run_status_for_test`,
+# `force_corrupt_graph_json_for_test`) that stage states no production path can
+# produce — a terminal run flipped back to `running`, a `graph_json` column that
+# does not deserialize. They are always available inside this crate's own tests;
+# the feature is what lets a *host*'s test suite stage the same states without a
+# weaker production write existing for it.
+test-fixtures = []
+
 [dev-dependencies]
 tempfile = "3"
 tokio = { workspace = true }

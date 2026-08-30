@@ -1158,7 +1158,7 @@ pub fn list_running_run_ids(
 /// so by calling `finish_flow_run` twice — which the guard now correctly
 /// refuses. Staging is a fixture concern, so it gets a fixture-only door rather
 /// than a weaker production write.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-fixtures"))]
 pub fn force_run_status_for_test(
     dir: &Path,
     id: &str,
@@ -1184,7 +1184,7 @@ pub fn force_run_status_for_test(
 /// production writes can never produce a row `map_flow_row` can't decode
 /// (every write path serializes a validated `WorkflowGraph`), so there is no
 /// non-test way to reach this state other than a cross-version downgrade.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-fixtures"))]
 pub fn force_corrupt_graph_json_for_test(
     dir: &Path,
     flow_id: &str,
