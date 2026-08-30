@@ -504,82 +504,108 @@ where
         // Single-pass bulk read: one indexed range query over the thread's
         // rows in insertion order, instead of the default's one point query
         // per listed id.
-        let conn = self.lock()?;
-        let mut stmt = conn
-            .prepare("SELECT record FROM checkpoints WHERE thread_id = ?1 ORDER BY seq ASC")
-            .map_err(|e| sqlite_err("prepare get_thread", e))?;
-        let rows = stmt
-            .query_map(params![thread_id], |row| row.get::<_, String>(0))
-            .map_err(|e| sqlite_err("query get_thread", e))?;
-        let mut out = Vec::new();
-        for row in rows {
-            let json = row.map_err(|e| sqlite_err("read record row", e))?;
-            out.push(serde_json::from_str(&json).map_err(|e| sqlite_err("decode record", e))?);
-        }
-        Ok(out)
+        let conn = self.conn.clone();
+        let thread_id = thread_id.to_string();
+        tokio::task::spawn_blocking(move || -> Result<Vec<Checkpoint<State>>> {
+            let conn = lock_conn(&conn)?;
+            let mut stmt = conn
+                .prepare("SELECT record FROM checkpoints WHERE thread_id = ?1 ORDER BY seq ASC")
+                .map_err(|e| sqlite_err("prepare get_thread", e))?;
+            let rows = stmt
+                .query_map(params![thread_id], |row| row.get::<_, String>(0))
+                .map_err(|e| sqlite_err("query get_thread", e))?;
+            let mut out = Vec::new();
+            for row in rows {
+                let json = row.map_err(|e| sqlite_err("read record row", e))?;
+                out.push(
+                    serde_json::from_str(&json).map_err(|e| sqlite_err("decode record", e))?,
+                );
+            }
+            Ok(out)
+        })
+        .await
+        .map_err(|e| sqlite_err("join blocking get_thread task", e))?
     }
 
     async fn list_threads(&self) -> Result<Vec<String>> {
-        let conn = self.lock()?;
-        let mut stmt = conn
-            .prepare("SELECT DISTINCT thread_id FROM checkpoints")
-            .map_err(|e| sqlite_err("prepare list_threads", e))?;
-        let rows = stmt
-            .query_map([], |row| row.get::<_, String>(0))
-            .map_err(|e| sqlite_err("query list_threads", e))?;
-        let mut out = Vec::new();
-        for row in rows {
-            out.push(row.map_err(|e| sqlite_err("read thread row", e))?);
-        }
-        Ok(out)
+        let conn = self.conn.clone();
+        tokio::task::spawn_blocking(move || -> Result<Vec<String>> {
+            let conn = lock_conn(&conn)?;
+            let mut stmt = conn
+                .prepare("SELECT DISTINCT thread_id FROM checkpoints")
+                .map_err(|e| sqlite_err("prepare list_threads", e))?;
+            let rows = stmt
+                .query_map([], |row| row.get::<_, String>(0))
+                .map_err(|e| sqlite_err("query list_threads", e))?;
+            let mut out = Vec::new();
+            for row in rows {
+                out.push(row.map_err(|e| sqlite_err("read thread row", e))?);
+            }
+            Ok(out)
+        })
+        .await
+        .map_err(|e| sqlite_err("join blocking list_threads task", e))?
     }
 
     async fn delete_thread(&self, thread_id: &str) -> Result<()> {
-        let mut conn = self.lock()?;
-        let tx = conn
-            .transaction()
-            .map_err(|e| sqlite_err("begin delete_thread", e))?;
-        tx.execute(
-            "DELETE FROM checkpoints WHERE thread_id = ?1",
-            params![thread_id],
-        )
-        .map_err(|e| sqlite_err("delete thread", e))?;
-        // Writes go with the thread — and across *every* namespace, not just
-        // the root one, or an embedded subgraph's ledger outlives its thread.
-        tx.execute(
-            "DELETE FROM checkpoint_writes WHERE thread_id = ?1",
-            params![thread_id],
-        )
-        .map_err(|e| sqlite_err("delete thread writes", e))?;
-        tx.commit()
-            .map_err(|e| sqlite_err("commit delete_thread", e))?;
-        Ok(())
+        let conn = self.conn.clone();
+        let thread_id = thread_id.to_string();
+        tokio::task::spawn_blocking(move || -> Result<()> {
+            let mut conn = lock_conn(&conn)?;
+            let tx = conn
+                .transaction()
+                .map_err(|e| sqlite_err("begin delete_thread", e))?;
+            tx.execute(
+                "DELETE FROM checkpoints WHERE thread_id = ?1",
+                params![thread_id],
+            )
+            .map_err(|e| sqlite_err("delete thread", e))?;
+            // Writes go with the thread — and across *every* namespace, not just
+            // the root one, or an embedded subgraph's ledger outlives its thread.
+            tx.execute(
+                "DELETE FROM checkpoint_writes WHERE thread_id = ?1",
+                params![thread_id],
+            )
+            .map_err(|e| sqlite_err("delete thread writes", e))?;
+            tx.commit()
+                .map_err(|e| sqlite_err("commit delete_thread", e))?;
+            Ok(())
+        })
+        .await
+        .map_err(|e| sqlite_err("join blocking delete_thread task", e))?
     }
 
     async fn delete_checkpoints(&self, thread_id: &str, ids: &[String]) -> Result<usize> {
         if ids.is_empty() {
             return Ok(0);
         }
-        let mut conn = self.lock()?;
-        let tx = conn
-            .transaction()
-            .map_err(|e| sqlite_err("begin transaction", e))?;
-        let mut removed = 0usize;
-        for id in ids {
-            removed += tx
-                .execute(
-                    "DELETE FROM checkpoints WHERE thread_id = ?1 AND checkpoint_id = ?2",
+        let conn = self.conn.clone();
+        let thread_id = thread_id.to_string();
+        let ids = ids.to_vec();
+        tokio::task::spawn_blocking(move || -> Result<usize> {
+            let mut conn = lock_conn(&conn)?;
+            let tx = conn
+                .transaction()
+                .map_err(|e| sqlite_err("begin transaction", e))?;
+            let mut removed = 0usize;
+            for id in &ids {
+                removed += tx
+                    .execute(
+                        "DELETE FROM checkpoints WHERE thread_id = ?1 AND checkpoint_id = ?2",
+                        params![thread_id, id],
+                    )
+                    .map_err(|e| sqlite_err("delete checkpoint", e))?;
+                tx.execute(
+                    "DELETE FROM checkpoint_writes WHERE thread_id = ?1 AND checkpoint_id = ?2",
                     params![thread_id, id],
                 )
-                .map_err(|e| sqlite_err("delete checkpoint", e))?;
-            tx.execute(
-                "DELETE FROM checkpoint_writes WHERE thread_id = ?1 AND checkpoint_id = ?2",
-                params![thread_id, id],
-            )
-            .map_err(|e| sqlite_err("delete checkpoint writes", e))?;
-        }
-        tx.commit().map_err(|e| sqlite_err("commit delete", e))?;
-        Ok(removed)
+                .map_err(|e| sqlite_err("delete checkpoint writes", e))?;
+            }
+            tx.commit().map_err(|e| sqlite_err("commit delete", e))?;
+            Ok(removed)
+        })
+        .await
+        .map_err(|e| sqlite_err("join blocking delete_checkpoints task", e))?
     }
 
     async fn put_writes(&self, config: &CheckpointConfig, writes: &[PendingWrite]) -> Result<()> {
@@ -589,57 +615,64 @@ where
         }
         let namespace_json = serde_json::to_string(&config.namespace)
             .map_err(|e| sqlite_err("encode namespace", e))?;
-        let mut conn = self.lock()?;
-        let tx = conn
-            .transaction()
-            .map_err(|e| sqlite_err("begin put_writes", e))?;
-        let mut stored = 0usize;
-        for write in writes {
-            // The replace-vs-ignore rule pushed into SQL: a control-plane write
-            // (`idx < 0`) legitimately changes on a retry and upserts, while a
-            // data write is append-once so a retried `put_writes` is a no-op.
-            // Doing it with two conflict clauses rather than a read-then-write
-            // keeps it correct under concurrent writers.
-            let sql = if write.is_control_plane() {
-                "INSERT INTO checkpoint_writes
+        let conn = self.conn.clone();
+        let thread_id = config.thread_id.clone();
+        let writes = writes.to_vec();
+        tokio::task::spawn_blocking(move || -> Result<()> {
+            let mut conn = lock_conn(&conn)?;
+            let tx = conn
+                .transaction()
+                .map_err(|e| sqlite_err("begin put_writes", e))?;
+            let mut stored = 0usize;
+            for write in &writes {
+                // The replace-vs-ignore rule pushed into SQL: a control-plane write
+                // (`idx < 0`) legitimately changes on a retry and upserts, while a
+                // data write is append-once so a retried `put_writes` is a no-op.
+                // Doing it with two conflict clauses rather than a read-then-write
+                // keeps it correct under concurrent writers.
+                let sql = if write.is_control_plane() {
+                    "INSERT INTO checkpoint_writes
                     (thread_id, namespace, checkpoint_id, task_id, idx, node, channel, payload)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
                  ON CONFLICT(thread_id, namespace, checkpoint_id, task_id, idx) DO UPDATE SET
                     node = excluded.node,
                     channel = excluded.channel,
                     payload = excluded.payload"
-            } else {
-                "INSERT INTO checkpoint_writes
+                } else {
+                    "INSERT INTO checkpoint_writes
                     (thread_id, namespace, checkpoint_id, task_id, idx, node, channel, payload)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
                  ON CONFLICT(thread_id, namespace, checkpoint_id, task_id, idx) DO NOTHING"
-            };
-            let payload = serde_json::to_string(&write.payload)
-                .map_err(|e| sqlite_err("encode write payload", e))?;
-            stored += tx
-                .execute(
-                    sql,
-                    params![
-                        config.thread_id,
-                        namespace_json,
-                        checkpoint_id,
-                        write.task_id,
-                        write.idx,
-                        write.node.as_str(),
-                        write.channel,
-                        payload,
-                    ],
-                )
-                .map_err(|e| sqlite_err("insert checkpoint write", e))?;
-        }
-        tx.commit()
-            .map_err(|e| sqlite_err("commit put_writes", e))?;
-        tracing::debug!(
-            "[checkpoint:sqlite] put_writes thread={} checkpoint={checkpoint_id} offered={} stored={stored}",
-            config.thread_id,
-            writes.len()
-        );
-        Ok(())
+                };
+                let payload = serde_json::to_string(&write.payload)
+                    .map_err(|e| sqlite_err("encode write payload", e))?;
+                stored += tx
+                    .execute(
+                        sql,
+                        params![
+                            thread_id,
+                            namespace_json,
+                            checkpoint_id,
+                            write.task_id,
+                            write.idx,
+                            write.node.as_str(),
+                            write.channel,
+                            payload,
+                        ],
+                    )
+                    .map_err(|e| sqlite_err("insert checkpoint write", e))?;
+            }
+            tx.commit()
+                .map_err(|e| sqlite_err("commit put_writes", e))?;
+            tracing::debug!(
+                "[checkpoint:sqlite] put_writes thread={} checkpoint={checkpoint_id} offered={} stored={stored}",
+                thread_id,
+                writes.len()
+            );
+            Ok(())
+        })
+        .await
+        .map_err(|e| sqlite_err("join blocking put_writes task", e))?
     }
 
     async fn get_writes(&self, config: &CheckpointConfig) -> Result<Vec<PendingWrite>> {
@@ -648,25 +681,31 @@ where
         };
         let namespace_json = serde_json::to_string(&config.namespace)
             .map_err(|e| sqlite_err("encode namespace", e))?;
-        let conn = self.lock()?;
-        let mut stmt = conn
-            .prepare(
-                "SELECT node, task_id, idx, channel, payload FROM checkpoint_writes
+        let conn = self.conn.clone();
+        let thread_id = config.thread_id.clone();
+        tokio::task::spawn_blocking(move || -> Result<Vec<PendingWrite>> {
+            let conn = lock_conn(&conn)?;
+            let mut stmt = conn
+                .prepare(
+                    "SELECT node, task_id, idx, channel, payload FROM checkpoint_writes
                  WHERE thread_id = ?1 AND namespace = ?2 AND checkpoint_id = ?3
                  ORDER BY rowid ASC",
-            )
-            .map_err(|e| sqlite_err("prepare get_writes", e))?;
-        let rows = stmt
-            .query_map(
-                params![config.thread_id, namespace_json, checkpoint_id],
-                map_write_row,
-            )
-            .map_err(|e| sqlite_err("query get_writes", e))?;
-        let mut out = Vec::new();
-        for row in rows {
-            out.push(row.map_err(|e| sqlite_err("read write row", e))??);
-        }
-        Ok(out)
+                )
+                .map_err(|e| sqlite_err("prepare get_writes", e))?;
+            let rows = stmt
+                .query_map(
+                    params![thread_id, namespace_json, checkpoint_id],
+                    map_write_row,
+                )
+                .map_err(|e| sqlite_err("query get_writes", e))?;
+            let mut out = Vec::new();
+            for row in rows {
+                out.push(row.map_err(|e| sqlite_err("read write row", e))??);
+            }
+            Ok(out)
+        })
+        .await
+        .map_err(|e| sqlite_err("join blocking get_writes task", e))?
     }
 }
 
