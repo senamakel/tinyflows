@@ -15,12 +15,33 @@ pub async fn run_tenants(global: &dyn Ledger, a: &dyn Ledger, b: &dyn Ledger) {
 
     a_tenants_lesson_is_invisible_to_another(a, b).await;
     a_global_lesson_is_visible_to_every_tenant(global, a, b).await;
+    a_global_lessons_evidence_is_visible_to_every_tenant(global, a, b).await;
     promote_stamps_the_handle_not_the_argument(a).await;
     workflow_scores_do_not_bleed_between_tenants(a, b).await;
     a_tenant_writing_does_not_move_the_global_score(global, a).await;
     an_episode_id_alone_does_not_reach_another_tenants_attempts(a, b).await;
     identical_episode_ids_are_stored_once_per_tenant(a, b).await;
     naming_another_tenants_lesson_id_does_not_move_its_score(global, a, b).await;
+}
+
+async fn a_global_lessons_evidence_is_visible_to_every_tenant(
+    global: &dyn Ledger,
+    a: &dyn Ledger,
+    b: &dyn Ledger,
+) {
+    let row_id = global
+        .append(&row("ep-global-evidence", 1, "authored:global"))
+        .await
+        .expect("append global evidence");
+    let lesson_id = global
+        .promote(&lesson("a globally useful class of task"), &[row_id])
+        .await
+        .expect("promote global lesson");
+    for tenant in [a, b] {
+        let evidence = tenant.evidence(&lesson_id).await.expect("global evidence");
+        assert_eq!(evidence.len(), 1, "tenant {:?}", tenant.scope());
+        assert_eq!(evidence[0].episode, "ep-global-evidence");
+    }
 }
 
 async fn identical_episode_ids_are_stored_once_per_tenant(a: &dyn Ledger, b: &dyn Ledger) {
