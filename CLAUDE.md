@@ -12,6 +12,28 @@ persistence) goes through **capability traits** the embedding app implements.
 OpenHuman is the first downstream host; tinyflows is published to crates.io and
 consumed there via a thin adapter seam.
 
+## Workspace layout
+
+The repository is a **virtual workspace** — there is no root package. Every
+crate lives in `crates/`, one directory per package, each directory named for
+the package it holds. This is the same shape every other `tiny*` repository
+uses, so a reader who knows one knows them all.
+
+| Crate | What it owns |
+| --- | --- |
+| `crates/tinyflows` | The engine. One graph: validate → compile → run. Published to crates.io. |
+| `crates/tinyflows-catalog` | The saved-flow model *around* a graph — flows, revisions, runs, drafts, suggestions — the in-process run/build cancellation registries, the format importers (n8n), and the save/run safety predicates. Storage-free. |
+| `crates/tinyflows-sqlite` | SQLite implementations of the catalog and of the engine's checkpoint store, plus the JSON draft store. Every entry point takes a directory, never a host config type. |
+| `crates/tinyflows-copilot` | The authoring copilot's *words*: the `workflow_builder` / `flow_discovery` standing archetypes, and the turn brief that opens a builder turn. Names no tool trait, no agent registry, no model client. |
+| `crates/tinyflows-adaptive` | The adaptive loop over the engine: select or author a workflow, run it, judge it, learn. |
+
+**Where a new thing goes.** Ask what it depends on, not what it is about. If it
+needs storage, it is not `tinyflows-catalog`. If it needs a tool trait or a model
+client, it is not `tinyflows-copilot` — that constraint is the whole reason the
+copilot is reusable. If it needs to know which trigger kinds a particular host
+dispatches, or what a `tool_call` slug resolves to, it is not in this repository
+at all: it is a host overlay.
+
 ## Architecture (pipeline)
 
 ```
