@@ -319,6 +319,7 @@ fn incompatible_n8n_code_is_a_placeholder_not_an_executable_code_node() {
         "const id = (value) => { return value; }; module.exports = id(input);",
         "function pick({value}) { return value; } module.exports = pick(input);",
         "module.exports = input.values.map(value => { return value; });",
+        "module.exports = /return/.test(input);",
     ] {
         let (kind, _) = map_code_node(&json!({ "jsCode": source }), &mut Vec::new(), "Portable");
         assert_eq!(kind, NodeKind::Code, "source was downgraded: {source}");
@@ -328,6 +329,13 @@ fn incompatible_n8n_code_is_a_placeholder_not_an_executable_code_node() {
         &json!({ "jsCode": "console.log(`${$json.id}`);" }),
         &mut Vec::new(),
         "n8n template",
+    );
+    assert_eq!(kind, NodeKind::Transform);
+
+    let (kind, _) = map_code_node(
+        &json!({ "jsCode": "const f = x => x; if (ok) { return value; }" }),
+        &mut Vec::new(),
+        "Top-level return after arrow",
     );
     assert_eq!(kind, NodeKind::Transform);
 }

@@ -16,6 +16,15 @@ fn uses_n8n_code_globals(source: &str) -> bool {
     let mut function_depths = Vec::new();
     let mut pending_function_body = None;
     while index < bytes.len() {
+        let starts_comment = bytes[index] == b'/'
+            && matches!(bytes.get(index + 1), Some(b'/') | Some(b'*'));
+        if matches!(pending_function_body, Some(PendingFunctionBody::Arrow))
+            && !bytes[index].is_ascii_whitespace()
+            && bytes[index] != b'{'
+            && !starts_comment
+        {
+            pending_function_body = None;
+        }
         match bytes[index] {
             b'/' if bytes.get(index + 1) == Some(&b'/') => {
                 index += 2;
@@ -32,6 +41,7 @@ fn uses_n8n_code_globals(source: &str) -> bool {
                 }
                 index = (index + 2).min(bytes.len());
             }
+            b'/' if is_regex_start(bytes, index) => index = skip_regex(bytes, index),
             quote @ (b'\'' | b'"') => index = skip_quoted(bytes, index, quote),
             b'`' => {
                 index += 1;
@@ -106,6 +116,42 @@ fn uses_n8n_code_globals(source: &str) -> bool {
         }
     }
     false
+}
+
+fn is_regex_start(bytes: &[u8], index: usize) -> bool {
+    bytes[..index]
+        .iter()
+        .rev()
+        .copied()
+        .find(|byte| !byte.is_ascii_whitespace())
+        .is_none_or(|byte| matches!(byte, b'=' | b'(' | b'[' | b'{' | b',' | b':' | b';' | b'!' | b'?' | b'&' | b'|'))
+}
+
+fn skip_regex(bytes: &[u8], mut index: usize) -> usize {
+    index += 1;
+    let mut in_class = false;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'\\' => index = (index + 2).min(bytes.len()),
+            b'[' => {
+                in_class = true;
+                index += 1;
+            }
+            b']' => {
+                in_class = false;
+                index += 1;
+            }
+            b'/' if !in_class => {
+                index += 1;
+                while bytes.get(index).is_some_and(u8::is_ascii_alphabetic) {
+                    index += 1;
+                }
+                return index;
+            }
+            _ => index += 1,
+        }
+    }
+    index
 }
 
 fn skip_quoted(bytes: &[u8], mut index: usize, quote: u8) -> usize {
