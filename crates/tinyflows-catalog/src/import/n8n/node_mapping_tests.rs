@@ -101,6 +101,35 @@ fn http_request_maps_url_and_method() {
 }
 
 #[test]
+fn http_request_normalizes_json_body_named_body_fields_and_headers() {
+    let mut warnings = Vec::new();
+    let cfg = map_http_request(
+        &json!({
+            "method": "POST",
+            "bodyParameters": { "parameters": [
+                { "name": "subject", "value": "hello" },
+                { "name": "count", "value": 2 }
+            ] },
+            "headerParameters": { "parameters": [
+                { "name": "X-Trace", "value": "abc" }
+            ] }
+        }),
+        &mut warnings,
+        "HTTP",
+    );
+    assert_eq!(cfg["body"], json!({ "subject": "hello", "count": 2 }));
+    assert_eq!(cfg["headers"], json!({ "X-Trace": "abc" }));
+    assert!(warnings.is_empty(), "{warnings:?}");
+
+    let cfg = map_http_request(
+        &json!({ "jsonBody": { "ready": true } }),
+        &mut warnings,
+        "JSON HTTP",
+    );
+    assert_eq!(cfg["body"], json!({ "ready": true }));
+}
+
+#[test]
 fn code_node_pulls_source_and_language() {
     let mut warnings = Vec::new();
     let cfg = map_code(&json!({ "jsCode": "return items;" }), &mut warnings, "Code");
@@ -227,6 +256,25 @@ fn code_node_with_n8n_globals_or_top_level_return_warns() {
 }
 
 #[test]
+fn incompatible_n8n_code_is_a_placeholder_not_an_executable_code_node() {
+    let mut warnings = Vec::new();
+    let (kind, cfg) = map_code_node(
+        &json!({ "jsCode": "return items;" }),
+        &mut warnings,
+        "Code",
+    );
+    assert_eq!(kind, NodeKind::Transform);
+    assert_eq!(cfg["_n8n_import"]["original_type"], json!("code"));
+
+    let (kind, _) = map_code_node(
+        &json!({ "jsCode": "process.stdin.pipe(process.stdout);" }),
+        &mut Vec::new(),
+        "Portable",
+    );
+    assert_eq!(kind, NodeKind::Code);
+}
+
+#[test]
 fn cron_node_maps_cron_expression_to_schedule() {
     let mut warnings = Vec::new();
     let cfg = trigger_config(
@@ -320,4 +368,22 @@ fn unrecognized_schedule_shape_warns_instead_of_guessing() {
             .iter()
             .any(|w| w.contains("Weekly") && w.contains("could not be translated"))
     );
+}
+
+#[test]
+fn multiple_schedule_intervals_warn_instead_of_dropping_cadences() {
+    let mut warnings = Vec::new();
+    let cfg = trigger_config(
+        "schedule",
+        &json!({ "rule": { "interval": [
+            { "field": "hours", "hoursInterval": 2 },
+            { "field": "hours", "hoursInterval": 6 }
+        ] } }),
+        &mut warnings,
+        "Several cadences",
+    );
+    assert!(cfg.get("schedule").is_none());
+    assert!(warnings.iter().any(|warning| {
+        warning.contains("Several cadences") && warning.contains("could not be translated")
+    }));
 }

@@ -151,3 +151,15 @@ fn concurrent_updates_to_different_fields_do_not_lose_either_patch() {
         "graph patch must not be lost"
     );
 }
+
+#[test]
+fn inactive_draft_locks_are_pruned_instead_of_accumulating() {
+    for index in 0..32 {
+        let lock = lock_for(Path::new(&format!("/drafts/{index}.json")));
+        drop(lock);
+    }
+    let final_lock = lock_for(Path::new("/drafts/final.json"));
+    let registry = DRAFT_LOCKS.get().expect("lock registry");
+    assert_eq!(registry.lock().unwrap().len(), 1);
+    drop(final_lock);
+}

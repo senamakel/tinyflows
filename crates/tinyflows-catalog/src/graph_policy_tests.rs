@@ -110,14 +110,13 @@ fn an_agent_node_referencing_a_graph_agent_with_tools_is_an_outbound_side_effect
     assert!(graph_has_outbound_side_effect(&g));
 }
 
-/// An `agent_ref` this graph does not define (resolved by the host at run
-/// time) is treated as read-only here rather than guessed at — see
-/// [`node_agent_has_tool_grant`]'s doc comment.
+/// An `agent_ref` this graph does not define is opaque until the host resolves
+/// it, so approval fails closed in case that definition grants tools.
 #[test]
-fn an_agent_node_referencing_an_unresolvable_agent_ref_is_not_an_outbound_side_effect() {
+fn an_agent_node_referencing_an_unresolvable_agent_ref_is_an_outbound_side_effect() {
     let mut g = graph(json!({}), Some(NodeKind::Agent));
     g.nodes[1].config = json!({ "agent_ref": "not-in-this-graph" });
-    assert!(!graph_has_outbound_side_effect(&g));
+    assert!(graph_has_outbound_side_effect(&g));
 }
 
 /// The override is one-way: a side effect forces approval on, and a caller
