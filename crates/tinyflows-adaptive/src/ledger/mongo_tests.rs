@@ -52,7 +52,7 @@ async fn a_legacy_global_episode_without_a_scope_key_remains_readable_and_updata
     assert_eq!(episode.scope_key, None);
     assert_eq!(
         store
-            .episodes(false, Page::default())
+            .episodes(false, crate::ledger::Page::default())
             .await
             .expect("list episodes")
             .len(),

@@ -212,7 +212,7 @@ fn an_indexed_array_inside_the_envelope_is_accepted() {
     assert!(failures(&graph).is_empty(), "{:?}", failures(&graph));
     assert_eq!(
         parse_node_binding("=nodes.fetch.item.json[0].title"),
-        Some(NodeBinding {
+        Some(crate::bindings::NodeBinding {
             node_id: "fetch".to_string(),
             through_envelope: true,
             field_path: "[0].title".to_string(),
