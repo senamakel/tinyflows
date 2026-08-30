@@ -17,7 +17,7 @@ repository = "https://github.com/tinyhumansai/tinyflows"
 homepage = "https://github.com/tinyhumansai/tinyflows"
 documentation = "https://docs.rs/tinyflows"
 keywords = ["automation", "workflow", "orchestration", "pipeline"]
-categories = ["command-line-utilities", "development-tools"]
+categories = ["development-tools"]
 # Anchored with a leading `/` so a bare name like `README.md` doesn't also match
 # nested files (e.g. the gitignored `local/**/README.md`) and leak them into the
 # published package.
@@ -26,13 +26,7 @@ include = [
     "/Cargo.toml",
     "/README.md",
     "/LICENSE",
-    "/extension/dist/**",
 ]
-
-[[bin]]
-name = "tinyflows"
-path = "src/main.rs"
-required-features = ["chrome-extension"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
@@ -44,7 +38,6 @@ futures-util = { version = "0.3", default-features = false, features = ["async-a
 getrandom = "0.4"
 tracing = { version = "0.1", default-features = false, features = ["std"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
-axum = { version = "0.8", default-features = false, features = ["http1", "json", "ws"], optional = true }
 reqwest = { version = "0.13", default-features = false, features = ["json"], optional = true }
 # `caps::host` only: hashing an author-supplied state key (and namespace) into
 # one safe path component, and staging a script in a temporary directory.
@@ -67,10 +60,6 @@ jaq-json = { version = "2.0.1", features = ["serde"] }
 # and examples. Mocks are always available inside this crate's own tests.
 default = []
 mock = []
-# Off by default; enables the Chrome browser protocol, native HTTP/WebSocket
-# companion, and the `tinyflows` companion CLI. The core engine has no listener
-# or HTTP client unless a host selects this feature (or `host-caps` below).
-chrome-extension = ["dep:axum", "dep:reqwest", "tokio/net"]
 # Off by default; enables `caps::host` — ready-made capability implementations
 # for a host that runs scripts as child processes of itself and keeps state on
 # its own disk. Off by default because a host with a sandbox wants none of it,
