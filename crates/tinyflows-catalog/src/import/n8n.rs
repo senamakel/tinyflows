@@ -547,6 +547,7 @@ fn reconcile_triggers(nodes: &mut Vec<Node>, warnings: &mut Vec<String>) -> Opti
             }
         }
     }
+    None
 }
 
 /// Rewrites n8n's name-keyed `connections` map onto tinyflows edges (id-keyed),
