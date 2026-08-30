@@ -1,17 +1,12 @@
 use super::*;
-use crate::openhuman::config::Config;
 use tempfile::TempDir;
 use tinyflows::model::{Node, NodeKind, WorkflowGraph};
 
-fn test_config(tmp: &TempDir) -> Config {
-    let config = Config {
-        workspace_dir: tmp.path().join("workspace"),
-        action_dir: tmp.path().join("workspace"),
-        config_path: tmp.path().join("config.toml"),
-        ..Config::default()
-    };
-    std::fs::create_dir_all(&config.workspace_dir).unwrap();
-    config
+/// The catalog directory a test opens `flows.db` under.
+fn test_dir(tmp: &TempDir) -> PathBuf {
+    let dir = tmp.path().join("workspace").join("flows");
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
 }
 
 fn trigger_graph() -> WorkflowGraph {
@@ -21,7 +16,7 @@ fn trigger_graph() -> WorkflowGraph {
             kind: NodeKind::Trigger,
             type_version: 1,
             name: "Trigger".to_string(),
-            config: serde_json::Value::Null,
+            dir: serde_json::Value::Null,
             ports: Vec::new(),
             position: None,
         }],
@@ -39,7 +34,7 @@ fn automatic_schedule_graph() -> WorkflowGraph {
             kind: NodeKind::Trigger,
             type_version: 1,
             name: "Trigger".to_string(),
-            config: serde_json::json!({ "trigger_kind": "schedule", "schedule": "0 9 * * *" }),
+            dir: serde_json::json!({ "trigger_kind": "schedule", "schedule": "0 9 * * *" }),
             ports: Vec::new(),
             position: None,
         }],
@@ -50,68 +45,68 @@ fn automatic_schedule_graph() -> WorkflowGraph {
 #[test]
 fn create_get_list_delete_roundtrip() {
     let tmp = TempDir::new().unwrap();
-    let config = test_config(&tmp);
+    let dir = test_dir(&tmp);
 
-    let flow = create_flow(&config, "demo".to_string(), trigger_graph(), false, true).unwrap();
+    let flow = create_flow(&dir, "demo".to_string(), trigger_graph(), false, true).unwrap();
     assert_eq!(flow.name, "demo");
     assert!(flow.enabled);
 
-    let fetched = get_flow(&config, &flow.id).unwrap().expect("flow present");
+    let fetched = get_flow(&dir, &flow.id).unwrap().expect("flow present");
     assert_eq!(fetched.id, flow.id);
     assert_eq!(fetched.graph, flow.graph);
 
-    let (listed, skipped) = list_flows(&config).unwrap();
+    let (listed, skipped) = list_flows(&dir).unwrap();
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].id, flow.id);
     assert_eq!(skipped, 0);
 
-    remove_flow(&config, &flow.id).unwrap();
-    assert!(get_flow(&config, &flow.id).unwrap().is_none());
-    assert!(list_flows(&config).unwrap().0.is_empty());
+    remove_flow(&dir, &flow.id).unwrap();
+    assert!(get_flow(&dir, &flow.id).unwrap().is_none());
+    assert!(list_flows(&dir).unwrap().0.is_empty());
 }
 
 #[test]
 fn get_flow_returns_none_for_unknown_id() {
     let tmp = TempDir::new().unwrap();
-    let config = test_config(&tmp);
-    assert!(get_flow(&config, "missing").unwrap().is_none());
+    let dir = test_dir(&tmp);
+    assert!(get_flow(&dir, "missing").unwrap().is_none());
 }
 
 #[test]
 fn remove_flow_errors_when_not_found() {
     let tmp = TempDir::new().unwrap();
-    let config = test_config(&tmp);
-    let err = remove_flow(&config, "missing").unwrap_err();
+    let dir = test_dir(&tmp);
+    let err = remove_flow(&dir, "missing").unwrap_err();
     assert!(err.to_string().contains("not found"));
 }
 
 #[test]
 fn set_enabled_toggles_and_persists() {
     let tmp = TempDir::new().unwrap();
-    let config = test_config(&tmp);
-    let flow = create_flow(&config, "demo".to_string(), trigger_graph(), false, true).unwrap();
+    let dir = test_dir(&tmp);
+    let flow = create_flow(&dir, "demo".to_string(), trigger_graph(), false, true).unwrap();
     assert!(flow.enabled);
 
-    let disabled = set_enabled(&config, &flow.id, false).unwrap();
+    let disabled = set_enabled(&dir, &flow.id, false).unwrap();
     assert!(!disabled.enabled);
 
-    let reloaded = get_flow(&config, &flow.id).unwrap().unwrap();
+    let reloaded = get_flow(&dir, &flow.id).unwrap().unwrap();
     assert!(!reloaded.enabled);
 
-    let enabled = set_enabled(&config, &flow.id, true).unwrap();
+    let enabled = set_enabled(&dir, &flow.id, true).unwrap();
     assert!(enabled.enabled);
 }
 
 #[test]
 fn update_flow_graph_bumps_updated_at_and_preserves_created_at() {
     let tmp = TempDir::new().unwrap();
-    let config = test_config(&tmp);
-    let flow = create_flow(&config, "demo".to_string(), trigger_graph(), false, true).unwrap();
+    let dir = test_dir(&tmp);
+    let flow = create_flow(&dir, "demo".to_string(), trigger_graph(), false, true).unwrap();
 
     let mut new_graph = trigger_graph();
     new_graph.name = "renamed-graph".to_string();
     let updated = update_flow_graph(
-        &config,
+        &dir,
         &flow.id,
         "renamed".to_string(),
         new_graph,
@@ -134,12 +129,12 @@ fn update_flow_graph_bumps_updated_at_and_preserves_created_at() {
 #[test]
 fn update_flow_graph_with_none_override_preserves_current_enabled_column() {
     let tmp = TempDir::new().unwrap();
-    let config = test_config(&tmp);
-    let flow = create_flow(&config, "demo".to_string(), trigger_graph(), false, true).unwrap();
+    let dir = test_dir(&tmp);
+    let flow = create_flow(&dir, "demo".to_string(), trigger_graph(), false, true).unwrap();
     assert!(flow.enabled, "flow created enabled");
 
     let updated = update_flow_graph(
-        &config,
+        &dir,
         &flow.id,
         flow.name.clone(),
         trigger_graph(),
@@ -154,7 +149,7 @@ fn update_flow_graph_with_none_override_preserves_current_enabled_column() {
         updated.enabled,
         "a None override must preserve the row's current enabled state"
     );
-    let reloaded = get_flow(&config, &flow.id).unwrap().unwrap();
+    let reloaded = get_flow(&dir, &flow.id).unwrap().unwrap();
     assert!(reloaded.enabled);
 }
 
@@ -165,12 +160,12 @@ fn update_flow_graph_with_none_override_preserves_current_enabled_column() {
 #[test]
 fn update_flow_graph_with_some_false_override_forces_disabled() {
     let tmp = TempDir::new().unwrap();
-    let config = test_config(&tmp);
-    let flow = create_flow(&config, "demo".to_string(), trigger_graph(), false, true).unwrap();
+    let dir = test_dir(&tmp);
+    let flow = create_flow(&dir, "demo".to_string(), trigger_graph(), false, true).unwrap();
     assert!(flow.enabled, "flow created enabled");
 
     let updated = update_flow_graph(
-        &config,
+        &dir,
         &flow.id,
         flow.name.clone(),
         trigger_graph(),
@@ -185,7 +180,7 @@ fn update_flow_graph_with_some_false_override_forces_disabled() {
         !updated.enabled,
         "a Some(false) override must force enabled=false even though the row was enabled"
     );
-    let reloaded = get_flow(&config, &flow.id).unwrap().unwrap();
+    let reloaded = get_flow(&dir, &flow.id).unwrap().unwrap();
     assert!(!reloaded.enabled);
 }
 
@@ -204,18 +199,18 @@ fn update_flow_graph_with_some_false_override_forces_disabled() {
 #[test]
 fn update_flow_graph_override_wins_over_concurrently_enabled_row() {
     let tmp = TempDir::new().unwrap();
-    let config = test_config(&tmp);
-    let flow = create_flow(&config, "demo".to_string(), trigger_graph(), false, false).unwrap();
+    let dir = test_dir(&tmp);
+    let flow = create_flow(&dir, "demo".to_string(), trigger_graph(), false, false).unwrap();
     assert!(!flow.enabled, "flow created disabled");
 
     // Simulates a concurrent `flows_set_enabled(id, true)` racing in after
     // `flows_update`'s outer `existing` read observed `enabled: false`, but
     // before its guarded `update_flow_graph` write below.
-    let raced = set_enabled(&config, &flow.id, true).unwrap();
+    let raced = set_enabled(&dir, &flow.id, true).unwrap();
     assert!(raced.enabled);
 
     let updated = update_flow_graph(
-        &config,
+        &dir,
         &flow.id,
         flow.name.clone(),
         trigger_graph(),
@@ -230,7 +225,7 @@ fn update_flow_graph_override_wins_over_concurrently_enabled_row() {
         !updated.enabled,
         "the disarm override must win over a concurrently-enabled row, not the reverse"
     );
-    let reloaded = get_flow(&config, &flow.id).unwrap().unwrap();
+    let reloaded = get_flow(&dir, &flow.id).unwrap().unwrap();
     assert!(!reloaded.enabled);
 }
 
@@ -251,12 +246,12 @@ fn update_flow_graph_override_wins_over_concurrently_enabled_row() {
 fn update_flow_graph_disarms_transition_from_the_fresh_row_even_when_override_asks_to_stay_enabled()
 {
     let tmp = TempDir::new().unwrap();
-    let config = test_config(&tmp);
-    let flow = create_flow(&config, "demo".to_string(), trigger_graph(), false, true).unwrap();
+    let dir = test_dir(&tmp);
+    let flow = create_flow(&dir, "demo".to_string(), trigger_graph(), false, true).unwrap();
     assert!(flow.enabled, "flow created enabled");
 
     let updated = update_flow_graph(
-        &config,
+        &dir,
         &flow.id,
         flow.name.clone(),
         automatic_schedule_graph(),
@@ -273,7 +268,7 @@ fn update_flow_graph_disarms_transition_from_the_fresh_row_even_when_override_as
         "a manual->automatic transition must disarm even when enabled_override asks to stay \
          enabled — the disarm always wins (R-m2)"
     );
-    let reloaded = get_flow(&config, &flow.id).unwrap().unwrap();
+    let reloaded = get_flow(&dir, &flow.id).unwrap().unwrap();
     assert!(!reloaded.enabled);
 }
 
@@ -286,9 +281,9 @@ fn update_flow_graph_disarms_transition_from_the_fresh_row_even_when_override_as
 #[test]
 fn update_flow_graph_does_not_disarm_an_automatic_to_automatic_update() {
     let tmp = TempDir::new().unwrap();
-    let config = test_config(&tmp);
+    let dir = test_dir(&tmp);
     let flow = create_flow(
-        &config,
+        &dir,
         "demo".to_string(),
         automatic_schedule_graph(),
         false,
@@ -296,11 +291,11 @@ fn update_flow_graph_does_not_disarm_an_automatic_to_automatic_update() {
     )
     .unwrap();
     assert!(!flow.enabled, "born disabled — armed explicitly next");
-    let armed = set_enabled(&config, &flow.id, true).unwrap();
+    let armed = set_enabled(&dir, &flow.id, true).unwrap();
     assert!(armed.enabled);
 
     let updated = update_flow_graph(
-        &config,
+        &dir,
         &flow.id,
         flow.name.clone(),
         automatic_schedule_graph(),
@@ -320,12 +315,12 @@ fn update_flow_graph_does_not_disarm_an_automatic_to_automatic_update() {
 #[test]
 fn record_run_sets_last_run_fields() {
     let tmp = TempDir::new().unwrap();
-    let config = test_config(&tmp);
-    let flow = create_flow(&config, "demo".to_string(), trigger_graph(), false, true).unwrap();
+    let dir = test_dir(&tmp);
+    let flow = create_flow(&dir, "demo".to_string(), trigger_graph(), false, true).unwrap();
     assert!(flow.last_run_at.is_none());
 
-    record_run(&config, &flow.id, "completed").unwrap();
-    let reloaded = get_flow(&config, &flow.id).unwrap().unwrap();
+    record_run(&dir, &flow.id, "completed").unwrap();
+    let reloaded = get_flow(&dir, &flow.id).unwrap().unwrap();
     assert!(reloaded.last_run_at.is_some());
     assert_eq!(reloaded.last_status.as_deref(), Some("completed"));
 }
@@ -333,7 +328,7 @@ fn record_run_sets_last_run_fields() {
 #[test]
 fn stored_graph_older_than_current_schema_is_migrated_on_read() {
     let tmp = TempDir::new().unwrap();
-    let config = test_config(&tmp);
+    let dir = test_dir(&tmp);
 
     // Insert a raw, versionless graph row directly (bypassing create_flow's
     // typed path) to simulate a definition persisted by an older crate build.
@@ -344,7 +339,7 @@ fn stored_graph_older_than_current_schema_is_migrated_on_read() {
     })
     .to_string();
 
-    with_connection(&config, |conn| {
+    with_connection(&dir, |conn| {
         conn.execute(
             "INSERT INTO flow_definitions
                 (id, name, graph_json, enabled, created_at, updated_at, last_run_at, last_status)
@@ -355,7 +350,7 @@ fn stored_graph_older_than_current_schema_is_migrated_on_read() {
     })
     .unwrap();
 
-    let loaded = get_flow(&config, "legacy-1").unwrap().expect("row present");
+    let loaded = get_flow(&dir, "legacy-1").unwrap().expect("row present");
     assert_eq!(
         loaded.graph.schema_version,
         tinyflows::model::CURRENT_SCHEMA_VERSION
@@ -366,23 +361,23 @@ fn stored_graph_older_than_current_schema_is_migrated_on_read() {
 #[test]
 fn kv_get_set_round_trips_and_is_namespace_scoped() {
     let tmp = TempDir::new().unwrap();
-    let config = test_config(&tmp);
+    let dir = test_dir(&tmp);
 
-    assert!(kv_get(&config, "ns1", "k").unwrap().is_none());
+    assert!(kv_get(&dir, "ns1", "k").unwrap().is_none());
 
-    kv_set(&config, "ns1", "k", &serde_json::json!({"v": 1})).unwrap();
+    kv_set(&dir, "ns1", "k", &serde_json::json!({"v": 1})).unwrap();
     assert_eq!(
-        kv_get(&config, "ns1", "k").unwrap(),
+        kv_get(&dir, "ns1", "k").unwrap(),
         Some(serde_json::json!({"v": 1}))
     );
 
     // A different namespace does not see ns1's value.
-    assert!(kv_get(&config, "ns2", "k").unwrap().is_none());
+    assert!(kv_get(&dir, "ns2", "k").unwrap().is_none());
 
     // Overwrite.
-    kv_set(&config, "ns1", "k", &serde_json::json!(2)).unwrap();
+    kv_set(&dir, "ns1", "k", &serde_json::json!(2)).unwrap();
     assert_eq!(
-        kv_get(&config, "ns1", "k").unwrap(),
+        kv_get(&dir, "ns1", "k").unwrap(),
         Some(serde_json::json!(2))
     );
 }
@@ -392,24 +387,24 @@ fn kv_get_set_round_trips_and_is_namespace_scoped() {
 #[test]
 fn create_flow_persists_require_approval() {
     let tmp = TempDir::new().unwrap();
-    let config = test_config(&tmp);
+    let dir = test_dir(&tmp);
 
-    let flow = create_flow(&config, "demo".to_string(), trigger_graph(), true, true).unwrap();
+    let flow = create_flow(&dir, "demo".to_string(), trigger_graph(), true, true).unwrap();
     assert!(flow.require_approval);
 
-    let reloaded = get_flow(&config, &flow.id).unwrap().unwrap();
+    let reloaded = get_flow(&dir, &flow.id).unwrap().unwrap();
     assert!(reloaded.require_approval);
 }
 
 #[test]
 fn update_flow_graph_can_change_require_approval() {
     let tmp = TempDir::new().unwrap();
-    let config = test_config(&tmp);
-    let flow = create_flow(&config, "demo".to_string(), trigger_graph(), false, true).unwrap();
+    let dir = test_dir(&tmp);
+    let flow = create_flow(&dir, "demo".to_string(), trigger_graph(), false, true).unwrap();
     assert!(!flow.require_approval);
 
     let updated = update_flow_graph(
-        &config,
+        &dir,
         &flow.id,
         flow.name.clone(),
         trigger_graph(),
@@ -421,7 +416,7 @@ fn update_flow_graph_can_change_require_approval() {
     .unwrap();
     assert!(updated.require_approval);
 
-    let reloaded = get_flow(&config, &flow.id).unwrap().unwrap();
+    let reloaded = get_flow(&dir, &flow.id).unwrap().unwrap();
     assert!(reloaded.require_approval);
 }
 
@@ -433,10 +428,10 @@ fn legacy_flow_definitions_row_without_require_approval_column_defaults_false() 
     // per-`TempDir` database, that one-time init still runs here, simulating
     // a workspace opened once on an older build.
     let tmp = TempDir::new().unwrap();
-    let config = test_config(&tmp);
+    let dir = test_dir(&tmp);
 
     let legacy_graph_json = serde_json::to_string(&trigger_graph()).unwrap();
-    with_connection(&config, |conn| {
+    with_connection(&dir, |conn| {
         conn.execute(
             "INSERT INTO flow_definitions
                 (id, name, graph_json, enabled, created_at, updated_at, last_run_at, last_status)
@@ -447,7 +442,7 @@ fn legacy_flow_definitions_row_without_require_approval_column_defaults_false() 
     })
     .unwrap();
 
-    let loaded = get_flow(&config, "legacy-2").unwrap().expect("row present");
+    let loaded = get_flow(&dir, "legacy-2").unwrap().expect("row present");
     assert!(!loaded.require_approval);
 }
 
@@ -456,21 +451,21 @@ fn legacy_flow_definitions_row_without_require_approval_column_defaults_false() 
 #[test]
 fn list_enabled_flows_excludes_disabled() {
     let tmp = TempDir::new().unwrap();
-    let config = test_config(&tmp);
+    let dir = test_dir(&tmp);
 
     let enabled_flow =
-        create_flow(&config, "enabled".to_string(), trigger_graph(), false, true).unwrap();
+        create_flow(&dir, "enabled".to_string(), trigger_graph(), false, true).unwrap();
     let disabled_flow = create_flow(
-        &config,
+        &dir,
         "disabled".to_string(),
         trigger_graph(),
         false,
         true,
     )
     .unwrap();
-    set_enabled(&config, &disabled_flow.id, false).unwrap();
+    set_enabled(&dir, &disabled_flow.id, false).unwrap();
 
-    let (enabled, skipped) = list_enabled_flows(&config).unwrap();
+    let (enabled, skipped) = list_enabled_flows(&dir).unwrap();
     assert_eq!(enabled.len(), 1);
     assert_eq!(enabled[0].id, enabled_flow.id);
     assert_eq!(skipped, 0);
@@ -481,12 +476,12 @@ fn list_enabled_flows_excludes_disabled() {
 #[test]
 fn flow_run_insert_finish_get_round_trip() {
     let tmp = TempDir::new().unwrap();
-    let config = test_config(&tmp);
-    let flow = create_flow(&config, "demo".to_string(), trigger_graph(), false, true).unwrap();
+    let dir = test_dir(&tmp);
+    let flow = create_flow(&dir, "demo".to_string(), trigger_graph(), false, true).unwrap();
 
     let thread_id = format!("flow:{}:run-1", flow.id);
     insert_flow_run(
-        &config,
+        &dir,
         &thread_id,
         &flow.id,
         &thread_id,
@@ -494,7 +489,7 @@ fn flow_run_insert_finish_get_round_trip() {
     )
     .unwrap();
 
-    let running = get_flow_run(&config, &thread_id)
+    let running = get_flow_run(&dir, &thread_id)
         .unwrap()
         .expect("row present");
     assert_eq!(running.status, "running");
@@ -508,7 +503,7 @@ fn flow_run_insert_finish_get_round_trip() {
         ..Default::default()
     }];
     finish_flow_run(
-        &config,
+        &dir,
         &thread_id,
         "completed",
         "2026-01-01T00:00:01Z",
@@ -519,7 +514,7 @@ fn flow_run_insert_finish_get_round_trip() {
     )
     .unwrap();
 
-    let finished = get_flow_run(&config, &thread_id)
+    let finished = get_flow_run(&dir, &thread_id)
         .unwrap()
         .expect("row present");
     assert_eq!(finished.status, "completed");
@@ -536,11 +531,11 @@ fn flow_run_insert_finish_get_round_trip() {
 #[test]
 fn finish_flow_run_records_error_on_failure() {
     let tmp = TempDir::new().unwrap();
-    let config = test_config(&tmp);
-    let flow = create_flow(&config, "demo".to_string(), trigger_graph(), false, true).unwrap();
+    let dir = test_dir(&tmp);
+    let flow = create_flow(&dir, "demo".to_string(), trigger_graph(), false, true).unwrap();
     let thread_id = format!("flow:{}:run-2", flow.id);
     insert_flow_run(
-        &config,
+        &dir,
         &thread_id,
         &flow.id,
         &thread_id,
@@ -549,7 +544,7 @@ fn finish_flow_run_records_error_on_failure() {
     .unwrap();
 
     finish_flow_run(
-        &config,
+        &dir,
         &thread_id,
         "failed",
         "2026-01-01T00:00:01Z",
@@ -560,7 +555,7 @@ fn finish_flow_run_records_error_on_failure() {
     )
     .unwrap();
 
-    let finished = get_flow_run(&config, &thread_id).unwrap().unwrap();
+    let finished = get_flow_run(&dir, &thread_id).unwrap().unwrap();
     assert_eq!(finished.status, "failed");
     assert_eq!(finished.error.as_deref(), Some("boom"));
 }
@@ -568,19 +563,19 @@ fn finish_flow_run_records_error_on_failure() {
 #[test]
 fn get_flow_run_returns_none_for_unknown_id() {
     let tmp = TempDir::new().unwrap();
-    let config = test_config(&tmp);
-    assert!(get_flow_run(&config, "missing").unwrap().is_none());
+    let dir = test_dir(&tmp);
+    assert!(get_flow_run(&dir, "missing").unwrap().is_none());
 }
 
 #[test]
 fn list_flow_runs_orders_newest_first_and_is_scoped_to_flow() {
     let tmp = TempDir::new().unwrap();
-    let config = test_config(&tmp);
-    let flow_a = create_flow(&config, "a".to_string(), trigger_graph(), false, true).unwrap();
-    let flow_b = create_flow(&config, "b".to_string(), trigger_graph(), false, true).unwrap();
+    let dir = test_dir(&tmp);
+    let flow_a = create_flow(&dir, "a".to_string(), trigger_graph(), false, true).unwrap();
+    let flow_b = create_flow(&dir, "b".to_string(), trigger_graph(), false, true).unwrap();
 
     insert_flow_run(
-        &config,
+        &dir,
         "run-a1",
         &flow_a.id,
         "run-a1",
@@ -588,7 +583,7 @@ fn list_flow_runs_orders_newest_first_and_is_scoped_to_flow() {
     )
     .unwrap();
     insert_flow_run(
-        &config,
+        &dir,
         "run-a2",
         &flow_a.id,
         "run-a2",
@@ -596,7 +591,7 @@ fn list_flow_runs_orders_newest_first_and_is_scoped_to_flow() {
     )
     .unwrap();
     insert_flow_run(
-        &config,
+        &dir,
         "run-b1",
         &flow_b.id,
         "run-b1",
@@ -604,12 +599,12 @@ fn list_flow_runs_orders_newest_first_and_is_scoped_to_flow() {
     )
     .unwrap();
 
-    let runs_a = list_flow_runs(&config, &flow_a.id, 10).unwrap();
+    let runs_a = list_flow_runs(&dir, &flow_a.id, 10).unwrap();
     assert_eq!(runs_a.len(), 2);
     assert_eq!(runs_a[0].id, "run-a2", "newest run must come first");
     assert_eq!(runs_a[1].id, "run-a1");
 
-    let runs_b = list_flow_runs(&config, &flow_b.id, 10).unwrap();
+    let runs_b = list_flow_runs(&dir, &flow_b.id, 10).unwrap();
     assert_eq!(runs_b.len(), 1);
     assert_eq!(runs_b[0].id, "run-b1");
 }
@@ -619,18 +614,18 @@ fn list_flow_runs_orders_newest_first_and_is_scoped_to_flow() {
 #[test]
 fn insert_duplicate_flow_makes_a_disabled_copy_with_new_id_and_same_graph() {
     let tmp = TempDir::new().unwrap();
-    let config = test_config(&tmp);
+    let dir = test_dir(&tmp);
 
     // Enabled source with require_approval + a distinctive graph name.
     let mut graph = trigger_graph();
     graph.name = "original-graph".to_string();
-    let source = create_flow(&config, "My Flow".to_string(), graph, true, true).unwrap();
+    let source = create_flow(&dir, "My Flow".to_string(), graph, true, true).unwrap();
     assert!(source.enabled);
-    record_run(&config, &source.id, "completed").unwrap();
-    let source = get_flow(&config, &source.id).unwrap().unwrap();
+    record_run(&dir, &source.id, "completed").unwrap();
+    let source = get_flow(&dir, &source.id).unwrap().unwrap();
     assert!(source.last_status.is_some());
 
-    let copy = insert_duplicate_flow(&config, &source, "My Flow (copy)".to_string()).unwrap();
+    let copy = insert_duplicate_flow(&dir, &source, "My Flow (copy)".to_string()).unwrap();
 
     // New id, suffixed name, DISABLED, run history reset.
     assert_ne!(copy.id, source.id);
@@ -647,20 +642,20 @@ fn insert_duplicate_flow_makes_a_disabled_copy_with_new_id_and_same_graph() {
     assert!(copy.require_approval);
 
     // Persisted and independent — both rows exist.
-    let reloaded = get_flow(&config, &copy.id).unwrap().unwrap();
+    let reloaded = get_flow(&dir, &copy.id).unwrap().unwrap();
     assert!(!reloaded.enabled);
     assert_eq!(reloaded.graph, source.graph);
-    assert_eq!(list_flows(&config).unwrap().0.len(), 2);
+    assert_eq!(list_flows(&dir).unwrap().0.len(), 2);
 }
 
 // ── prune_flow_runs ───────────────────────────────────────────────────────
 
-fn seed_run(config: &Config, flow_id: &str, id: &str, day: u32, status: &str) {
+fn seed_run(dir: &Config, flow_id: &str, id: &str, day: u32, status: &str) {
     let started = format!("2026-01-{day:02}T00:00:00Z");
-    insert_flow_run(config, id, flow_id, id, &started).unwrap();
+    insert_flow_run(dir, id, flow_id, id, &started).unwrap();
     if status != "running" {
         finish_flow_run(
-            config,
+            dir,
             id,
             status,
             &format!("2026-01-{day:02}T00:00:05Z"),
@@ -676,18 +671,18 @@ fn seed_run(config: &Config, flow_id: &str, id: &str, day: u32, status: &str) {
 #[test]
 fn prune_flow_runs_keeps_newest_n_terminal_runs() {
     let tmp = TempDir::new().unwrap();
-    let config = test_config(&tmp);
-    let flow = create_flow(&config, "demo".to_string(), trigger_graph(), false, true).unwrap();
+    let dir = test_dir(&tmp);
+    let flow = create_flow(&dir, "demo".to_string(), trigger_graph(), false, true).unwrap();
 
     // 5 completed runs on ascending days.
     for i in 1..=5 {
-        seed_run(&config, &flow.id, &format!("run-{i}"), i, "completed");
+        seed_run(&dir, &flow.id, &format!("run-{i}"), i, "completed");
     }
 
-    let deleted = prune_flow_runs(&config, &flow.id, 2).unwrap();
+    let deleted = prune_flow_runs(&dir, &flow.id, 2).unwrap();
     assert_eq!(deleted, 3, "5 terminal runs, keep 2 => 3 pruned");
 
-    let remaining = list_flow_runs(&config, &flow.id, 100).unwrap();
+    let remaining = list_flow_runs(&dir, &flow.id, 100).unwrap();
     let ids: Vec<_> = remaining.iter().map(|r| r.id.as_str()).collect();
     assert_eq!(ids, vec!["run-5", "run-4"], "newest two survive");
 }
@@ -695,19 +690,19 @@ fn prune_flow_runs_keeps_newest_n_terminal_runs() {
 #[test]
 fn prune_flow_runs_never_removes_pending_approval_run() {
     let tmp = TempDir::new().unwrap();
-    let config = test_config(&tmp);
-    let flow = create_flow(&config, "demo".to_string(), trigger_graph(), false, true).unwrap();
+    let dir = test_dir(&tmp);
+    let flow = create_flow(&dir, "demo".to_string(), trigger_graph(), false, true).unwrap();
 
     // An OLD parked pending_approval run (day 1) plus newer completed runs.
-    seed_run(&config, &flow.id, "parked", 1, "pending_approval");
+    seed_run(&dir, &flow.id, "parked", 1, "pending_approval");
     for i in 2..=5 {
-        seed_run(&config, &flow.id, &format!("run-{i}"), i, "completed");
+        seed_run(&dir, &flow.id, &format!("run-{i}"), i, "completed");
     }
 
     // keep=1 would normally leave only the newest run; the parked one must
     // still survive despite being the oldest and outside the newest-1 window.
-    let deleted = prune_flow_runs(&config, &flow.id, 1).unwrap();
-    let remaining = list_flow_runs(&config, &flow.id, 100).unwrap();
+    let deleted = prune_flow_runs(&dir, &flow.id, 1).unwrap();
+    let remaining = list_flow_runs(&dir, &flow.id, 100).unwrap();
     let ids: std::collections::HashSet<_> = remaining.iter().map(|r| r.id.as_str()).collect();
     assert!(
         ids.contains("parked"),
@@ -721,16 +716,16 @@ fn prune_flow_runs_never_removes_pending_approval_run() {
 #[test]
 fn prune_flow_runs_leaves_running_rows_alone() {
     let tmp = TempDir::new().unwrap();
-    let config = test_config(&tmp);
-    let flow = create_flow(&config, "demo".to_string(), trigger_graph(), false, true).unwrap();
+    let dir = test_dir(&tmp);
+    let flow = create_flow(&dir, "demo".to_string(), trigger_graph(), false, true).unwrap();
 
-    seed_run(&config, &flow.id, "live", 1, "running");
+    seed_run(&dir, &flow.id, "live", 1, "running");
     for i in 2..=4 {
-        seed_run(&config, &flow.id, &format!("run-{i}"), i, "completed");
+        seed_run(&dir, &flow.id, &format!("run-{i}"), i, "completed");
     }
 
-    prune_flow_runs(&config, &flow.id, 1).unwrap();
-    let remaining = list_flow_runs(&config, &flow.id, 100).unwrap();
+    prune_flow_runs(&dir, &flow.id, 1).unwrap();
+    let remaining = list_flow_runs(&dir, &flow.id, 100).unwrap();
     let ids: std::collections::HashSet<_> = remaining.iter().map(|r| r.id.as_str()).collect();
     assert!(ids.contains("live"), "a running run is never pruned");
 }
@@ -738,15 +733,15 @@ fn prune_flow_runs_leaves_running_rows_alone() {
 #[test]
 fn insert_flow_run_auto_prunes_beyond_retention_cap() {
     let tmp = TempDir::new().unwrap();
-    let config = test_config(&tmp);
-    let flow = create_flow(&config, "demo".to_string(), trigger_graph(), false, true).unwrap();
+    let dir = test_dir(&tmp);
+    let flow = create_flow(&dir, "demo".to_string(), trigger_graph(), false, true).unwrap();
 
     // Seed exactly MAX_FLOW_RUNS_PER_FLOW completed runs.
     let cap = MAX_FLOW_RUNS_PER_FLOW;
     for i in 0..cap {
         let id = format!("run-{i:04}");
         insert_flow_run(
-            &config,
+            &dir,
             &id,
             &flow.id,
             &id,
@@ -754,7 +749,7 @@ fn insert_flow_run_auto_prunes_beyond_retention_cap() {
         )
         .unwrap();
         finish_flow_run(
-            &config,
+            &dir,
             &id,
             "completed",
             "2026-01-01T00:01:00Z",
@@ -766,14 +761,14 @@ fn insert_flow_run_auto_prunes_beyond_retention_cap() {
         .unwrap();
     }
     assert_eq!(
-        list_flow_runs(&config, &flow.id, cap * 2).unwrap().len(),
+        list_flow_runs(&dir, &flow.id, cap * 2).unwrap().len(),
         cap
     );
 
     // One more insert should trigger the retention prune, keeping <= cap.
     let extra = "run-extra";
-    insert_flow_run(&config, extra, &flow.id, extra, "2026-01-02T00:00:00Z").unwrap();
-    let count = list_flow_runs(&config, &flow.id, cap * 2).unwrap().len();
+    insert_flow_run(&dir, extra, &flow.id, extra, "2026-01-02T00:00:00Z").unwrap();
+    let count = list_flow_runs(&dir, &flow.id, cap * 2).unwrap().len();
     assert!(
         count <= cap,
         "auto-prune should keep run count within cap ({count} > {cap})"
@@ -783,13 +778,13 @@ fn insert_flow_run_auto_prunes_beyond_retention_cap() {
 #[test]
 fn list_flow_runs_respects_limit() {
     let tmp = TempDir::new().unwrap();
-    let config = test_config(&tmp);
-    let flow = create_flow(&config, "demo".to_string(), trigger_graph(), false, true).unwrap();
+    let dir = test_dir(&tmp);
+    let flow = create_flow(&dir, "demo".to_string(), trigger_graph(), false, true).unwrap();
 
     for i in 0..3 {
         let id = format!("run-{i}");
         insert_flow_run(
-            &config,
+            &dir,
             &id,
             &flow.id,
             &id,
@@ -798,7 +793,7 @@ fn list_flow_runs_respects_limit() {
         .unwrap();
     }
 
-    let limited = list_flow_runs(&config, &flow.id, 2).unwrap();
+    let limited = list_flow_runs(&dir, &flow.id, 2).unwrap();
     assert_eq!(limited.len(), 2);
 }
 
@@ -825,10 +820,10 @@ fn sample_suggestion(id: &str, title: &str) -> FlowSuggestion {
 #[test]
 fn suggestions_upsert_list_roundtrip() {
     let tmp = TempDir::new().unwrap();
-    let config = test_config(&tmp);
+    let dir = test_dir(&tmp);
 
     let written = upsert_suggestions(
-        &config,
+        &dir,
         &[
             sample_suggestion("s1", "Alpha"),
             sample_suggestion("s2", "Beta"),
@@ -837,7 +832,7 @@ fn suggestions_upsert_list_roundtrip() {
     .unwrap();
     assert_eq!(written, 2);
 
-    let all = list_suggestions(&config, Some(SuggestionStatus::New), 50).unwrap();
+    let all = list_suggestions(&dir, Some(SuggestionStatus::New), 50).unwrap();
     assert_eq!(all.len(), 2);
     // Round-trips the JSON-encoded vec columns.
     let alpha = all.iter().find(|s| s.id == "s1").unwrap();
@@ -850,51 +845,51 @@ fn suggestions_upsert_list_roundtrip() {
 #[test]
 fn upsert_suggestions_preserves_user_status_on_rerun() {
     let tmp = TempDir::new().unwrap();
-    let config = test_config(&tmp);
+    let dir = test_dir(&tmp);
 
-    upsert_suggestions(&config, &[sample_suggestion("s1", "Alpha")]).unwrap();
+    upsert_suggestions(&dir, &[sample_suggestion("s1", "Alpha")]).unwrap();
     // User dismisses it.
-    assert!(set_suggestion_status(&config, "s1", SuggestionStatus::Dismissed).unwrap());
+    assert!(set_suggestion_status(&dir, "s1", SuggestionStatus::Dismissed).unwrap());
 
     // A later discovery run re-proposes the identical idea (same id) with a
     // refreshed pitch — the dismissal must survive.
     let mut refreshed = sample_suggestion("s1", "Alpha (refined)");
     refreshed.status = SuggestionStatus::New; // agent always emits `New`
-    upsert_suggestions(&config, &[refreshed]).unwrap();
+    upsert_suggestions(&dir, &[refreshed]).unwrap();
 
-    let dismissed = list_suggestions(&config, Some(SuggestionStatus::Dismissed), 50).unwrap();
+    let dismissed = list_suggestions(&dir, Some(SuggestionStatus::Dismissed), 50).unwrap();
     assert_eq!(dismissed.len(), 1);
     assert_eq!(dismissed[0].title, "Alpha (refined)"); // pitch fields refreshed
                                                        // …but it is NOT back in the active `New` list.
-    let active = list_suggestions(&config, Some(SuggestionStatus::New), 50).unwrap();
+    let active = list_suggestions(&dir, Some(SuggestionStatus::New), 50).unwrap();
     assert!(active.is_empty());
 }
 
 #[test]
 fn set_suggestion_status_returns_false_for_unknown_id() {
     let tmp = TempDir::new().unwrap();
-    let config = test_config(&tmp);
-    assert!(!set_suggestion_status(&config, "missing", SuggestionStatus::Built).unwrap());
+    let dir = test_dir(&tmp);
+    assert!(!set_suggestion_status(&dir, "missing", SuggestionStatus::Built).unwrap());
 }
 
 #[test]
 fn list_suggestions_without_status_returns_all() {
     let tmp = TempDir::new().unwrap();
-    let config = test_config(&tmp);
-    upsert_suggestions(&config, &[sample_suggestion("s1", "Alpha")]).unwrap();
-    set_suggestion_status(&config, "s1", SuggestionStatus::Built).unwrap();
+    let dir = test_dir(&tmp);
+    upsert_suggestions(&dir, &[sample_suggestion("s1", "Alpha")]).unwrap();
+    set_suggestion_status(&dir, "s1", SuggestionStatus::Built).unwrap();
     // Filtered to `New` → empty; unfiltered → present.
-    assert!(list_suggestions(&config, Some(SuggestionStatus::New), 50)
+    assert!(list_suggestions(&dir, Some(SuggestionStatus::New), 50)
         .unwrap()
         .is_empty());
-    assert_eq!(list_suggestions(&config, None, 50).unwrap().len(), 1);
+    assert_eq!(list_suggestions(&dir, None, 50).unwrap().len(), 1);
 }
 
 #[test]
 fn upsert_suggestions_empty_is_noop() {
     let tmp = TempDir::new().unwrap();
-    let config = test_config(&tmp);
-    assert_eq!(upsert_suggestions(&config, &[]).unwrap(), 0);
+    let dir = test_dir(&tmp);
+    assert_eq!(upsert_suggestions(&dir, &[]).unwrap(), 0);
 }
 
 // ── Orphaned-running-run reconciliation (bug B42) ──────────────────────────
@@ -902,11 +897,11 @@ fn upsert_suggestions_empty_is_noop() {
 #[test]
 fn list_running_run_ids_returns_only_running_rows() {
     let tmp = TempDir::new().unwrap();
-    let config = test_config(&tmp);
-    let flow = create_flow(&config, "demo".to_string(), trigger_graph(), false, true).unwrap();
+    let dir = test_dir(&tmp);
+    let flow = create_flow(&dir, "demo".to_string(), trigger_graph(), false, true).unwrap();
 
     insert_flow_run(
-        &config,
+        &dir,
         "run-live-1",
         &flow.id,
         "run-live-1",
@@ -914,7 +909,7 @@ fn list_running_run_ids_returns_only_running_rows() {
     )
     .unwrap();
     insert_flow_run(
-        &config,
+        &dir,
         "run-live-2",
         &flow.id,
         "run-live-2",
@@ -922,7 +917,7 @@ fn list_running_run_ids_returns_only_running_rows() {
     )
     .unwrap();
     insert_flow_run(
-        &config,
+        &dir,
         "run-done",
         &flow.id,
         "run-done",
@@ -930,7 +925,7 @@ fn list_running_run_ids_returns_only_running_rows() {
     )
     .unwrap();
     finish_flow_run(
-        &config,
+        &dir,
         "run-done",
         "completed",
         "2026-01-01T00:00:03Z",
@@ -941,7 +936,7 @@ fn list_running_run_ids_returns_only_running_rows() {
     )
     .unwrap();
 
-    let mut running = list_running_run_ids(&config, "2099-01-01T00:00:00Z").unwrap();
+    let mut running = list_running_run_ids(&dir, "2099-01-01T00:00:00Z").unwrap();
     running.sort();
     assert_eq!(
         running,
@@ -956,11 +951,11 @@ fn list_running_run_ids_returns_only_running_rows() {
 #[test]
 fn list_running_run_ids_excludes_rows_started_at_or_after_the_floor() {
     let tmp = TempDir::new().unwrap();
-    let config = test_config(&tmp);
-    let flow = create_flow(&config, "demo".to_string(), trigger_graph(), false, true).unwrap();
+    let dir = test_dir(&tmp);
+    let flow = create_flow(&dir, "demo".to_string(), trigger_graph(), false, true).unwrap();
 
     insert_flow_run(
-        &config,
+        &dir,
         "run-old",
         &flow.id,
         "run-old",
@@ -968,7 +963,7 @@ fn list_running_run_ids_excludes_rows_started_at_or_after_the_floor() {
     )
     .unwrap();
     insert_flow_run(
-        &config,
+        &dir,
         "run-at",
         &flow.id,
         "run-at",
@@ -976,7 +971,7 @@ fn list_running_run_ids_excludes_rows_started_at_or_after_the_floor() {
     )
     .unwrap();
     insert_flow_run(
-        &config,
+        &dir,
         "run-new",
         &flow.id,
         "run-new",
@@ -989,7 +984,7 @@ fn list_running_run_ids_excludes_rows_started_at_or_after_the_floor() {
     // stamping), so it must fall outside the candidate set along with newer
     // rows — otherwise the sweep could interrupt a live run and drop its
     // checkpoint mid-flight.
-    let running = list_running_run_ids(&config, "2026-01-01T00:00:05Z").unwrap();
+    let running = list_running_run_ids(&dir, "2026-01-01T00:00:05Z").unwrap();
     assert_eq!(
         running,
         vec![("run-old".to_string(), flow.id.clone())],
@@ -1000,15 +995,15 @@ fn list_running_run_ids_excludes_rows_started_at_or_after_the_floor() {
 #[test]
 fn mark_run_interrupted_reconciles_a_running_row_with_reason() {
     let tmp = TempDir::new().unwrap();
-    let config = test_config(&tmp);
-    let flow = create_flow(&config, "demo".to_string(), trigger_graph(), false, true).unwrap();
-    insert_flow_run(&config, "run-x", &flow.id, "run-x", "2026-01-01T00:00:00Z").unwrap();
+    let dir = test_dir(&tmp);
+    let flow = create_flow(&dir, "demo".to_string(), trigger_graph(), false, true).unwrap();
+    insert_flow_run(&dir, "run-x", &flow.id, "run-x", "2026-01-01T00:00:00Z").unwrap();
 
     let flipped =
-        mark_run_interrupted(&config, "run-x", "2026-01-01T00:05:00Z", "boom reason").unwrap();
+        mark_run_interrupted(&dir, "run-x", "2026-01-01T00:05:00Z", "boom reason").unwrap();
     assert!(flipped, "a running row must be reconciled");
 
-    let row = get_flow_run(&config, "run-x").unwrap().unwrap();
+    let row = get_flow_run(&dir, "run-x").unwrap().unwrap();
     assert_eq!(row.status, "interrupted");
     assert_eq!(row.finished_at.as_deref(), Some("2026-01-01T00:05:00Z"));
     assert_eq!(row.error.as_deref(), Some("boom reason"));
@@ -1017,11 +1012,11 @@ fn mark_run_interrupted_reconciles_a_running_row_with_reason() {
 #[test]
 fn mark_run_interrupted_is_a_noop_for_a_terminal_row() {
     let tmp = TempDir::new().unwrap();
-    let config = test_config(&tmp);
-    let flow = create_flow(&config, "demo".to_string(), trigger_graph(), false, true).unwrap();
-    insert_flow_run(&config, "run-y", &flow.id, "run-y", "2026-01-01T00:00:00Z").unwrap();
+    let dir = test_dir(&tmp);
+    let flow = create_flow(&dir, "demo".to_string(), trigger_graph(), false, true).unwrap();
+    insert_flow_run(&dir, "run-y", &flow.id, "run-y", "2026-01-01T00:00:00Z").unwrap();
     finish_flow_run(
-        &config,
+        &dir,
         "run-y",
         "completed",
         "2026-01-01T00:00:01Z",
@@ -1034,13 +1029,13 @@ fn mark_run_interrupted_is_a_noop_for_a_terminal_row() {
 
     // The `status = 'running'` guard must protect an already-settled run.
     let flipped =
-        mark_run_interrupted(&config, "run-y", "2026-01-01T00:05:00Z", "should not apply").unwrap();
+        mark_run_interrupted(&dir, "run-y", "2026-01-01T00:05:00Z", "should not apply").unwrap();
     assert!(
         !flipped,
         "a completed run must never be clobbered to interrupted"
     );
 
-    let row = get_flow_run(&config, "run-y").unwrap().unwrap();
+    let row = get_flow_run(&dir, "run-y").unwrap().unwrap();
     assert_eq!(row.status, "completed");
     assert!(row.error.is_none());
 }
@@ -1059,14 +1054,14 @@ fn mark_run_interrupted_is_a_noop_for_a_terminal_row() {
 #[test]
 fn expire_parked_runs_returns_only_rows_it_actually_flipped() {
     let tmp = TempDir::new().unwrap();
-    let config = test_config(&tmp);
-    let flow = create_flow(&config, "ttl".to_string(), trigger_graph(), false, true).unwrap();
+    let dir = test_dir(&tmp);
+    let flow = create_flow(&dir, "ttl".to_string(), trigger_graph(), false, true).unwrap();
 
     let stale_at = "2000-01-01T00:00:00+00:00";
     for id in ["claimed-run", "genuinely-stale-run"] {
-        insert_flow_run(&config, id, &flow.id, id, stale_at).unwrap();
+        insert_flow_run(&dir, id, &flow.id, id, stale_at).unwrap();
         finish_flow_run(
-            &config,
+            &dir,
             id,
             "pending_approval",
             stale_at,
@@ -1083,10 +1078,10 @@ fn expire_parked_runs_returns_only_rows_it_actually_flipped() {
 
     // Simulate the race: one candidate is claimed by a resume after the sweep's
     // SELECT would have seen it, but before its UPDATE lands.
-    assert!(mark_run_resuming(&config, "claimed-run").unwrap());
+    assert!(mark_run_resuming(&dir, "claimed-run").unwrap());
 
     let swept = expire_parked_runs(
-        &config,
+        &dir,
         "2099-01-01T00:00:00+00:00",
         "2026-01-01T00:00:00+00:00",
         "expired",
@@ -1100,7 +1095,7 @@ fn expire_parked_runs_returns_only_rows_it_actually_flipped() {
         "only the row whose guarded UPDATE matched may be reported as swept"
     );
     assert_eq!(
-        get_flow_run(&config, "claimed-run")
+        get_flow_run(&dir, "claimed-run")
             .unwrap()
             .unwrap()
             .status,
@@ -1108,7 +1103,7 @@ fn expire_parked_runs_returns_only_rows_it_actually_flipped() {
         "the claimed run must keep executing, untouched by the sweep"
     );
     assert_eq!(
-        get_flow_run(&config, "genuinely-stale-run")
+        get_flow_run(&dir, "genuinely-stale-run")
             .unwrap()
             .unwrap()
             .status,
@@ -1121,14 +1116,14 @@ fn expire_parked_runs_returns_only_rows_it_actually_flipped() {
 #[test]
 fn list_flows_skips_a_corrupt_row_and_reports_the_count() {
     let tmp = TempDir::new().unwrap();
-    let config = test_config(&tmp);
+    let dir = test_dir(&tmp);
 
-    let good_a = create_flow(&config, "good-a".to_string(), trigger_graph(), false, true).unwrap();
-    let bad = create_flow(&config, "bad".to_string(), trigger_graph(), false, true).unwrap();
-    let good_b = create_flow(&config, "good-b".to_string(), trigger_graph(), false, true).unwrap();
-    force_corrupt_graph_json_for_test(&config, &bad.id, "{ not even valid json").unwrap();
+    let good_a = create_flow(&dir, "good-a".to_string(), trigger_graph(), false, true).unwrap();
+    let bad = create_flow(&dir, "bad".to_string(), trigger_graph(), false, true).unwrap();
+    let good_b = create_flow(&dir, "good-b".to_string(), trigger_graph(), false, true).unwrap();
+    force_corrupt_graph_json_for_test(&dir, &bad.id, "{ not even valid json").unwrap();
 
-    let (flows, skipped) = list_flows(&config).unwrap();
+    let (flows, skipped) = list_flows(&dir).unwrap();
     assert_eq!(
         skipped, 1,
         "exactly the one corrupt row must be counted as skipped"
@@ -1150,11 +1145,11 @@ fn list_flows_skips_a_row_whose_schema_version_is_newer_than_this_build_supports
     // graph at a `schema_version` this build's `tinyflows::migrate::migrate`
     // cannot step backward from, then downgraded.
     let tmp = TempDir::new().unwrap();
-    let config = test_config(&tmp);
+    let dir = test_dir(&tmp);
 
-    let good = create_flow(&config, "good".to_string(), trigger_graph(), false, true).unwrap();
+    let good = create_flow(&dir, "good".to_string(), trigger_graph(), false, true).unwrap();
     let too_new =
-        create_flow(&config, "too-new".to_string(), trigger_graph(), false, true).unwrap();
+        create_flow(&dir, "too-new".to_string(), trigger_graph(), false, true).unwrap();
     let newer_schema_json = serde_json::json!({
         "schema_version": 999,
         "name": "from-the-future",
@@ -1162,9 +1157,9 @@ fn list_flows_skips_a_row_whose_schema_version_is_newer_than_this_build_supports
         "edges": []
     })
     .to_string();
-    force_corrupt_graph_json_for_test(&config, &too_new.id, &newer_schema_json).unwrap();
+    force_corrupt_graph_json_for_test(&dir, &too_new.id, &newer_schema_json).unwrap();
 
-    let (flows, skipped) = list_flows(&config).unwrap();
+    let (flows, skipped) = list_flows(&dir).unwrap();
     assert_eq!(skipped, 1);
     assert_eq!(flows.len(), 1);
     assert_eq!(flows[0].id, good.id);
@@ -1176,13 +1171,13 @@ fn list_enabled_flows_still_returns_the_good_rows_when_one_is_corrupt() {
     // `list_enabled_flows` backs ALL `app_event` trigger dispatch, so one
     // corrupt enabled flow must not blackhole matching for every other one.
     let tmp = TempDir::new().unwrap();
-    let config = test_config(&tmp);
+    let dir = test_dir(&tmp);
 
-    let good = create_flow(&config, "good".to_string(), trigger_graph(), false, true).unwrap();
-    let bad = create_flow(&config, "bad".to_string(), trigger_graph(), false, true).unwrap();
-    force_corrupt_graph_json_for_test(&config, &bad.id, "not json at all").unwrap();
+    let good = create_flow(&dir, "good".to_string(), trigger_graph(), false, true).unwrap();
+    let bad = create_flow(&dir, "bad".to_string(), trigger_graph(), false, true).unwrap();
+    force_corrupt_graph_json_for_test(&dir, &bad.id, "not json at all").unwrap();
 
-    let (enabled, skipped) = list_enabled_flows(&config).unwrap();
+    let (enabled, skipped) = list_enabled_flows(&dir).unwrap();
     assert_eq!(skipped, 1);
     assert_eq!(enabled.len(), 1);
     assert_eq!(enabled[0].id, good.id);
@@ -1195,21 +1190,21 @@ fn list_enabled_flows_excludes_a_corrupt_disabled_row_without_counting_it_as_ski
     // SQL layer before `map_flow_row` ever runs) — it is neither returned nor
     // counted as skipped by this particular listing.
     let tmp = TempDir::new().unwrap();
-    let config = test_config(&tmp);
+    let dir = test_dir(&tmp);
 
-    let good = create_flow(&config, "good".to_string(), trigger_graph(), false, true).unwrap();
+    let good = create_flow(&dir, "good".to_string(), trigger_graph(), false, true).unwrap();
     let disabled_and_corrupt = create_flow(
-        &config,
+        &dir,
         "disabled-bad".to_string(),
         trigger_graph(),
         false,
         true,
     )
     .unwrap();
-    set_enabled(&config, &disabled_and_corrupt.id, false).unwrap();
-    force_corrupt_graph_json_for_test(&config, &disabled_and_corrupt.id, "{{{").unwrap();
+    set_enabled(&dir, &disabled_and_corrupt.id, false).unwrap();
+    force_corrupt_graph_json_for_test(&dir, &disabled_and_corrupt.id, "{{{").unwrap();
 
-    let (enabled, skipped) = list_enabled_flows(&config).unwrap();
+    let (enabled, skipped) = list_enabled_flows(&dir).unwrap();
     assert_eq!(skipped, 0);
     assert_eq!(enabled.len(), 1);
     assert_eq!(enabled[0].id, good.id);
@@ -1227,14 +1222,14 @@ fn concurrent_step_upserts_do_not_lose_a_step() {
     // post-hoc `settle_steps` reconstruction only refills a missing node with
     // `status: None`, not its real outcome.
     let tmp = TempDir::new().unwrap();
-    let config = test_config(&tmp);
-    let flow = create_flow(&config, "demo".to_string(), trigger_graph(), false, true).unwrap();
+    let dir = test_dir(&tmp);
+    let flow = create_flow(&dir, "demo".to_string(), trigger_graph(), false, true).unwrap();
     let run_id = "run-concurrent";
-    insert_flow_run(&config, run_id, &flow.id, run_id, "2026-01-01T00:00:00Z").unwrap();
+    insert_flow_run(&dir, run_id, &flow.id, run_id, "2026-01-01T00:00:00Z").unwrap();
 
     let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
 
-    let config_a = config.clone();
+    let config_a = dir.clone();
     let barrier_a = barrier.clone();
     let handle_a = std::thread::spawn(move || {
         barrier_a.wait();
@@ -1250,7 +1245,7 @@ fn concurrent_step_upserts_do_not_lose_a_step() {
         )
     });
 
-    let config_b = config.clone();
+    let config_b = dir.clone();
     let barrier_b = barrier.clone();
     let handle_b = std::thread::spawn(move || {
         barrier_b.wait();
@@ -1269,7 +1264,7 @@ fn concurrent_step_upserts_do_not_lose_a_step() {
     handle_a.join().unwrap().unwrap();
     handle_b.join().unwrap().unwrap();
 
-    let row = get_flow_run(&config, run_id).unwrap().unwrap();
+    let row = get_flow_run(&dir, run_id).unwrap().unwrap();
     let node_ids: std::collections::HashSet<&str> =
         row.steps.iter().map(|s| s.node_id.as_str()).collect();
     assert_eq!(
@@ -1288,20 +1283,20 @@ fn concurrent_upserts_to_the_same_node_id_do_not_corrupt_the_step_list() {
     // still leave exactly one entry for that node (whichever write wins the
     // serialization order), never a torn/duplicated list.
     let tmp = TempDir::new().unwrap();
-    let config = test_config(&tmp);
-    let flow = create_flow(&config, "demo".to_string(), trigger_graph(), false, true).unwrap();
+    let dir = test_dir(&tmp);
+    let flow = create_flow(&dir, "demo".to_string(), trigger_graph(), false, true).unwrap();
     let run_id = "run-same-node";
-    insert_flow_run(&config, run_id, &flow.id, run_id, "2026-01-01T00:00:00Z").unwrap();
+    insert_flow_run(&dir, run_id, &flow.id, run_id, "2026-01-01T00:00:00Z").unwrap();
 
     let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
     let mut handles = Vec::new();
     for i in 0..2 {
-        let config = config.clone();
+        let dir = dir.clone();
         let barrier = barrier.clone();
         handles.push(std::thread::spawn(move || {
             barrier.wait();
             upsert_flow_run_step(
-                &config,
+                &dir,
                 run_id,
                 &FlowRunStep {
                     node_id: "same-node".to_string(),
@@ -1316,7 +1311,7 @@ fn concurrent_upserts_to_the_same_node_id_do_not_corrupt_the_step_list() {
         h.join().unwrap().unwrap();
     }
 
-    let row = get_flow_run(&config, run_id).unwrap().unwrap();
+    let row = get_flow_run(&dir, run_id).unwrap().unwrap();
     assert_eq!(
         row.steps.len(),
         1,
@@ -1331,14 +1326,14 @@ fn concurrent_upserts_to_the_same_node_id_do_not_corrupt_the_step_list() {
 #[test]
 fn schema_initializes_correctly_on_a_fresh_database_and_is_idempotent_across_calls() {
     let tmp = TempDir::new().unwrap();
-    let config = test_config(&tmp);
+    let dir = test_dir(&tmp);
 
     // First-ever call against this database file in the process: exercises
     // the full schema DDL (CREATE TABLE batch + indexes) plus the
     // `require_approval` `add_column_if_missing` migration on a database that
     // has never been opened before.
     let flow = create_flow(
-        &config,
+        &dir,
         "fresh-db".to_string(),
         trigger_graph(),
         true, // require_approval
@@ -1353,17 +1348,17 @@ fn schema_initializes_correctly_on_a_fresh_database_and_is_idempotent_across_cal
     // Repeat calls against the SAME path must not need (or re-run) DDL —
     // proves the cached "already initialized" state doesn't break ordinary
     // reads/writes on reuse.
-    let (listed, skipped) = list_flows(&config).unwrap();
+    let (listed, skipped) = list_flows(&dir).unwrap();
     assert_eq!(skipped, 0);
     assert_eq!(listed.len(), 1);
     assert!(listed[0].require_approval);
 
-    let reloaded = get_flow(&config, &flow.id).unwrap().unwrap();
+    let reloaded = get_flow(&dir, &flow.id).unwrap().unwrap();
     assert!(reloaded.require_approval);
 
     let run_id = "run-schema-check";
-    insert_flow_run(&config, run_id, &flow.id, run_id, "2026-01-01T00:00:00Z").unwrap();
-    assert!(get_flow_run(&config, run_id).unwrap().is_some());
+    insert_flow_run(&dir, run_id, &flow.id, run_id, "2026-01-01T00:00:00Z").unwrap();
+    assert!(get_flow_run(&dir, run_id).unwrap().is_some());
 }
 
 #[test]
@@ -1373,11 +1368,11 @@ fn schema_initializes_independently_for_each_distinct_database_path() {
     // independent workspace after the first would silently skip schema
     // creation and every write against it would fail with "no such table".
     let tmp_a = TempDir::new().unwrap();
-    let config_a = test_config(&tmp_a);
+    let config_a = test_dir(&tmp_a);
     let flow_a = create_flow(&config_a, "a".to_string(), trigger_graph(), false, true).unwrap();
 
     let tmp_b = TempDir::new().unwrap();
-    let config_b = test_config(&tmp_b);
+    let config_b = test_dir(&tmp_b);
     let flow_b = create_flow(&config_b, "b".to_string(), trigger_graph(), false, true).unwrap();
 
     assert_eq!(list_flows(&config_a).unwrap().0.len(), 1);
@@ -1405,22 +1400,22 @@ fn schema_initializes_independently_for_each_distinct_database_path() {
 #[test]
 fn schema_reinitializes_when_the_database_file_is_deleted_at_runtime() {
     let tmp = TempDir::new().unwrap();
-    let config = test_config(&tmp);
+    let dir = test_dir(&tmp);
 
     // First use populates the per-path cache and creates the schema.
     let flow = create_flow(
-        &config,
+        &dir,
         "before-deletion".to_string(),
         trigger_graph(),
         false,
         true,
     )
     .unwrap();
-    let (flows, _skipped) = list_flows(&config).unwrap();
+    let (flows, _skipped) = list_flows(&dir).unwrap();
     assert_eq!(flows.len(), 1, "sanity: the flow was persisted");
 
     // Simulate a workspace reset / manual deletion while the process lives on.
-    let db_path = config.workspace_dir.join("flows").join("flows.db");
+    let db_path = dir.workspace_dir.join("flows").join("flows.db");
     assert!(
         db_path.exists(),
         "sanity: the flows db exists before deletion"
@@ -1432,7 +1427,7 @@ fn schema_reinitializes_when_the_database_file_is_deleted_at_runtime() {
 
     // The cache still says this path is initialized. Without the verify-on-hit
     // this errors with `no such table: flow_definitions`.
-    let (flows_after, skipped_after) = list_flows(&config)
+    let (flows_after, skipped_after) = list_flows(&dir)
         .expect("a deleted database must be re-initialized, not left wedged at 'no such table'");
     assert!(
         flows_after.is_empty(),
@@ -1442,7 +1437,7 @@ fn schema_reinitializes_when_the_database_file_is_deleted_at_runtime() {
 
     // And the store is fully usable again, not merely readable.
     let recreated = create_flow(
-        &config,
+        &dir,
         "after-deletion".to_string(),
         trigger_graph(),
         false,
@@ -1450,6 +1445,6 @@ fn schema_reinitializes_when_the_database_file_is_deleted_at_runtime() {
     )
     .expect("writes must work against the re-initialized schema");
     assert_ne!(recreated.id, flow.id);
-    let (flows_final, _) = list_flows(&config).unwrap();
+    let (flows_final, _) = list_flows(&dir).unwrap();
     assert_eq!(flows_final.len(), 1);
 }
