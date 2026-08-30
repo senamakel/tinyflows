@@ -22,7 +22,7 @@
 //! has actually wired to a dispatcher. "This host does not deliver webhooks
 //! yet" is a fact about that host and belongs in its own overlay.
 
-use tinyflows::model::{NodeKind, TriggerKind, WorkflowGraph};
+use tinyflows::model::{Node, NodeKind, TriggerKind, WorkflowGraph};
 
 /// Whether `graph`'s trigger fires **without a human in the loop** — i.e. on
 /// a timer, an inbound webhook, or a connected-app event, as opposed to
