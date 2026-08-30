@@ -96,7 +96,11 @@ pub(super) fn trigger_config(
 /// Maps n8n `httpRequest` parameters onto tinyflows' `{ method, url, ... }`
 /// http_request config. n8n uses `url` + `method`/`requestMethod`; anything
 /// else is carried through after expression translation.
-pub(super) fn map_http_request(params: &Value, warnings: &mut Vec<String>, n8n_name: &str) -> Value {
+pub(super) fn map_http_request(
+    params: &Value,
+    warnings: &mut Vec<String>,
+    n8n_name: &str,
+) -> Value {
     let translated = translate_config(params, warnings, n8n_name);
     let mut cfg = match translated {
         Value::Object(map) => map,
@@ -136,4 +140,3 @@ pub(super) fn map_code(params: &Value, warnings: &mut Vec<String>, n8n_name: &st
     }
     Value::Object(cfg)
 }
-

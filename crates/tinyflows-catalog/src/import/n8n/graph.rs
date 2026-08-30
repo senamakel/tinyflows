@@ -9,7 +9,10 @@ use tinyflows::model::{Edge, Node, NodeKind, Position};
 ///
 /// Returns the id of the synthesized trigger, if one was added, so the caller
 /// can wire it to the graph's root nodes once edges are computed.
-pub(super) fn reconcile_triggers(nodes: &mut Vec<Node>, warnings: &mut Vec<String>) -> Option<String> {
+pub(super) fn reconcile_triggers(
+    nodes: &mut Vec<Node>,
+    warnings: &mut Vec<String>,
+) -> Option<String> {
     let trigger_idxs: Vec<usize> = nodes
         .iter()
         .enumerate()
@@ -175,4 +178,3 @@ pub(super) fn slug(name: &str) -> String {
         .collect();
     if s.is_empty() { "node".to_string() } else { s }
 }
-
