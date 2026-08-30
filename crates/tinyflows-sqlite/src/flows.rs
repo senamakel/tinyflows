@@ -595,7 +595,7 @@ pub fn update_flow_graph(
         // a damaged revision table, …) leaves the graph changed with no
         // revision recorded — silently violating the "every save is
         // reversible" contract the revision table exists for.
-        with_immediate_transaction(conn, |conn| {
+        (|| -> Result<()> {
             // Guarded UPDATE keyed on the observed updated_at (race-safe even
             // without an explicit expected version) — a concurrent writer that
             // moved updated_at makes this match 0 rows. Targeted columns only, so a
@@ -990,7 +990,7 @@ pub fn finish_flow_run(
 pub fn upsert_flow_run_step(dir: &Path, run_id: &str, step: &FlowRunStep) -> Result<()> {
     use rusqlite::OptionalExtension;
     with_connection(dir, |conn| {
-        with_immediate_transaction(conn, |conn| {
+        (|| -> Result<()> {
             let existing: Option<String> = conn
                 .query_row(
                     "SELECT steps_json FROM flow_runs WHERE id = ?1",
