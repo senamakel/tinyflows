@@ -34,8 +34,8 @@ use serde::de::DeserializeOwned;
 use tinyflows::graph::error::{GraphError, Result};
 use tinyflows::graph::ids::{CheckpointId, NodeId};
 use tinyflows::graph::{
-    Checkpoint, CheckpointConfig, CheckpointMetadata, CheckpointSource,
-    CheckpointTuple, Checkpointer, PendingWrite,
+    Checkpoint, CheckpointConfig, CheckpointMetadata, CheckpointSource, CheckpointTuple,
+    Checkpointer, PendingWrite,
 };
 
 /// A [`Checkpointer`] that persists checkpoints in a SQLite database.
@@ -277,7 +277,11 @@ where
         writes::delete_checkpoints(&self.conn, thread_id, ids).await
     }
 
-    async fn put_writes(&self, config: &CheckpointConfig, writes_batch: &[PendingWrite]) -> Result<()> {
+    async fn put_writes(
+        &self,
+        config: &CheckpointConfig,
+        writes_batch: &[PendingWrite],
+    ) -> Result<()> {
         writes::put_writes(&self.conn, config, writes_batch).await
     }
 

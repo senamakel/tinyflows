@@ -137,8 +137,8 @@ pub(super) async fn put_writes(
     if writes.is_empty() {
         return Ok(());
     }
-    let namespace_json = serde_json::to_string(&config.namespace)
-        .map_err(|e| sqlite_err("encode namespace", e))?;
+    let namespace_json =
+        serde_json::to_string(&config.namespace).map_err(|e| sqlite_err("encode namespace", e))?;
     let conn = conn.clone();
     let thread_id = config.thread_id.clone();
     let writes = writes.to_vec();
@@ -204,8 +204,8 @@ pub(super) async fn get_writes(
     config: &CheckpointConfig,
     checkpoint_id: &str,
 ) -> Result<Vec<PendingWrite>> {
-    let namespace_json = serde_json::to_string(&config.namespace)
-        .map_err(|e| sqlite_err("encode namespace", e))?;
+    let namespace_json =
+        serde_json::to_string(&config.namespace).map_err(|e| sqlite_err("encode namespace", e))?;
     let conn = conn.clone();
     let thread_id = config.thread_id.clone();
     let checkpoint_id = checkpoint_id.to_string();
