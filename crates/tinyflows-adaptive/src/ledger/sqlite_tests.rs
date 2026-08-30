@@ -17,7 +17,8 @@ async fn passes_the_tenant_isolation_suite() {
 
 #[tokio::test]
 async fn opening_a_legacy_episode_table_migrates_to_tenant_scoped_identity() {
-    let root = std::env::temp_dir().join(format!("adaptive-episode-migration-{}", std::process::id()));
+    let root =
+        std::env::temp_dir().join(format!("adaptive-episode-migration-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).expect("temp dir");
     let path = root.join("ledger.db");
