@@ -10,8 +10,7 @@ use serde::de::DeserializeOwned;
 
 use tinyflows::graph::checkpoint::merge_writes;
 use tinyflows::graph::error::Result;
-use tinyflows::graph::ids::NodeId;
-use tinyflows::graph::ids::CheckpointId;
+use tinyflows::graph::ids::{CheckpointId, NodeId};
 use tinyflows::graph::{Checkpoint, CheckpointConfig, PendingWrite};
 
 use super::{lock_conn, require_checkpoint_id, sqlite_err};
