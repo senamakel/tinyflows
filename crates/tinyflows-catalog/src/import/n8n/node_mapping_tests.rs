@@ -318,8 +318,11 @@ fn incompatible_n8n_code_is_a_placeholder_not_an_executable_code_node() {
         "// return is discussed here\nmodule.exports = input;",
         "const id = (value) => { return value; }; module.exports = id(input);",
         "function pick({value}) { return value; } module.exports = pick(input);",
+        "module.exports = input.map(function (value) { return value; });",
         "module.exports = input.values.map(value => { return value; });",
         "module.exports = /return/.test(input);",
+        "function test(value) { return /$json/.test(value); } module.exports = test(input);",
+        "const items = input.values; module.exports = items;",
     ] {
         let (kind, _) = map_code_node(&json!({ "jsCode": source }), &mut Vec::new(), "Portable");
         assert_eq!(kind, NodeKind::Code, "source was downgraded: {source}");
@@ -336,6 +339,20 @@ fn incompatible_n8n_code_is_a_placeholder_not_an_executable_code_node() {
         &json!({ "jsCode": "const f = x => x; if (ok) { return value; }" }),
         &mut Vec::new(),
         "Top-level return after arrow",
+    );
+    assert_eq!(kind, NodeKind::Transform);
+
+    let (kind, _) = map_code_node(
+        &json!({ "jsCode": "obj.function(); if (ok) { return value; }" }),
+        &mut Vec::new(),
+        "Function property before top-level return",
+    );
+    assert_eq!(kind, NodeKind::Transform);
+
+    let (kind, _) = map_code_node(
+        &json!({ "jsCode": "console.log(`${/* } */ $json.id}`);" }),
+        &mut Vec::new(),
+        "n8n template with comment",
     );
     assert_eq!(kind, NodeKind::Transform);
 }
