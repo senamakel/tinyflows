@@ -328,35 +328,42 @@ where
         // per call — and `state_history` calls it once per lineage hop.
         let namespace_json =
             serde_json::to_string(namespace).map_err(|e| sqlite_err("encode namespace", e))?;
-        let conn = self.lock()?;
-        let record: Option<String> = match checkpoint_id {
-            Some(id) => conn
-                .query_row(
-                    "SELECT record FROM checkpoints
-                     WHERE thread_id = ?1 AND namespace = ?2 AND checkpoint_id = ?3
-                     ORDER BY seq DESC LIMIT 1",
-                    params![thread_id, namespace_json, id],
-                    |row| row.get(0),
-                )
-                .optional()
-                .map_err(|e| sqlite_err("query scoped checkpoint", e))?,
-            None => conn
-                .query_row(
-                    "SELECT record FROM checkpoints
-                     WHERE thread_id = ?1 AND namespace = ?2
-                     ORDER BY seq DESC LIMIT 1",
-                    params![thread_id, namespace_json],
-                    |row| row.get(0),
-                )
-                .optional()
-                .map_err(|e| sqlite_err("query latest scoped checkpoint", e))?,
-        };
-        match record {
-            Some(json) => Ok(Some(
-                serde_json::from_str(&json).map_err(|e| sqlite_err("decode record", e))?,
-            )),
-            None => Ok(None),
-        }
+        let conn = self.conn.clone();
+        let thread_id = thread_id.to_string();
+        let checkpoint_id = checkpoint_id.map(str::to_string);
+        tokio::task::spawn_blocking(move || -> Result<Option<Checkpoint<State>>> {
+            let conn = lock_conn(&conn)?;
+            let record: Option<String> = match checkpoint_id.as_deref() {
+                Some(id) => conn
+                    .query_row(
+                        "SELECT record FROM checkpoints
+                         WHERE thread_id = ?1 AND namespace = ?2 AND checkpoint_id = ?3
+                         ORDER BY seq DESC LIMIT 1",
+                        params![thread_id, namespace_json, id],
+                        |row| row.get(0),
+                    )
+                    .optional()
+                    .map_err(|e| sqlite_err("query scoped checkpoint", e))?,
+                None => conn
+                    .query_row(
+                        "SELECT record FROM checkpoints
+                         WHERE thread_id = ?1 AND namespace = ?2
+                         ORDER BY seq DESC LIMIT 1",
+                        params![thread_id, namespace_json],
+                        |row| row.get(0),
+                    )
+                    .optional()
+                    .map_err(|e| sqlite_err("query latest scoped checkpoint", e))?,
+            };
+            match record {
+                Some(json) => Ok(Some(
+                    serde_json::from_str(&json).map_err(|e| sqlite_err("decode record", e))?,
+                )),
+                None => Ok(None),
+            }
+        })
+        .await
+        .map_err(|e| sqlite_err("join blocking get_scoped task", e))?
     }
 
     async fn state_history(
