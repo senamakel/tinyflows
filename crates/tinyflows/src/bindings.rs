@@ -112,12 +112,12 @@ pub fn parse_node_binding(expr: &str) -> Option<NodeBinding> {
     // `.json` is optional, and only counts when it is a whole path segment: a
     // node field actually named `jsonish` must not be mistaken for the envelope.
     let (through_envelope, rest) = match rest.strip_prefix(".json") {
-        Some(after) if after.starts_with('.') => (true, after),
+        Some(after) if after.starts_with(['.', '[']) => (true, after),
         _ => (false, rest),
     };
 
-    let rest = rest.strip_prefix('.')?;
-    let (mut field_path, mut remainder) = take_field_path(rest)?;
+    let mut field_path = String::new();
+    let mut remainder = rest;
     loop {
         if let Some(after_open) = remainder.strip_prefix('[')
             && let Some(close) = after_open.find(']')
@@ -131,12 +131,17 @@ pub fn parse_node_binding(expr: &str) -> Option<NodeBinding> {
         } else if let Some(after_dot) = remainder.strip_prefix('.')
             && let Some((tail, after_tail)) = take_field_path(after_dot)
         {
-            field_path.push('.');
+            if !field_path.is_empty() {
+                field_path.push('.');
+            }
             field_path.push_str(&tail);
             remainder = after_tail;
         } else {
             break;
         }
+    }
+    if field_path.is_empty() {
+        return None;
     }
     // The static gates only reject a complete simple binding. A continued jq
     // program may recover from a missing path (for example with `//`), so its

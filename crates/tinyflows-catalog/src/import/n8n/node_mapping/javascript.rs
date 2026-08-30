@@ -75,13 +75,7 @@ fn uses_n8n_code_globals(source: &str) -> bool {
             }
             b'{' => {
                 brace_depth += 1;
-                let is_function_body = matches!(
-                    pending_function_body,
-                    Some(PendingFunctionBody::Arrow)
-                ) || (matches!(
-                    pending_function_body,
-                    Some(PendingFunctionBody::Declaration)
-                ) && paren_depth == 0);
+                let is_function_body = pending_function_body.is_some();
                 if is_function_body {
                     function_depths.push(brace_depth);
                     pending_function_body = None;
@@ -104,9 +98,9 @@ fn uses_n8n_code_globals(source: &str) -> bool {
                     index += 1;
                 }
                 let token = &source[start..index];
-                if token == "function" {
+                if token == "function" && previous_significant(bytes, start) != Some(b'.') {
                     pending_function_body = Some(PendingFunctionBody::Declaration);
-                } else if ["$json", "$input", "$node", "items"].contains(&token)
+                } else if ["$json", "$input", "$node"].contains(&token)
                     || (token == "return" && function_depths.is_empty())
                 {
                     return true;
@@ -119,12 +113,49 @@ fn uses_n8n_code_globals(source: &str) -> bool {
 }
 
 fn is_regex_start(bytes: &[u8], index: usize) -> bool {
+    if bytes[..index]
+        .iter()
+        .rev()
+        .copied()
+        .find(|byte| !byte.is_ascii_whitespace())
+        .is_none_or(|byte| {
+            matches!(
+                byte,
+                b'=' | b'(' | b'[' | b'{' | b',' | b':' | b';' | b'!' | b'?'
+                    | b'&' | b'|' | b'+' | b'-' | b'*' | b'%' | b'^' | b'~'
+                    | b'<' | b'>'
+            )
+        })
+    {
+        return true;
+    }
+
+    previous_identifier(bytes, index).is_some_and(|token| {
+        matches!(
+            token,
+            b"return" | b"throw" | b"case" | b"delete" | b"typeof" | b"void" | b"instanceof"
+        )
+    })
+}
+
+fn previous_significant(bytes: &[u8], index: usize) -> Option<u8> {
     bytes[..index]
         .iter()
         .rev()
         .copied()
         .find(|byte| !byte.is_ascii_whitespace())
-        .is_none_or(|byte| matches!(byte, b'=' | b'(' | b'[' | b'{' | b',' | b':' | b';' | b'!' | b'?' | b'&' | b'|'))
+}
+
+fn previous_identifier(bytes: &[u8], index: usize) -> Option<&[u8]> {
+    let end = bytes[..index]
+        .iter()
+        .rposition(|byte| !byte.is_ascii_whitespace())?
+        + 1;
+    let start = bytes[..end]
+        .iter()
+        .rposition(|byte| !(byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'$')))
+        .map_or(0, |position| position + 1);
+    (start < end).then_some(&bytes[start..end])
 }
 
 fn skip_regex(bytes: &[u8], mut index: usize) -> usize {
@@ -172,6 +203,22 @@ fn template_expression_end(bytes: &[u8], mut index: usize) -> usize {
     let mut depth = 1usize;
     while index < bytes.len() {
         match bytes[index] {
+            b'/' if bytes.get(index + 1) == Some(&b'/') => {
+                index += 2;
+                while index < bytes.len() && bytes[index] != b'\n' {
+                    index += 1;
+                }
+            }
+            b'/' if bytes.get(index + 1) == Some(&b'*') => {
+                index += 2;
+                while index + 1 < bytes.len()
+                    && !(bytes[index] == b'*' && bytes[index + 1] == b'/')
+                {
+                    index += 1;
+                }
+                index = (index + 2).min(bytes.len());
+            }
+            b'/' if is_regex_start(bytes, index) => index = skip_regex(bytes, index),
             quote @ (b'\'' | b'"' | b'`') => index = skip_quoted(bytes, index, quote),
             b'{' => {
                 depth += 1;

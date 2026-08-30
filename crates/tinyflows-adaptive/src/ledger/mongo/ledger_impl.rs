@@ -196,15 +196,14 @@ impl Ledger for MongoLedger {
             .map_err(|e| LedgerError::Corrupt(e.to_string()))?;
         let status = serde_json::to_string(&episode.status)
             .map_err(|e| LedgerError::Corrupt(e.to_string()))?;
+        let mut filter = self.episode_scope_filter();
+        filter.insert(
+            "$or",
+            vec![doc! { "id": &episode.id }, doc! { "_id": &episode.id }],
+        );
         self.episodes_c()
             .update_one(
-                doc! {
-                    "scope_key": self.bucket(),
-                    "$or": [
-                        { "id": &episode.id },
-                        { "_id": &episode.id },
-                    ],
-                },
+                filter,
                 doc! {
                     "$set": {
                         "id": &episode.id,
@@ -229,12 +228,11 @@ impl Ledger for MongoLedger {
     }
 
     async fn episode(&self, id: &str) -> Result<Option<Episode>> {
+        let mut filter = self.episode_scope_filter();
+        filter.insert("$or", vec![doc! { "id": id }, doc! { "_id": id }]);
         let found = self
             .episodes_c()
-            .find_one(doc! {
-                "scope_key": self.bucket(),
-                "$or": [{ "id": id }, { "_id": id }],
-            })
+            .find_one(filter)
             .await?;
         found.as_ref().map(read_episode).transpose()
     }
@@ -310,7 +308,7 @@ impl Ledger for MongoLedger {
     async fn episodes(&self, running_only: bool, page: super::Page) -> Result<Vec<Episode>> {
         let mut cursor = self
             .episodes_c()
-            .find(doc! { "scope_key": self.bucket() })
+            .find(self.episode_scope_filter())
             .sort(doc! { "updated_at": -1, "_id": 1 })
             .await?;
         let mut out = Vec::new();

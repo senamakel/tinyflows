@@ -7,7 +7,7 @@
 //! here loses increments under exactly the load a hosted deployment has.
 
 use async_trait::async_trait;
-use mongodb::bson::{Document, doc};
+use mongodb::bson::{Bson, Document, doc};
 use mongodb::options::{IndexOptions, ReturnDocument};
 use mongodb::{Client, Collection, Database, IndexModel};
 
@@ -90,6 +90,15 @@ impl MongoLedger {
     /// time — the same reason sqlite makes the column NOT NULL.
     fn bucket(&self) -> &str {
         self.scope.as_deref().unwrap_or_default()
+    }
+
+    /// Match the current episode bucket, including pre-tenancy global rows
+    /// whose `scope_key` field is absent.
+    fn episode_scope_filter(&self) -> Document {
+        match &self.scope {
+            Some(scope) => doc! { "scope_key": scope },
+            None => doc! { "scope_key": { "$in": ["", Bson::Null] } },
+        }
     }
 
     async fn ensure_indexes(&self) -> Result<()> {
