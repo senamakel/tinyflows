@@ -65,22 +65,25 @@ pub fn graph_has_outbound_side_effect(graph: &WorkflowGraph) -> bool {
     has_outbound_side_effect_to_depth(graph, tinyflows::engine::MAX_SUB_WORKFLOW_DEPTH)
 }
 
-/// [`graph_has_outbound_side_effect`], bounded so a cyclic or pathologically
-/// nested inline chain cannot recurse forever.
+/// [`graph_has_outbound_side_effect`], bounded so a pathologically nested or
+/// self-referencing inline chain cannot recurse forever.
 ///
-/// A `sub_workflow` hides its work behind one node, and this rule decides
+/// A `sub_workflow` hides its work behind a single node, and this rule decides
 /// whether a flow may ever run unattended — so not looking inside one is how a
-/// graph that reads `trigger → sub_workflow` saves with no approval gate while
-/// its child sends the email. Both forms the node accepts are covered:
+/// graph reading `trigger → sub_workflow` saves with no approval gate while its
+/// child sends the email. Both forms the node accepts are covered:
 ///
-/// - **`workflow`** (an inline child graph) is descended into, to `depth`.
-/// - **`workflow_id`** (a reference to a *saved* workflow) counts as a side
-///   effect on sight. This crate has no catalog and cannot see what it names,
-///   and the honest answer to "can this act on the world" is "possibly". The
-///   two costs are not symmetric: a false positive asks a human to approve a
-///   run that did not need it, and a false negative lets an unreviewed
-///   workflow act. This rule fails closed, unlike the authoring gates, which
-///   refuse a graph outright and so must only fire on what is certain.
+/// - **`workflow`** — an inline child graph, descended into to `depth`.
+/// - **`workflow_id`** — a reference to a *saved* workflow, which counts as a
+///   side effect on sight. This crate has no catalog and cannot see what it
+///   names, so the honest answer is "possibly".
+///
+/// The two costs are not symmetric, which is why this fails closed where the
+/// authoring gates do the opposite: a false positive here asks a human to
+/// approve a run that did not need it, while a false negative lets an
+/// unreviewed workflow act on the world. A gate that *refuses* a graph must
+/// only fire on what is certain; a rule that merely *requires a human* should
+/// not. An unparseable child and an exhausted budget are treated the same way.
 fn has_outbound_side_effect_to_depth(graph: &WorkflowGraph, depth: u64) -> bool {
     graph.nodes.iter().any(|n| {
         if matches!(
