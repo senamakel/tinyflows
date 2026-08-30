@@ -138,18 +138,10 @@ fn build_is_propose_only_and_injects_flow_id_as_context() {
     assert!(p.contains("END-TO-END"));
 }
 
-#[path = "builder_standing_prompt_more_tests.rs"]
-mod standing_prompt_more_tests;
-/// The standing archetype (`prompt.md`, the always-loaded system prompt —
-/// as opposed to the per-turn directives rendered above) carries the same
-/// B27 banned-phrase regression, plus positive coverage for the plain-
-/// language style rule and the read-only memory grounding tool added
-/// alongside it. Guards against reintroducing jargon-leaking or
-/// phantom-review-card language, and against silently losing the
-/// `memory_recall` guidance if the prompt is ever rewritten.
-
 #[path = "builder_standing_prompt_tests.rs"]
 mod standing_prompt_tests;
+#[path = "builder_standing_prompt_more_tests.rs"]
+mod standing_prompt_more_tests;
 
 #[test]
 fn repair_includes_run_id_error_and_failing_nodes() {

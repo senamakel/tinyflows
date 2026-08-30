@@ -2,6 +2,13 @@
 
 use super::contains_normalized;
 
+/// The standing archetype (`prompt.md`, the always-loaded system prompt —
+/// as opposed to the per-turn directives rendered above) carries the same
+/// B27 banned-phrase regression, plus positive coverage for the plain-
+/// language style rule and the read-only memory grounding tool added
+/// alongside it. Guards against reintroducing jargon-leaking or
+/// phantom-review-card language, and against silently losing the
+/// `memory_recall` guidance if the prompt is ever rewritten.
 #[test]
 fn standing_prompt_teaches_plain_language_and_readonly_memory() {
     const STANDING_PROMPT: &str = crate::prompts::WORKFLOW_BUILDER;
