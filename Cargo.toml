@@ -1,0 +1,38 @@
+# Virtual workspace root — there is no root package.
+#
+# Every crate in this repository lives under `crates/`, one directory per
+# package, each directory named for the package it holds. The engine a host
+# depends on is `crates/tinyflows`, the same as any other member: keeping the
+# root virtual is what makes that uniform, and what lets a new crate join the
+# workspace by existing rather than by editing a list.
+#
+# This mirrors the layout every other `tiny*` repository uses (tinymemory,
+# tinydocs, tinyvoice, tinywallet), so a reader who knows one knows them all.
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+# `worktrees/` holds `git worktree` checkouts of this same repository. Each one
+# contains a full copy of this manifest and every crate under it, so without
+# this entry cargo walks into them and reports duplicate packages.
+exclude = ["worktrees"]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.85"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/tinyhumansai/tinyflows"
+homepage = "https://github.com/tinyhumansai/tinyflows"
+
+[workspace.dependencies]
+tinyflows = { version = "0.8.0", path = "crates/tinyflows" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+async-trait = "0.1"
+thiserror = "2"
+tracing = { version = "0.1", default-features = false, features = ["std"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
+sha2 = "0.10"
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde", "std"] }
+uuid = { version = "1", features = ["v4", "serde"] }
