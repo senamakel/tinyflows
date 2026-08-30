@@ -145,11 +145,12 @@ fn invalid_textual_json_body_makes_the_http_node_a_placeholder() {
         "Broken HTTP",
     );
     assert_eq!(kind, NodeKind::Transform);
-    assert_eq!(
-        cfg["_n8n_import"]["untranslated_http_config"],
-        json!(true)
+    assert_eq!(cfg["_n8n_import"]["untranslated_http_config"], json!(true));
+    assert!(
+        warnings
+            .iter()
+            .any(|warning| warning.contains("placeholder"))
     );
-    assert!(warnings.iter().any(|warning| warning.contains("placeholder")));
 }
 
 #[test]
@@ -425,6 +426,10 @@ fn non_positive_or_sub_millisecond_intervals_are_not_scheduled() {
             "Invalid interval",
         );
         assert!(cfg.get("schedule").is_none(), "value={value}: {cfg}");
-        assert!(warnings.iter().any(|warning| warning.contains("could not be translated")));
+        assert!(
+            warnings
+                .iter()
+                .any(|warning| warning.contains("could not be translated"))
+        );
     }
 }

@@ -311,12 +311,9 @@ pub(super) fn map_http_request(
                 Some(body) => {
                     cfg.insert("body".to_string(), body);
                 }
-                None => mark_untranslated_http_config(
-                    &mut cfg,
-                    warnings,
-                    n8n_name,
-                    "body parameters",
-                ),
+                None => {
+                    mark_untranslated_http_config(&mut cfg, warnings, n8n_name, "body parameters")
+                }
             }
         }
     }
@@ -327,12 +324,7 @@ pub(super) fn map_http_request(
             Some(headers) => {
                 cfg.insert("headers".to_string(), headers);
             }
-            None => mark_untranslated_http_config(
-                &mut cfg,
-                warnings,
-                n8n_name,
-                "headers",
-            ),
+            None => mark_untranslated_http_config(&mut cfg, warnings, n8n_name, "headers"),
         }
     }
     cfg.entry("method".to_string())
