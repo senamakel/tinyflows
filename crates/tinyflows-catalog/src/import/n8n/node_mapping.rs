@@ -291,6 +291,9 @@ pub(super) fn map_http_request(
     if !cfg.contains_key("body") {
         if let Some(body) = cfg.remove("jsonBody") {
             match body {
+                Value::String(text) if text.starts_with('=') => {
+                    cfg.insert("body".to_string(), Value::String(text));
+                }
                 Value::String(text) => match serde_json::from_str(&text) {
                     Ok(body) => {
                         cfg.insert("body".to_string(), body);

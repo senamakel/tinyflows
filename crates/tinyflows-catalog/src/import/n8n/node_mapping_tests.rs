@@ -134,6 +134,14 @@ fn http_request_normalizes_json_body_named_body_fields_and_headers() {
         "Text JSON HTTP",
     );
     assert_eq!(cfg["body"], json!({ "ready": true }));
+
+    let cfg = map_http_request(
+        &json!({ "jsonBody": "={{ $json.payload }}" }),
+        &mut warnings,
+        "Expression JSON HTTP",
+    );
+    assert_eq!(cfg["body"], json!("=.item.payload"));
+    assert!(warnings.is_empty(), "{warnings:?}");
 }
 
 #[test]
