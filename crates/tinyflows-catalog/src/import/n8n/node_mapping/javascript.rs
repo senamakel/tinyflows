@@ -3,12 +3,18 @@
 /// lightweight lexer. String/comment contents are skipped, and `return` is
 /// incompatible only outside a function body.
 fn uses_n8n_code_globals(source: &str) -> bool {
+    #[derive(Clone, Copy)]
+    enum PendingFunctionBody {
+        Declaration,
+        Arrow,
+    }
+
     let bytes = source.as_bytes();
     let mut index = 0;
     let mut brace_depth = 0usize;
     let mut paren_depth = 0usize;
     let mut function_depths = Vec::new();
-    let mut pending_function_body = false;
+    let mut pending_function_body = None;
     while index < bytes.len() {
         match bytes[index] {
             b'/' if bytes.get(index + 1) == Some(&b'/') => {
@@ -46,7 +52,7 @@ fn uses_n8n_code_globals(source: &str) -> bool {
                 index = (index + 1).min(bytes.len());
             }
             b'=' if bytes.get(index + 1) == Some(&b'>') => {
-                pending_function_body = true;
+                pending_function_body = Some(PendingFunctionBody::Arrow);
                 index += 2;
             }
             b'(' => {
@@ -59,9 +65,16 @@ fn uses_n8n_code_globals(source: &str) -> bool {
             }
             b'{' => {
                 brace_depth += 1;
-                if pending_function_body && paren_depth == 0 {
+                let is_function_body = matches!(
+                    pending_function_body,
+                    Some(PendingFunctionBody::Arrow)
+                ) || (matches!(
+                    pending_function_body,
+                    Some(PendingFunctionBody::Declaration)
+                ) && paren_depth == 0);
+                if is_function_body {
                     function_depths.push(brace_depth);
-                    pending_function_body = false;
+                    pending_function_body = None;
                 }
                 index += 1;
             }
@@ -82,7 +95,7 @@ fn uses_n8n_code_globals(source: &str) -> bool {
                 }
                 let token = &source[start..index];
                 if token == "function" {
-                    pending_function_body = true;
+                    pending_function_body = Some(PendingFunctionBody::Declaration);
                 } else if ["$json", "$input", "$node", "items"].contains(&token)
                     || (token == "return" && function_depths.is_empty())
                 {

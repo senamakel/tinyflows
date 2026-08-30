@@ -179,6 +179,20 @@ fn an_expression_that_is_not_a_node_binding_is_not_second_guessed() {
     assert!(failures(&graph).is_empty(), "{:?}", failures(&graph));
 }
 
+#[test]
+fn an_indexed_missing_envelope_binding_is_still_rejected() {
+    let graph = graph(json!([
+        { "id": "fetch", "kind": "agent", "name": "Fetch", "config": {} },
+        { "id": "notify", "kind": "tool_call", "name": "Notify",
+          "config": { "slug": "demo:echo",
+                      "args": { "text": "=nodes.fetch.item.results[0].title" } } },
+    ]));
+
+    let failures = failures(&graph);
+    assert_eq!(failures.len(), 1, "{failures:?}");
+    assert!(failures[0].contains("results[0].title"), "{failures:?}");
+}
+
 // ---- the error surface ----
 
 #[test]

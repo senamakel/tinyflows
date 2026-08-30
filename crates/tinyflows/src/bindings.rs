@@ -117,7 +117,27 @@ pub fn parse_node_binding(expr: &str) -> Option<NodeBinding> {
     };
 
     let rest = rest.strip_prefix('.')?;
-    let (field_path, remainder) = take_field_path(rest)?;
+    let (mut field_path, mut remainder) = take_field_path(rest)?;
+    loop {
+        if let Some(after_open) = remainder.strip_prefix('[')
+            && let Some(close) = after_open.find(']')
+            && !after_open[..close].is_empty()
+            && after_open[..close].chars().all(|ch| ch.is_ascii_digit())
+        {
+            field_path.push('[');
+            field_path.push_str(&after_open[..close]);
+            field_path.push(']');
+            remainder = &after_open[close + 1..];
+        } else if let Some(after_dot) = remainder.strip_prefix('.')
+            && let Some((tail, after_tail)) = take_field_path(after_dot)
+        {
+            field_path.push('.');
+            field_path.push_str(&tail);
+            remainder = after_tail;
+        } else {
+            break;
+        }
+    }
     // The static gates only reject a complete simple binding. A continued jq
     // program may recover from a missing path (for example with `//`), so its
     // result is not guaranteed to be null and must be left to evaluation.
