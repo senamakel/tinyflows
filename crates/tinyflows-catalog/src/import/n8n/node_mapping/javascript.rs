@@ -117,12 +117,9 @@ fn uses_n8n_code_globals(source: &str, check_top_level_return: bool) -> bool {
                     index += 1;
                 }
                 let token = &source[start..index];
-                if token == "function" && previous_significant(bytes, start) != Some(b'.') {
-                    pending_function_body = Some(PendingFunctionBody::Declaration(paren_depth));
-                    pending_variable_declaration = false;
-                } else if !is_control_keyword(token)
-                    && previous_significant(bytes, start) != Some(b'.')
-                    && method_body_follows(bytes, index)
+                if previous_significant(bytes, start) != Some(b'.')
+                    && (token == "function"
+                        || (!is_control_keyword(token) && method_body_follows(bytes, index)))
                 {
                     pending_function_body = Some(PendingFunctionBody::Declaration(paren_depth));
                     pending_variable_declaration = false;
