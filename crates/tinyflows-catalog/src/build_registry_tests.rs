@@ -81,12 +81,20 @@ fn unregister_build_turn_is_match_guarded() {
 
     // A newer turn supersedes the entry (mirrors `flows_build` starting a
     // second turn on the same thread before the first one's cleanup ran).
+    // Registering it must cancel the displaced `token_a` — a second build
+    // starting while the first is still genuinely running must not leave the
+    // first one running unreachable by Stop.
     let token_b = CancellationToken::new();
     register_build_turn(
         thread_id.to_string(),
         Some("req-b".to_string()),
         token_b.clone(),
     );
+    assert!(
+        token_a.is_cancelled(),
+        "the displaced turn's token must be cancelled when a newer turn replaces it"
+    );
+    assert!(!token_b.is_cancelled());
 
     // An unregister scoped to the OLD (superseded) request must not clobber
     // the newer turn's entry.
@@ -96,7 +104,6 @@ fn unregister_build_turn_is_match_guarded() {
         "the newer turn's entry must still be registered after a stale unregister"
     );
     assert!(token_b.is_cancelled());
-    assert!(!token_a.is_cancelled());
 
     unregister_build_turn(thread_id, Some("req-b"));
     assert!(!cancel_build_turn_scoped(thread_id, None));
