@@ -166,42 +166,6 @@ fn invalid_textual_json_body_makes_the_http_node_a_placeholder() {
 }
 
 #[test]
-fn untranslated_json_body_expression_makes_the_http_node_a_placeholder() {
-    let mut warnings = Vec::new();
-    let (kind, cfg) = map_http_request_node(
-        &json!({ "jsonBody": "={{ $json.payload + 1 }}" }),
-        &mut warnings,
-        "Expression HTTP",
-    );
-    assert_eq!(kind, NodeKind::Transform);
-    assert_eq!(
-        cfg["_n8n_import"]["untranslated"]["jsonBody"],
-        json!("={{ $json.payload + 1 }}")
-    );
-}
-
-#[test]
-fn unsupported_http_parts_are_all_preserved_for_repair() {
-    let mut warnings = Vec::new();
-    let (_, cfg) = map_http_request_node(
-        &json!({
-            "bodyParameters": { "unsupported": "body" },
-            "headerParameters": { "unsupported": "headers" }
-        }),
-        &mut warnings,
-        "Broken HTTP",
-    );
-    assert_eq!(
-        cfg["_n8n_import"]["untranslated"]["bodyParameters"],
-        json!({ "unsupported": "body" })
-    );
-    assert_eq!(
-        cfg["_n8n_import"]["untranslated"]["headerParameters"],
-        json!({ "unsupported": "headers" })
-    );
-}
-
-#[test]
 fn code_node_pulls_source_and_language() {
     let mut warnings = Vec::new();
     let cfg = map_code(&json!({ "jsCode": "return items;" }), &mut warnings, "Code");
@@ -499,3 +463,5 @@ fn non_positive_or_sub_millisecond_intervals_are_not_scheduled() {
         );
     }
 }
+
+include!("node_mapping/http_regression_tests.rs");
