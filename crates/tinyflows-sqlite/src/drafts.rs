@@ -10,7 +10,9 @@
 //! to satisfy before it becomes a saved [`tinyflows_catalog::Flow`] — is the
 //! host's, and stays there.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
 
 use anyhow::{Context, Result, bail};
 use chrono::Utc;
@@ -85,6 +87,36 @@ pub fn get_draft(dir: &Path, id: &str) -> Result<Option<FlowDraft>> {
     }
 }
 
+/// Per-draft-file locks, so two concurrent `update_draft` calls against the
+/// SAME draft (the canvas and the authoring agent both patch it) serialize
+/// their read-modify-write instead of racing: both would otherwise read the
+/// same on-disk version, apply different fields, and whichever `write_draft`
+/// lands last silently drops the other's change. Keyed by path rather than a
+/// single global lock so unrelated drafts still update concurrently.
+///
+/// This is a **process-local** lock — it closes the race for the common case
+/// of one host process handling both the canvas and the agent's RPCs, which
+/// is how this crate is embedded today. It does not protect against two
+/// separate OS processes writing the same draft file; that would need an
+/// OS-level advisory lock (`fs2`, as the sibling `store` docs elsewhere in
+/// this repo already do for their own file) or a CAS check against
+/// `updated_at`, either of which is a larger change than this crate's
+/// internal restructuring should make unasked.
+static DRAFT_LOCKS: OnceLock<Mutex<HashMap<PathBuf, &'static Mutex<()>>>> = OnceLock::new();
+
+/// Returns the (leaked, process-lifetime) lock for `path`, creating one on
+/// first use. Leaking a `Mutex<()>` per distinct draft path is deliberate and
+/// cheap: a draft file is a bounded, small-cardinality set for the lifetime
+/// of a process, and leaking avoids the lifetime/ownership complexity of
+/// handing out a guard that outlives a shared map entry.
+fn lock_for(path: &Path) -> &'static Mutex<()> {
+    let registry = DRAFT_LOCKS.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut registry = registry.lock().unwrap_or_else(|e| e.into_inner());
+    *registry
+        .entry(path.to_path_buf())
+        .or_insert_with(|| Box::leak(Box::new(Mutex::new(()))))
+}
+
 /// Patches a draft's mutable fields (any `Some` is applied), bumps
 /// `updated_at`, persists, and returns the updated draft. Errors if the draft
 /// does not exist.
@@ -95,6 +127,10 @@ pub fn update_draft(
     graph: Option<Value>,
     flow_id: Option<Option<String>>,
 ) -> Result<FlowDraft> {
+    let path = draft_path(dir, id)?;
+    let lock = lock_for(&path);
+    let _guard = lock.lock().unwrap_or_else(|e| e.into_inner());
+
     let mut draft = get_draft(dir, id)?.with_context(|| format!("draft {id} not found"))?;
     if let Some(name) = name {
         draft.name = name;
