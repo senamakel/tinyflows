@@ -73,6 +73,53 @@ fn the_four_acting_node_kinds_are_outbound_side_effects() {
     )));
 }
 
+/// An `agent` node that carries an inline tool grant (`config.tools`) can
+/// invoke that tool through `ToolInvoker` the same as a `tool_call` node —
+/// see `merge_node_overrides` in tinyflows' `agent_request.rs`, which lets a
+/// node's `tools` populate a grant-less definition outright. It must count
+/// as an outbound side effect even though its `NodeKind` is `Agent`.
+#[test]
+fn an_agent_node_with_an_inline_tool_grant_is_an_outbound_side_effect() {
+    let mut g = graph(json!({}), Some(NodeKind::Agent));
+    g.nodes[1].config = json!({ "tools": [{ "slug": "github.add_labels" }] });
+    assert!(graph_has_outbound_side_effect(&g));
+}
+
+/// An `agent` node with an empty `config.tools` array grants nothing, so it
+/// stays read-only.
+#[test]
+fn an_agent_node_with_an_empty_inline_tool_grant_is_not_an_outbound_side_effect() {
+    let mut g = graph(json!({}), Some(NodeKind::Agent));
+    g.nodes[1].config = json!({ "tools": [] });
+    assert!(!graph_has_outbound_side_effect(&g));
+}
+
+/// An `agent` node that names an `agent_ref` resolving to a graph-defined
+/// [`tinyflows::model::AgentDefinition`] with tool grants is likewise an
+/// outbound side effect, even though the grant lives on the definition, not
+/// the node.
+#[test]
+fn an_agent_node_referencing_a_graph_agent_with_tools_is_an_outbound_side_effect() {
+    let mut g = graph(json!({}), Some(NodeKind::Agent));
+    g.nodes[1].config = json!({ "agent_ref": "curated" });
+    g.agents = serde_json::from_value(json!([{
+        "id": "curated",
+        "tools": [{ "slug": "slack.post" }],
+    }]))
+    .expect("agent definition");
+    assert!(graph_has_outbound_side_effect(&g));
+}
+
+/// An `agent_ref` this graph does not define (resolved by the host at run
+/// time) is treated as read-only here rather than guessed at — see
+/// [`node_agent_has_tool_grant`]'s doc comment.
+#[test]
+fn an_agent_node_referencing_an_unresolvable_agent_ref_is_not_an_outbound_side_effect() {
+    let mut g = graph(json!({}), Some(NodeKind::Agent));
+    g.nodes[1].config = json!({ "agent_ref": "not-in-this-graph" });
+    assert!(!graph_has_outbound_side_effect(&g));
+}
+
 /// The override is one-way: a side effect forces approval on, and a caller
 /// who already asked for approval is not reported as having been forced.
 #[test]
