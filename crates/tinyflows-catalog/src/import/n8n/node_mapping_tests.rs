@@ -332,6 +332,16 @@ fn incompatible_n8n_code_is_a_placeholder_not_an_executable_code_node() {
         "Portable",
     );
     assert_eq!(kind, NodeKind::Code);
+
+    for source in [
+        "function id(value) { return value; } module.exports = id(input);",
+        "const word = \"return\"; module.exports = word;",
+        "// return is discussed here\nmodule.exports = input;",
+        "const id = (value) => { return value; }; module.exports = id(input);",
+    ] {
+        let (kind, _) = map_code_node(&json!({ "jsCode": source }), &mut Vec::new(), "Portable");
+        assert_eq!(kind, NodeKind::Code, "source was downgraded: {source}");
+    }
 }
 
 #[test]
