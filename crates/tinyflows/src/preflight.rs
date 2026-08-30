@@ -41,12 +41,12 @@ use crate::caps::mock_schema_aware::{SchemaAwareMockAgentRunner, SchemaAwareMock
 use crate::model::{NodeKind, WorkflowGraph};
 use crate::observability::CapturingObserver;
 
-/// Wall-clock bound on the sandbox run this gate performs. Mirrors
-/// `builder_tools::DRY_RUN_TIMEOUT_SECS`'s purpose but kept short: unlike the
-/// opt-in `dry_run_workflow` tool, this check runs on EVERY
-/// propose/revise/save call, so a slow or pathological draft must not stall
-/// authoring.
-const REQUIRED_ARG_NULL_CHECK_TIMEOUT_SECS: u64 = 15;
+/// Wall-clock bound on the sandbox run.
+///
+/// Deliberately short. An opt-in dry run can afford to be slow; this one is
+/// expected to run on every propose, revise and save, so a pathological draft
+/// must not stall the author. Exceeding it is a skip, never a refusal.
+const RUN_TIMEOUT_SECS: u64 = 15;
 
 /// Sandbox-executes `graph` against `tinyflows`' deterministic MOCK
 /// capabilities (the same shape `DryRunWorkflowTool` uses — see this
@@ -86,17 +86,15 @@ const REQUIRED_ARG_NULL_CHECK_TIMEOUT_SECS: u64 = 15;
 /// [`validate_and_migrate_graph`] before this gate ever runs) or a sandbox
 /// error/timeout is SKIPPED — never turned into a false rejection. This
 /// check only ever adds a diagnostic the sandbox actually observed.
-pub(crate) async fn validate_required_arg_resolvability(graph: &WorkflowGraph) -> Vec<String> {
-    use crate::openhuman::flows::builder_tools::CapturingObserver;
-    use crate::openhuman::flows::tinyflows::caps::{
-        SchemaAwareMockAgentRunner, SchemaAwareMockLlm,
-    };
-
-    let Ok(compiled) = tinyflows::compiler::compile(graph) else {
+pub async fn unresolvable_tool_args(
+    graph: &WorkflowGraph,
+    native_slug_prefixes: &[&str],
+) -> Vec<String> {
+    let Ok(compiled) = crate::compiler::compile(graph) else {
         return Vec::new();
     };
 
-    let mut caps = tinyflows::caps::mock::mock_capabilities_with_agent(SchemaAwareMockAgentRunner);
+    let mut caps = crate::caps::mock::mock_capabilities_with_agent(SchemaAwareMockAgentRunner);
     // Same fix as `DryRunWorkflowTool`: a plain agent node (no `agent_ref`)
     // routes to the `llm` slot, not the runner above, so the vendored `MockLlm`
     // echo would fail its `output_parser.schema` sub-port and make this gate
@@ -105,10 +103,10 @@ pub(crate) async fn validate_required_arg_resolvability(graph: &WorkflowGraph) -
     caps.llm = Arc::new(SchemaAwareMockLlm);
 
     let observer = Arc::new(CapturingObserver::default());
-    let observer_dyn: Arc<dyn tinyflows::observability::RunObserver> = observer.clone();
-    let run = tinyflows::engine::run_with_observer(&compiled, json!({}), &caps, &observer_dyn);
+    let observer_dyn: Arc<dyn crate::observability::RunObserver> = observer.clone();
+    let run = crate::engine::run_with_observer(&compiled, json!({}), &caps, &observer_dyn);
     if tokio::time::timeout(
-        std::time::Duration::from_secs(REQUIRED_ARG_NULL_CHECK_TIMEOUT_SECS),
+        std::time::Duration::from_secs(RUN_TIMEOUT_SECS),
         run,
     )
     .await
@@ -150,9 +148,16 @@ pub(crate) async fn validate_required_arg_resolvability(graph: &WorkflowGraph) -
         let Some(&slug) = tool_call_slugs.get(step.node_id.as_str()) else {
             continue;
         };
-        // `=`-derived slugs resolve from upstream/trigger data at runtime;
-        // native `oh:` tools have no external-provider rejection mode.
-        if slug.starts_with('=') || slug.starts_with("oh:") {
+        // A `=`-derived slug resolves from upstream or trigger data at run
+        // time, so there is nothing to reason about here. A host's own native
+        // tool is skipped for a different reason: there is no external provider
+        // to reject the call, which is the whole thing this gate protects
+        // against.
+        if slug.starts_with('=')
+            || native_slug_prefixes
+                .iter()
+                .any(|prefix| slug.starts_with(prefix))
+        {
             continue;
         }
         for diag in &step.diagnostics {
@@ -162,21 +167,21 @@ pub(crate) async fn validate_required_arg_resolvability(graph: &WorkflowGraph) -
             if is_trigger_scoped_expression(&diag.expression, graph, &step.node_id, trigger_id) {
                 // Legitimately empty in this gate's `{}` mock run — the real
                 // trigger (webhook/app-event/manual) will populate it. Not
-                // the B18 broken-wiring case this gate exists to catch.
+                // the broken-wiring case this gate exists to catch.
                 tracing::debug!(
-                    target: "flows",
+                    target: "tinyflows",
                     node = %step.node_id,
                     %slug,
                     %field,
                     expression = %diag.expression,
-                    "[flows] required-arg resolvability check: trigger-scoped null in empty \
+                    "[tinyflows] preflight: trigger-scoped null in empty \
                      mock run — not rejecting"
                 );
                 continue;
             }
             // A null bound to the OUTPUT of an upstream Composio-or-native
             // `tool_call` node is UNVERIFIABLE in this echo sandbox — the mock
-            // renders BOTH a Composio and a native `oh:` `tool_call` as
+            // renders BOTH a Composio and a host-native `tool_call` as
             // `{tool, args, connection}` and can NEVER produce their real output
             // fields (`.item.json.data.<field>` for Composio, `.item.json.<field>`
             // for a native tool), so a downstream binding to one resolves `null`
@@ -191,13 +196,13 @@ pub(crate) async fn validate_required_arg_resolvability(graph: &WorkflowGraph) -
                 mock_opaque_tool_call_upstream_ref(&diag.expression, graph, &step.node_id)
             {
                 tracing::debug!(
-                    target: "flows",
+                    target: "tinyflows",
                     node = %step.node_id,
                     %slug,
                     %field,
                     upstream = %upstream,
                     expression = %diag.expression,
-                    "[flows] required-arg resolvability check: arg binds to a Composio-or-native \
+                    "[tinyflows] preflight: arg binds to a Composio-or-native \
                      tool_call's output — UNVERIFIABLE in the echo sandbox (the mock cannot \
                      produce real tool output fields), not rejecting; dry_run_workflow \
                      reports it instead"
@@ -205,12 +210,12 @@ pub(crate) async fn validate_required_arg_resolvability(graph: &WorkflowGraph) -
                 continue;
             }
             tracing::warn!(
-                target: "flows",
+                target: "tinyflows",
                 node = %step.node_id,
                 %slug,
                 %field,
                 expression = %diag.expression,
-                "[flows] required-arg resolvability check: arg resolved null in sandbox — \
+                "[tinyflows] preflight: arg resolved null in sandbox — \
                  rejecting"
             );
             errors.push(format!(
@@ -260,17 +265,14 @@ fn explicit_nodes_ref(expr: &str) -> Option<&str> {
 
 /// Whether a null-resolved config expression on `node_id` is scoped to the
 /// TRIGGER's data rather than a specific upstream node's output — and
-/// therefore legitimately empty in [`validate_required_arg_resolvability`]'s
-/// `{}` mock run rather than evidence of broken wiring (see that function's
-/// doc comment and the Codex feedback it links).
+/// therefore legitimately empty in [`unresolvable_tool_args`]'s
+/// `{}` mock run rather than evidence of broken wiring (see that function's doc).
 ///
 /// - `=run...` always addresses the trigger payload/metadata directly
-///   (`crate::openhuman::flows::tinyflows`'s `expr_scope` docs) — always
-///   trigger-scoped.
+///   (see `nodes::expr_scope`) — always trigger-scoped.
 /// - `=nodes.<id>...` / `=.nodes["<id>"]...` explicitly names an upstream
 ///   node. Trigger-scoped only if `<id>` IS the trigger node; naming any
-///   other node is exactly the B18 broken-wiring case this gate exists to
-///   catch, so it is never treated as trigger-scoped.
+///   other node is exactly the broken-wiring case this gate exists to catch, so it is never treated as trigger-scoped.
 /// - `=item...` / `=items...` implicitly addresses `node_id`'s direct
 ///   predecessor(s) output. Trigger-scoped only when EVERY incoming edge to
 ///   `node_id` comes from the trigger node — a fan-in that mixes the trigger
@@ -321,7 +323,7 @@ fn is_trigger_scoped_expression(
 
 /// If a null-resolved config expression on `node_id` is bound to the OUTPUT of
 /// an upstream **`tool_call`** node whose sandbox output is an opaque echo — a
-/// Composio curated action OR a native `oh:` tool (anything but a `=`-derived
+/// Composio curated action OR a host-native tool (anything but a `=`-derived
 /// dynamic slug) — returns that upstream node's id; otherwise `None`.
 ///
 /// The dry-run / gate sandbox renders BOTH a Composio `tool_call` and a native
@@ -335,10 +337,10 @@ fn is_trigger_scoped_expression(
 /// `agent` / `transform` / `code` / trigger upstream, whose real output the
 /// sandbox DOES produce, so a null there IS a real bug).
 ///
-/// The native `oh:` case is why this exists beyond Composio: #5148's guidance
-/// prescribes a `produce -> oh:storage_upload_file -> oh:storage_get_link ->
-/// send` chain where the send binds `=nodes.get_link.item.json.url`; excluding
-/// native upstreams here made the gate hard-reject that exact (correct) chain.
+/// Host-native tools are included for a reason worth stating: a chain that
+/// uploads a file with one native tool and reads its link from the next binds
+/// `=nodes.get_link.item.json.url`, and excluding native upstreams here made
+/// the gate hard-reject that exact, correct chain.
 ///
 /// Handles both addressing forms the engine can trace:
 /// - explicit `=nodes.<id>...` / `=.nodes["<id>"]...` (parsed via
@@ -350,7 +352,7 @@ fn is_trigger_scoped_expression(
 /// Anything else (a `=run...` trigger reference, a jq expression not rooted at
 /// one of the above, or a reference to a non-`tool_call` / `=`-dynamic node)
 /// returns `None`.
-pub(crate) fn mock_opaque_tool_call_upstream_ref<'a>(
+pub fn mock_opaque_tool_call_upstream_ref<'a>(
     expr: &str,
     graph: &'a WorkflowGraph,
     node_id: &str,
@@ -387,7 +389,7 @@ pub(crate) fn mock_opaque_tool_call_upstream_ref<'a>(
     }
     let slug = node.config.get("slug").and_then(Value::as_str)?;
     // A `=`-derived slug is a dynamic runtime slug we can't reason about. But a
-    // native `oh:` tool_call IS opaque-echoed by the mock exactly like a
+    // host-native tool_call IS opaque-echoed by the mock exactly like a
     // Composio one, so its downstream null is equally unverifiable, not broken —
     // do NOT exclude it (that exclusion made the gate reject #5148's own chain).
     if slug.starts_with('=') {
