@@ -3,6 +3,7 @@
 
 use super::*;
 use crate::flows::test_support::*;
+use crate::flows::definitions::{create_flow, set_enabled};
 use rusqlite::Connection;
 use tempfile::TempDir;
 

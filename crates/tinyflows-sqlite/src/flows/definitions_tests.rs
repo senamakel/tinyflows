@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::flows::test_support::*;
+use crate::flows::runs::force_corrupt_graph_json_for_test;
 use tempfile::TempDir;
 
 #[test]
