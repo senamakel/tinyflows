@@ -1,5 +1,5 @@
 /// Run every lineage case. Part of [`run_all`]'s contract for any backend that
-/// stores variant links, which is both that ship.
+/// stores variant links. Both shipped backends do.
 ///
 /// # Panics
 /// On any lineage failure.
@@ -80,4 +80,3 @@ async fn a_cycle_is_truncated_rather_than_hung(store: &dyn Ledger) {
     let family = store.lineage("wf-x").await.expect("lineage");
     assert!(family.len() <= super::MAX_FAMILY, "{family:?}");
 }
-

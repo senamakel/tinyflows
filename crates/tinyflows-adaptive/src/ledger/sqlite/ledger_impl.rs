@@ -192,7 +192,7 @@ impl Ledger for SqliteLedger {
             "INSERT INTO episodes(id, scope_key, goal, status, attempt, stalled,
                                   started_at, updated_at)
              VALUES(?1,?2,?3,?4,?5,?6,?7,?8)
-             ON CONFLICT(id) DO UPDATE SET
+             ON CONFLICT(scope_key, id) DO UPDATE SET
                 goal = ?3, status = ?4, attempt = ?5, stalled = ?6, updated_at = ?8",
             params![
                 episode.id,
@@ -329,4 +329,3 @@ impl Ledger for SqliteLedger {
         Ok(found)
     }
 }
-

@@ -10,7 +10,9 @@
     if token.is_cancelled() {
         tracing::info!(node = %node.id, "run cancelled; skipping node work");
         let mut update = items_update(&node.id, &[], None)?;
-        stamp_activation_step(&mut update, &node.id, ctx.step);
+        if lane.is_none() {
+            stamp_activation_step(&mut update, &node.id, ctx.step);
+        }
         return Ok(NodeResult::Update(update));
     }
     

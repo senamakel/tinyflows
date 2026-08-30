@@ -193,7 +193,7 @@ fn interval_to_every_ms(unit: &str, value: f64) -> Option<f64> {
         _ => return None,
     };
     let milliseconds = value * ms_per_unit;
-    (milliseconds >= 1.0).then_some(milliseconds)
+    (milliseconds.is_finite() && milliseconds >= 1.0).then_some(milliseconds)
 }
 
 /// Maps n8n `if` parameters onto tinyflows' `condition` config.

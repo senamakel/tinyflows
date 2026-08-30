@@ -85,14 +85,15 @@ const DDL: &[&str] = &[
     )",
     "CREATE INDEX IF NOT EXISTS ix_variants_parent ON variants(scope_key, parent)",
     "CREATE TABLE IF NOT EXISTS episodes (
-        id         TEXT PRIMARY KEY,
+        id         TEXT NOT NULL,
         scope_key  TEXT NOT NULL DEFAULT '',
         goal       TEXT NOT NULL,
         status     TEXT NOT NULL,
         attempt    INTEGER NOT NULL DEFAULT 0,
         stalled    INTEGER NOT NULL DEFAULT 0,
         started_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (scope_key, id)
     )",
     "CREATE INDEX IF NOT EXISTS ix_episodes_scope ON episodes(scope_key, updated_at)",
     // One row per step, never one blob per attempt: a looped node produces a
@@ -322,6 +323,7 @@ impl SqliteLedger {
         for statement in MIGRATIONS {
             let _ = conn.execute(statement, []);
         }
+        migrate_episode_identity(&conn)?;
         Ok(Self {
             conn: std::sync::Arc::new(Mutex::new(conn)),
             scope: None,
@@ -356,6 +358,40 @@ impl SqliteLedger {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner()))
     }
+}
+
+/// Rebuild the pre-tenancy episodes table whose primary key was only `id`.
+fn migrate_episode_identity(conn: &Connection) -> Result<()> {
+    let scoped_primary_key: i64 = conn.query_row(
+        "SELECT pk FROM pragma_table_info('episodes') WHERE name = 'scope_key'",
+        [],
+        |row| row.get(0),
+    )?;
+    if scoped_primary_key != 0 {
+        return Ok(());
+    }
+    conn.execute_batch(
+        "BEGIN IMMEDIATE;
+         CREATE TABLE episodes_scoped (
+            id TEXT NOT NULL,
+            scope_key TEXT NOT NULL DEFAULT '',
+            goal TEXT NOT NULL,
+            status TEXT NOT NULL,
+            attempt INTEGER NOT NULL DEFAULT 0,
+            stalled INTEGER NOT NULL DEFAULT 0,
+            started_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (scope_key, id)
+         );
+         INSERT INTO episodes_scoped
+            SELECT id, scope_key, goal, status, attempt, stalled, started_at, updated_at
+            FROM episodes;
+         DROP TABLE episodes;
+         ALTER TABLE episodes_scoped RENAME TO episodes;
+         CREATE INDEX ix_episodes_scope ON episodes(scope_key, updated_at);
+         COMMIT;",
+    )?;
+    Ok(())
 }
 
 fn next_seq(conn: &Connection, table: &str) -> Result<i64> {
