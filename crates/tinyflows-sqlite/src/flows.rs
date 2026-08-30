@@ -595,7 +595,7 @@ pub fn update_flow_graph(
         // a damaged revision table, …) leaves the graph changed with no
         // revision recorded — silently violating the "every save is
         // reversible" contract the revision table exists for.
-        ((|| -> Result<()> {
+        with_immediate_transaction(conn, |conn| {
             // Guarded UPDATE keyed on the observed updated_at (race-safe even
             // without an explicit expected version) — a concurrent writer that
             // moved updated_at makes this match 0 rows. Targeted columns only, so a
@@ -644,7 +644,7 @@ pub fn update_flow_graph(
             )
             .context("Failed to prune flow revisions")?;
             Ok(())
-        }))()
+        })
     })
     .map_err(|e| {
         if e.to_string().contains("__conflict__") {
