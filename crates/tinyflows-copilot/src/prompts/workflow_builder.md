@@ -781,14 +781,13 @@ is what matters, not its output.
    `/tmp/...`: writes and uploads are confined to the agent workspace, and an
    absolute path outside it is rejected. Do **not** give this node an
    `output_parser` schema for the file, and do **not** bind anything off it.
-2. **Upload it.** A `tool_call` on **`oh:storage_upload_file`** with that same
-   path as a **literal** string: `{ "path": "report.html" }`. Because this is a
-   real node, its `file_id` is a node output rather than model-authored JSON:
-   bind `=nodes.<upload>.item.json.file_id`.
-3. **Mint a link that outlives approval.** A `tool_call` on
-   **`oh:storage_get_link`** with
-   `{ "file_id": "=nodes.<upload>.item.json.file_id", "expires_in_seconds": 900 }`
-   returns `{ url, expires_at }`. Bind `=nodes.<link>.item.json.url`.
+2. **Upload it.** Use a host-native storage upload action from the live tool
+   catalog with that same path as a **literal** string. Because this is a real
+   node, its storage handle is a node output rather than model-authored JSON;
+   use the action contract's exact output path.
+3. **Mint a link that outlives approval.** Use the matching host-native storage
+   link action, binding the upload handle through the paths declared by both
+   contracts. Request a roughly 15-minute expiry and bind the returned URL.
    The send is an outbound action, so it may be parked for human approval for up
    to ~10 minutes before it fires; the link's TTL must comfortably outlive that
    window or the provider will fetch a dead URL. The URL is a bearer capability
