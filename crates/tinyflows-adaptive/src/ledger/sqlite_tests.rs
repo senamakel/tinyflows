@@ -16,6 +16,37 @@ async fn passes_the_tenant_isolation_suite() {
 }
 
 #[tokio::test]
+async fn opening_a_legacy_episode_table_migrates_to_tenant_scoped_identity() {
+    let root = std::env::temp_dir().join(format!("adaptive-episode-migration-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).expect("temp dir");
+    let path = root.join("ledger.db");
+    let connection = Connection::open(&path).expect("legacy database");
+    connection
+        .execute_batch(
+            "CREATE TABLE episodes (
+                id TEXT PRIMARY KEY,
+                scope_key TEXT NOT NULL DEFAULT '',
+                goal TEXT NOT NULL,
+                status TEXT NOT NULL,
+                attempt INTEGER NOT NULL DEFAULT 0,
+                stalled INTEGER NOT NULL DEFAULT 0,
+                started_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+             );",
+        )
+        .expect("legacy schema");
+    drop(connection);
+
+    let store = SqliteLedger::open(&path).expect("migrate legacy schema");
+    let a = store.for_tenant("user-a");
+    let b = store.for_tenant("user-b");
+    conformance::run_tenants(&store, &a, &b).await;
+
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[tokio::test]
 async fn a_scoped_handle_shares_the_connection_rather_than_the_file() {
     // Two handles for the SAME tenant must see each other's writes — that
     // is what "shares" means. Probing it across scopes would now fail by
