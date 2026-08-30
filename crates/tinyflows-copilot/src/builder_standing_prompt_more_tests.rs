@@ -5,6 +5,12 @@ use super::super::*;
 use super::{contains_normalized, normalize_whitespace, req};
 use serde_json::json;
 
+/// narration, no draft-then-restate, lead with substance. Without these
+/// the reasoning-tier model narrates its chain of thought in the visible
+/// reply ("let me think… actually wait… let me reconsider") and restates
+/// its questions twice in the same message. (The harness already keeps
+/// real reasoning blocks out of the visible text — this is the model
+/// choosing to narrate in its output, so a prompt rule is the fix.)
 #[test]
 fn standing_prompt_teaches_reply_hygiene() {
     const STANDING_PROMPT: &str = crate::prompts::WORKFLOW_BUILDER;

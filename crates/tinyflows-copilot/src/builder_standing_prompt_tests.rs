@@ -261,9 +261,3 @@ fn standing_prompt_teaches_plain_language_and_readonly_memory() {
 }
 
 /// The standing prompt must teach reply hygiene: no deliberation
-/// narration, no draft-then-restate, lead with substance. Without these
-/// the reasoning-tier model narrates its chain of thought in the visible
-/// reply ("let me think… actually wait… let me reconsider") and restates
-/// its questions twice in the same message. (The harness already keeps
-/// real reasoning blocks out of the visible text — this is the model
-/// choosing to narrate in its output, so a prompt rule is the fix.)
