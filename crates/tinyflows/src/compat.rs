@@ -375,3 +375,7 @@ fn reaches_deterministically_via_port(
         .any(|edge| reaches_on_main_edges(graph, &edge.to_node, target, stop))
 }
 
+
+#[cfg(test)]
+#[path = "compat_tests.rs"]
+mod tests;
