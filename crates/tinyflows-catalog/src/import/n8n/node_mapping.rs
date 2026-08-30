@@ -5,6 +5,9 @@ use tinyflows::model::NodeKind;
 
 use super::expr::translate_config;
 
+/// Maps a single n8n node `type` + `parameters` to a tinyflows kind and config.
+/// Unrecognized types return a `transform` placeholder carrying the original
+/// type/params under `_n8n_import` and record a warning.
 fn map_node(
     n8n_type: &str,
     params: &Value,

@@ -202,10 +202,6 @@ pub fn map_n8n_workflow(value: &Value) -> Result<N8nImportResult, String> {
     Ok(N8nImportResult { graph, warnings })
 }
 
-/// Maps a single n8n node `type` + `parameters` to a tinyflows kind and config.
-/// Unrecognized types return a `transform` placeholder carrying the original
-/// type/params under `_n8n_import` and record a warning.
-
 mod expr;
 mod graph;
 mod node_mapping;
