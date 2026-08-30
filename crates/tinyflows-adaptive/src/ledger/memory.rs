@@ -254,9 +254,11 @@ impl Ledger for MemoryLedger {
             ..episode.clone()
         };
         let mut inner = self.guard();
-        match inner.episodes.iter_mut().find(|e| {
-            e.id == episode.id && e.scope_key.as_deref() == self.scope.as_deref()
-        }) {
+        match inner
+            .episodes
+            .iter_mut()
+            .find(|e| e.id == episode.id && e.scope_key.as_deref() == self.scope.as_deref())
+        {
             Some(existing) => {
                 // `started_at` and the scope are facts about creation, not
                 // progress, so an update leaves them alone — matching mongo's
