@@ -412,8 +412,9 @@ fn json_path_to_jq(tail: &str) -> Option<String> {
             jq.push('.');
             jq.push_str(&after[..end]);
             rest = &after[end..];
-        } else if let Some(after) = rest.strip_prefix('[') {
+        } else {
             // `["identifier"]` or `['identifier']` — string keys only.
+            let after = rest.strip_prefix('[')?;
             let close = after.find(']')?;
             let key = after[..close].trim();
             let key = key
@@ -426,8 +427,6 @@ fn json_path_to_jq(tail: &str) -> Option<String> {
             jq.push('.');
             jq.push_str(&jq_field(key));
             rest = &after[close + 1..];
-        } else {
-            return None;
         }
     }
     Some(jq)
