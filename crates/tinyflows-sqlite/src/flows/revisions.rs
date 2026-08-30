@@ -253,3 +253,7 @@ fn map_revision_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<FlowRevision> {
         created_at: row.get(5)?,
     })
 }
+
+#[cfg(test)]
+#[path = "revisions_tests.rs"]
+mod tests;

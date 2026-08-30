@@ -443,3 +443,7 @@ fn map_flow_run_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<FlowRun> {
 // ─────────────────────────────────────────────────────────────────────────────
 // flow_suggestions — discovery-agent workflow suggestions (Flow Scout)
 // ─────────────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+#[path = "runs_tests.rs"]
+mod tests;

@@ -63,3 +63,7 @@ pub fn kv_delete(dir: &Path, namespace: &str, key: &str) -> Result<()> {
         Ok(())
     })
 }
+
+#[cfg(test)]
+#[path = "kv_tests.rs"]
+mod tests;

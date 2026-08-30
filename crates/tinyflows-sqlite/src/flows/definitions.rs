@@ -257,3 +257,7 @@ fn map_flow_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Flow> {
         require_approval: row.get::<_, i64>(8)? != 0,
     })
 }
+
+#[cfg(test)]
+#[path = "definitions_tests.rs"]
+mod tests;

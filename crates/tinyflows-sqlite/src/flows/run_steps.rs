@@ -67,3 +67,7 @@ pub fn upsert_flow_run_step(dir: &Path, run_id: &str, step: &FlowRunStep) -> Res
         })
     })
 }
+
+#[cfg(test)]
+#[path = "run_steps_tests.rs"]
+mod tests;

@@ -156,3 +156,7 @@ fn map_suggestion_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<FlowSuggestio
         source_run_id: row.get(12)?,
     })
 }
+
+#[cfg(test)]
+#[path = "suggestions_tests.rs"]
+mod tests;
