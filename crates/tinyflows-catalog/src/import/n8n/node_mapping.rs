@@ -51,10 +51,7 @@ pub(super) fn map_node(
                 map_split_out(params, warnings, n8n_name),
             )
         }
-        "httpRequest" => (
-            NodeKind::HttpRequest,
-            map_http_request(params, warnings, n8n_name),
-        ),
+        "httpRequest" => map_http_request_node(params, warnings, n8n_name),
         "code" | "function" | "functionItem" => map_code_node(params, warnings, n8n_name),
         "scheduleTrigger" | "cron" | "interval" => (
             NodeKind::Trigger,
@@ -185,6 +182,9 @@ fn derive_schedule(params: &Value) -> Option<Value> {
 /// Converts an n8n unit name + count to milliseconds, for the fixed-interval
 /// (not calendar-based) units n8n exposes.
 fn interval_to_every_ms(unit: &str, value: f64) -> Option<f64> {
+    if !value.is_finite() || value <= 0.0 {
+        return None;
+    }
     let ms_per_unit = match unit {
         "seconds" => 1_000.0,
         "minutes" => 60_000.0,
@@ -192,7 +192,8 @@ fn interval_to_every_ms(unit: &str, value: f64) -> Option<f64> {
         "days" => 86_400_000.0,
         _ => return None,
     };
-    Some(value * ms_per_unit)
+    let milliseconds = value * ms_per_unit;
+    (milliseconds >= 1.0).then_some(milliseconds)
 }
 
 /// Maps n8n `if` parameters onto tinyflows' `condition` config.
@@ -240,10 +241,13 @@ pub(super) fn map_switch(params: &Value, warnings: &mut Vec<String>, n8n_name: &
         Value::Object(map) => map,
         _ => Map::new(),
     };
-    let has_rules = params
-        .get("rules")
-        .or_else(|| params.get("rules").and_then(|r| r.get("values")))
-        .is_some();
+    let has_rules = params.get("rules").is_some_and(|rules| {
+        rules.as_array().is_some_and(|entries| !entries.is_empty())
+            || rules
+                .get("values")
+                .and_then(Value::as_array)
+                .is_some_and(|entries| !entries.is_empty())
+    });
     if has_rules && !cfg.contains_key("field") && !cfg.contains_key("expression") {
         warnings.push(format!(
             "Node '{n8n_name}' is an n8n switch node with a `rules` structure this importer \
@@ -286,16 +290,33 @@ pub(super) fn map_http_request(
     }
     if !cfg.contains_key("body") {
         if let Some(body) = cfg.remove("jsonBody") {
-            cfg.insert("body".to_string(), body);
+            match body {
+                Value::String(text) => match serde_json::from_str(&text) {
+                    Ok(body) => {
+                        cfg.insert("body".to_string(), body);
+                    }
+                    Err(_) => mark_untranslated_http_config(
+                        &mut cfg,
+                        warnings,
+                        n8n_name,
+                        "JSON body text",
+                    ),
+                },
+                body => {
+                    cfg.insert("body".to_string(), body);
+                }
+            }
         } else if let Some(body) = cfg.remove("bodyParameters") {
             match named_parameters(&body) {
                 Some(body) => {
                     cfg.insert("body".to_string(), body);
                 }
-                None => warnings.push(format!(
-                    "Node '{n8n_name}' has HTTP body parameters in an n8n shape this importer \
-                     cannot translate; rebuild `config.body` before enabling the flow."
-                )),
+                None => mark_untranslated_http_config(
+                    &mut cfg,
+                    warnings,
+                    n8n_name,
+                    "body parameters",
+                ),
             }
         }
     }
@@ -306,15 +327,55 @@ pub(super) fn map_http_request(
             Some(headers) => {
                 cfg.insert("headers".to_string(), headers);
             }
-            None => warnings.push(format!(
-                "Node '{n8n_name}' has HTTP headers in an n8n shape this importer cannot \
-                 translate; rebuild `config.headers` before enabling the flow."
-            )),
+            None => mark_untranslated_http_config(
+                &mut cfg,
+                warnings,
+                n8n_name,
+                "headers",
+            ),
         }
     }
     cfg.entry("method".to_string())
         .or_insert_with(|| Value::String("GET".to_string()));
     Value::Object(cfg)
+}
+
+fn mark_untranslated_http_config(
+    cfg: &mut Map<String, Value>,
+    warnings: &mut Vec<String>,
+    n8n_name: &str,
+    part: &str,
+) {
+    warnings.push(format!(
+        "Node '{n8n_name}' has HTTP {part} in an n8n shape this importer cannot translate; \
+         imported as an editable placeholder. Rebuild the request before enabling the flow."
+    ));
+    cfg.insert(
+        "_n8n_import".to_string(),
+        json!({
+            "original_type": "httpRequest",
+            "untranslated_http_config": true,
+            "note": "HTTP configuration could not be translated safely; rebuild before changing this placeholder to http_request.",
+        }),
+    );
+}
+
+pub(super) fn map_http_request_node(
+    params: &Value,
+    warnings: &mut Vec<String>,
+    n8n_name: &str,
+) -> (NodeKind, Value) {
+    let config = map_http_request(params, warnings, n8n_name);
+    let untranslated = config
+        .pointer("/_n8n_import/untranslated_http_config")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let kind = if untranslated {
+        NodeKind::Transform
+    } else {
+        NodeKind::HttpRequest
+    };
+    (kind, config)
 }
 
 /// Converts n8n's `{parameters:[{name,value}]}` collection to the object shape
@@ -427,7 +488,6 @@ fn uses_n8n_code_globals(source: &str) -> bool {
         .iter()
         .any(|needle| source.contains(needle))
         || source
-            .split_whitespace()
-            .next()
-            .is_some_and(|first_word| first_word == "return")
+            .split(|character: char| !character.is_ascii_alphanumeric() && character != '_')
+            .any(|token| token == "return")
 }
