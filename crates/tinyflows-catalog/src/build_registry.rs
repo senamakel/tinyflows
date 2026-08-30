@@ -39,11 +39,19 @@ static BUILD_TURNS: LazyLock<Mutex<HashMap<String, BuildTurn>>> =
 /// `request_id` (for scoped-cancel matching) and the `token` the turn selects
 /// against.
 ///
-/// Overwrites any prior entry on this thread unconditionally: `flows_build`
-/// unregisters on every exit path (success, error, timeout, cancel), so a
-/// still-present entry here means an earlier turn's cleanup hasn't run yet —
-/// the newer registration should win either way, matching `run_registry`'s
-/// duplicate-key handling.
+/// Replaces any prior entry on this thread — matching `run_registry`'s
+/// duplicate-key handling, the newer registration wins either way, since a
+/// still-present entry here usually means an earlier turn's cleanup hasn't
+/// run yet. But "usually" is not "always": a second build can start on the
+/// same thread while the first is still genuinely running (the copilot's own
+/// UI allows queuing another turn before the first resolves). Simply
+/// dropping the displaced `BuildTurn` in that case would drop its
+/// `CancellationToken` too, and with it the only way to stop that turn — the
+/// old model call would keep running, unreachable by Stop, while Stop only
+/// ever targets the newer turn. So the displaced token is cancelled here,
+/// before the new one takes its place, matching the documented
+/// newer-turn-wins behavior with an actual termination of the turn it
+/// replaced instead of an orphaned one.
 pub fn register_build_turn(
     thread_id: String,
     request_id: Option<String>,
@@ -55,10 +63,20 @@ pub fn register_build_turn(
         request_id = request_id.as_deref().unwrap_or("<none>"),
         "[flows] build_registry: registered in-flight build turn"
     );
-    BUILD_TURNS
+    let displaced = BUILD_TURNS
         .lock()
         .unwrap_or_else(|e| e.into_inner())
-        .insert(thread_id, BuildTurn { request_id, token });
+        .insert(thread_id.clone(), BuildTurn { request_id, token });
+    if let Some(displaced) = displaced
+        && !displaced.token.is_cancelled()
+    {
+        tracing::debug!(
+            target: "flows",
+            thread_id = %thread_id,
+            "[flows] build_registry: cancelling displaced build turn on this thread"
+        );
+        displaced.token.cancel();
+    }
 }
 
 /// Signals the in-flight `flows_build` turn on `thread_id` to cancel, scoped by
