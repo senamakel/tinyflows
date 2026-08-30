@@ -1,6 +1,6 @@
 //! n8n node-type -> tinyflows `NodeKind` + config mapping.
 
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 use tinyflows::model::NodeKind;
 
 use super::expr::translate_config;
@@ -8,7 +8,7 @@ use super::expr::translate_config;
 /// Maps a single n8n node `type` + `parameters` to a tinyflows kind and config.
 /// Unrecognized types return a `transform` placeholder carrying the original
 /// type/params under `_n8n_import` and record a warning.
-fn map_node(
+pub(super) fn map_node(
     n8n_type: &str,
     params: &Value,
     n8n_name: &str,
@@ -76,7 +76,7 @@ fn map_node(
 
 /// Builds a tinyflows `trigger` config carrying the given `trigger_kind`
 /// discriminator plus any (expression-translated) source parameters.
-fn trigger_config(
+pub(super) fn trigger_config(
     trigger_kind: &str,
     params: &Value,
     warnings: &mut Vec<String>,
@@ -96,7 +96,7 @@ fn trigger_config(
 /// Maps n8n `httpRequest` parameters onto tinyflows' `{ method, url, ... }`
 /// http_request config. n8n uses `url` + `method`/`requestMethod`; anything
 /// else is carried through after expression translation.
-fn map_http_request(params: &Value, warnings: &mut Vec<String>, n8n_name: &str) -> Value {
+pub(super) fn map_http_request(params: &Value, warnings: &mut Vec<String>, n8n_name: &str) -> Value {
     let translated = translate_config(params, warnings, n8n_name);
     let mut cfg = match translated {
         Value::Object(map) => map,
@@ -117,7 +117,7 @@ fn map_http_request(params: &Value, warnings: &mut Vec<String>, n8n_name: &str) 
 /// the source out of n8n's `jsCode`/`functionCode`/`pythonCode` fields into the
 /// `source` key tinyflows' `code` node actually reads (`vendor/tinyflows/src/nodes/integration/code.rs`)
 /// while preserving the language hint.
-fn map_code(params: &Value, warnings: &mut Vec<String>, n8n_name: &str) -> Value {
+pub(super) fn map_code(params: &Value, warnings: &mut Vec<String>, n8n_name: &str) -> Value {
     let translated = translate_config(params, warnings, n8n_name);
     let mut cfg = match translated {
         Value::Object(map) => map,

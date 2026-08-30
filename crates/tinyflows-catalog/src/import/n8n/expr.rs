@@ -5,7 +5,7 @@ use serde_json::{Map, Value};
 /// Recursively translates n8n `={{ … }}` expressions inside a config `Value`
 /// into tinyflows' `=`-prefixed jq form where trivially possible; anything not
 /// trivially translatable is left as its raw string and a warning is recorded.
-fn translate_config(value: &Value, warnings: &mut Vec<String>, n8n_name: &str) -> Value {
+pub(super) fn translate_config(value: &Value, warnings: &mut Vec<String>, n8n_name: &str) -> Value {
     match value {
         Value::String(s) => Value::String(translate_expr(s, warnings, n8n_name)),
         Value::Array(items) => Value::Array(
@@ -37,7 +37,7 @@ fn translate_config(value: &Value, warnings: &mut Vec<String>, n8n_name: &str) -
 /// (`item` + `items` + `run` + `nodes`), not the item, and `.<path>` without
 /// the `item` segment dereferences a key that does not exist at the scope
 /// root and is GUARANTEED to resolve `null` at runtime (R-C1).
-fn translate_expr(raw: &str, warnings: &mut Vec<String>, n8n_name: &str) -> String {
+pub(super) fn translate_expr(raw: &str, warnings: &mut Vec<String>, n8n_name: &str) -> String {
     // Only n8n expression strings start with `=`; plain values pass through.
     if !raw.starts_with('=') {
         return raw.to_string();
@@ -85,7 +85,7 @@ fn translate_expr(raw: &str, warnings: &mut Vec<String>, n8n_name: &str) -> Stri
 /// `None` for anything that isn't a plain dotted / bracketed-string path
 /// (arithmetic, function calls, bracket-index into arrays, etc.), so the
 /// caller falls back to raw + warn.
-fn json_path_to_jq(tail: &str) -> Option<String> {
+pub(super) fn json_path_to_jq(tail: &str) -> Option<String> {
     let tail = tail.trim();
     if tail.is_empty() {
         return Some(String::new());
@@ -129,7 +129,7 @@ fn json_path_to_jq(tail: &str) -> Option<String> {
 /// (`"first name"`) per jq's dot-plus-quoted-string syntax — required for any
 /// key containing spaces or punctuation, which `.foo bar` (unquoted) is not
 /// valid jq for.
-fn jq_field(key: &str) -> String {
+pub(super) fn jq_field(key: &str) -> String {
     let is_bare_identifier = !key.is_empty()
         && !key.starts_with(|c: char| c.is_ascii_digit())
         && key.chars().all(|c| c.is_alphanumeric() || c == '_');
@@ -140,7 +140,7 @@ fn jq_field(key: &str) -> String {
     }
 }
 
-fn untranslated_warning(n8n_name: &str, raw: &str) -> String {
+pub(super) fn untranslated_warning(n8n_name: &str, raw: &str) -> String {
     format!(
         "Node '{n8n_name}' uses an n8n expression that was not automatically translated \
          (`{raw}`) — it was kept as a raw string. Review and rewrite it as a tinyflows \
