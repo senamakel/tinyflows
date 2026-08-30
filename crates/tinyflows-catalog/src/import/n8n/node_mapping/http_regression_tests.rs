@@ -33,3 +33,25 @@ fn unsupported_http_parts_are_all_preserved_for_repair() {
         json!({ "unsupported": "headers" })
     );
 }
+
+#[test]
+fn expressions_inside_serialized_json_bodies_are_translated_or_preserved_for_repair() {
+    let (kind, cfg) = map_http_request_node(
+        &json!({ "jsonBody": r#"{"payload":"={{ $json.payload }}"}"# }),
+        &mut Vec::new(),
+        "Nested expression HTTP",
+    );
+    assert_eq!(kind, NodeKind::HttpRequest);
+    assert_eq!(cfg["body"]["payload"], json!("=.item.payload"));
+
+    let (kind, cfg) = map_http_request_node(
+        &json!({ "jsonBody": r#"{"payload":"={{ $json.payload + 1 }}"}"# }),
+        &mut Vec::new(),
+        "Untranslated nested expression HTTP",
+    );
+    assert_eq!(kind, NodeKind::Transform);
+    assert_eq!(
+        cfg["_n8n_import"]["untranslated"]["jsonBody"]["payload"],
+        json!("={{ $json.payload + 1 }}")
+    );
+}

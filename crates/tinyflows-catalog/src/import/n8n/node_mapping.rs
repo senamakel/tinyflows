@@ -296,7 +296,19 @@ pub(super) fn map_http_request(
                 }
                 Value::String(text) => match serde_json::from_str(&text) {
                     Ok(body) => {
-                        cfg.insert("body".to_string(), body);
+                        let body = translate_config(&body, warnings, n8n_name);
+                        if contains_expression_string(&body) {
+                            mark_untranslated_http_config(
+                                &mut cfg,
+                                warnings,
+                                n8n_name,
+                                "JSON body expression",
+                                "jsonBody",
+                                body,
+                            );
+                        } else {
+                            cfg.insert("body".to_string(), body);
+                        }
                     }
                     Err(_) => mark_untranslated_http_config(
                         &mut cfg,
@@ -347,6 +359,15 @@ pub(super) fn map_http_request(
     cfg.entry("method".to_string())
         .or_insert_with(|| Value::String("GET".to_string()));
     Value::Object(cfg)
+}
+
+fn contains_expression_string(value: &Value) -> bool {
+    match value {
+        Value::String(text) => text.starts_with('='),
+        Value::Array(items) => items.iter().any(contains_expression_string),
+        Value::Object(map) => map.values().any(contains_expression_string),
+        _ => false,
+    }
 }
 
 fn mark_untranslated_http_config(

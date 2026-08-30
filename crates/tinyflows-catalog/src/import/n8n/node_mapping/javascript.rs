@@ -15,6 +15,8 @@ fn uses_n8n_code_globals(source: &str) -> bool {
     let mut paren_depth = 0usize;
     let mut function_depths = Vec::new();
     let mut pending_function_body = None;
+    let mut pending_variable_declaration = false;
+    let mut items_bound = false;
     while index < bytes.len() {
         let starts_comment = bytes[index] == b'/'
             && matches!(bytes.get(index + 1), Some(b'/') | Some(b'*'));
@@ -106,16 +108,50 @@ fn uses_n8n_code_globals(source: &str) -> bool {
                 let token = &source[start..index];
                 if token == "function" && previous_significant(bytes, start) != Some(b'.') {
                     pending_function_body = Some(PendingFunctionBody::Declaration(paren_depth));
+                    pending_variable_declaration = false;
+                } else if matches!(token, "const" | "let" | "var") {
+                    pending_variable_declaration = true;
+                } else if token == "items" {
+                    let function_parameter = matches!(
+                        pending_function_body,
+                        Some(PendingFunctionBody::Declaration(depth)) if paren_depth > depth
+                    );
+                    let arrow_parameter = arrow_follows_parameter(bytes, index);
+                    if pending_variable_declaration || function_parameter || arrow_parameter {
+                        items_bound = true;
+                    } else if !items_bound {
+                        return true;
+                    }
+                    pending_variable_declaration = false;
                 } else if ["$json", "$input", "$node"].contains(&token)
                     || (token == "return" && function_depths.is_empty())
                 {
                     return true;
+                } else {
+                    pending_variable_declaration = false;
                 }
             }
             _ => index += 1,
         }
     }
     false
+}
+
+fn arrow_follows_parameter(bytes: &[u8], mut index: usize) -> bool {
+    while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
+        index += 1;
+    }
+    if bytes.get(index..index + 2) == Some(b"=>") {
+        return true;
+    }
+    if bytes.get(index) != Some(&b')') {
+        return false;
+    }
+    index += 1;
+    while bytes.get(index).is_some_and(u8::is_ascii_whitespace) {
+        index += 1;
+    }
+    bytes.get(index..index + 2) == Some(b"=>")
 }
 
 fn is_regex_start(bytes: &[u8], index: usize) -> bool {
