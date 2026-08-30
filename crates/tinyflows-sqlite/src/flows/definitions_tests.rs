@@ -1,8 +1,8 @@
 //! Tests for `flow_definitions` CRUD, listing, and last-run bookkeeping.
 
 use super::*;
-use crate::flows::test_support::*;
 use crate::flows::runs::force_corrupt_graph_json_for_test;
+use crate::flows::test_support::*;
 use tempfile::TempDir;
 
 #[test]
@@ -28,14 +28,12 @@ fn create_get_list_delete_roundtrip() {
     assert!(list_flows(&dir).unwrap().0.is_empty());
 }
 
-
 #[test]
 fn get_flow_returns_none_for_unknown_id() {
     let tmp = TempDir::new().unwrap();
     let dir = test_dir(&tmp);
     assert!(get_flow(&dir, "missing").unwrap().is_none());
 }
-
 
 #[test]
 fn remove_flow_errors_when_not_found() {
@@ -44,7 +42,6 @@ fn remove_flow_errors_when_not_found() {
     let err = remove_flow(&dir, "missing").unwrap_err();
     assert!(err.to_string().contains("not found"));
 }
-
 
 #[test]
 fn set_enabled_toggles_and_persists() {
@@ -63,7 +60,6 @@ fn set_enabled_toggles_and_persists() {
     assert!(enabled.enabled);
 }
 
-
 #[test]
 fn record_run_sets_last_run_fields() {
     let tmp = TempDir::new().unwrap();
@@ -76,7 +72,6 @@ fn record_run_sets_last_run_fields() {
     assert!(reloaded.last_run_at.is_some());
     assert_eq!(reloaded.last_status.as_deref(), Some("completed"));
 }
-
 
 #[test]
 fn stored_graph_older_than_current_schema_is_migrated_on_read() {
@@ -111,7 +106,6 @@ fn stored_graph_older_than_current_schema_is_migrated_on_read() {
     assert_eq!(loaded.graph.nodes.len(), 1);
 }
 
-
 #[test]
 fn create_flow_persists_require_approval() {
     let tmp = TempDir::new().unwrap();
@@ -123,7 +117,6 @@ fn create_flow_persists_require_approval() {
     let reloaded = get_flow(&dir, &flow.id).unwrap().unwrap();
     assert!(reloaded.require_approval);
 }
-
 
 #[test]
 fn legacy_flow_definitions_row_without_require_approval_column_defaults_false() {
@@ -153,7 +146,6 @@ fn legacy_flow_definitions_row_without_require_approval_column_defaults_false() 
 
 // ── list_enabled_flows ────────────────────────────────────────────────────
 
-
 #[test]
 fn list_enabled_flows_excludes_disabled() {
     let tmp = TempDir::new().unwrap();
@@ -172,7 +164,6 @@ fn list_enabled_flows_excludes_disabled() {
 }
 
 // ── flow_runs CRUD ────────────────────────────────────────────────────────
-
 
 #[test]
 fn insert_duplicate_flow_makes_a_disabled_copy_with_new_id_and_same_graph() {
@@ -213,7 +204,6 @@ fn insert_duplicate_flow_makes_a_disabled_copy_with_new_id_and_same_graph() {
 
 // ── prune_flow_runs ───────────────────────────────────────────────────────
 
-
 #[test]
 fn list_flows_skips_a_corrupt_row_and_reports_the_count() {
     let tmp = TempDir::new().unwrap();
@@ -240,7 +230,6 @@ fn list_flows_skips_a_corrupt_row_and_reports_the_count() {
     assert!(!ids.contains(&bad.id.as_str()));
 }
 
-
 #[test]
 fn list_flows_skips_a_row_whose_schema_version_is_newer_than_this_build_supports() {
     // The real-world R-M4 scenario: a user ran a newer build that persisted a
@@ -266,7 +255,6 @@ fn list_flows_skips_a_row_whose_schema_version_is_newer_than_this_build_supports
     assert_eq!(flows[0].id, good.id);
 }
 
-
 #[test]
 fn list_enabled_flows_still_returns_the_good_rows_when_one_is_corrupt() {
     // This is the blast-radius scenario R-M4 flags for `bus.rs::handle_app_event`:
@@ -284,7 +272,6 @@ fn list_enabled_flows_still_returns_the_good_rows_when_one_is_corrupt() {
     assert_eq!(enabled.len(), 1);
     assert_eq!(enabled[0].id, good.id);
 }
-
 
 #[test]
 fn list_enabled_flows_excludes_a_corrupt_disabled_row_without_counting_it_as_skipped() {
@@ -314,5 +301,3 @@ fn list_enabled_flows_excludes_a_corrupt_disabled_row_without_counting_it_as_ski
 }
 
 // ── R-m1: concurrent step upserts must not lose a step ──────────────────────
-
-

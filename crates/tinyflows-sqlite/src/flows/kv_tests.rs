@@ -29,5 +29,3 @@ fn kv_get_set_round_trips_and_is_namespace_scoped() {
 }
 
 // ── require_approval ─────────────────────────────────────────────────────
-
-

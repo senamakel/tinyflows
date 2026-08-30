@@ -42,7 +42,6 @@ fn schema_initializes_correctly_on_a_fresh_database_and_is_idempotent_across_cal
     assert!(get_flow_run(&dir, run_id).unwrap().is_some());
 }
 
-
 #[test]
 fn schema_initializes_independently_for_each_distinct_database_path() {
     // Regression guard for the once-per-process cache: if it were keyed by a
@@ -62,7 +61,6 @@ fn schema_initializes_independently_for_each_distinct_database_path() {
     assert_eq!(get_flow(&dir_a, &flow_a.id).unwrap().unwrap().id, flow_a.id);
     assert_eq!(get_flow(&dir_b, &flow_b.id).unwrap().unwrap().id, flow_b.id);
 }
-
 
 /// R-m8 regression: gating the DDL behind a per-path "already initialized" set
 /// must not cost the store its self-healing.
@@ -125,4 +123,3 @@ fn schema_reinitializes_when_the_database_file_is_deleted_at_runtime() {
     let (flows_final, _) = list_flows(&dir).unwrap();
     assert_eq!(flows_final.len(), 1);
 }
-

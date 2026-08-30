@@ -12,7 +12,6 @@ pub(crate) fn test_dir(tmp: &TempDir) -> PathBuf {
     dir
 }
 
-
 pub(crate) fn trigger_graph() -> WorkflowGraph {
     WorkflowGraph {
         nodes: vec![Node {
@@ -27,7 +26,6 @@ pub(crate) fn trigger_graph() -> WorkflowGraph {
         ..Default::default()
     }
 }
-
 
 /// An automatic-trigger (`schedule`) graph — `trigger_is_automatic` returns
 /// `true` for this, unlike [`trigger_graph`]'s manual (no `trigger_kind`)
@@ -46,5 +44,3 @@ pub(crate) fn automatic_schedule_graph() -> WorkflowGraph {
         ..Default::default()
     }
 }
-
-

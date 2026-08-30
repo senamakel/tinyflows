@@ -2,8 +2,8 @@
 //! auto-disarm behavior.
 
 use super::*;
-use crate::flows::test_support::*;
 use crate::flows::definitions::{create_flow, set_enabled};
+use crate::flows::test_support::*;
 use rusqlite::Connection;
 use tempfile::TempDir;
 
@@ -31,7 +31,6 @@ fn update_flow_graph_bumps_updated_at_and_preserves_created_at() {
     assert_eq!(updated.created_at, flow.created_at);
     assert_eq!(updated.graph.name, "renamed-graph");
 }
-
 
 /// The guarded UPDATE and the revision insert must commit as one unit. If the
 /// revision insert fails (simulated here by dropping `flow_revisions` out
@@ -75,7 +74,6 @@ fn update_flow_graph_rolls_back_the_graph_update_when_revision_capture_fails() {
     assert_eq!(reloaded.graph.name, flow.graph.name);
 }
 
-
 /// `enabled_override: None` must leave the persisted `enabled` column
 /// exactly as it was — `update_flow_graph` re-reads the current row and
 /// falls back to `current.enabled`, not to whatever the caller might have
@@ -107,7 +105,6 @@ fn update_flow_graph_with_none_override_preserves_current_enabled_column() {
     assert!(reloaded.enabled);
 }
 
-
 /// `enabled_override: Some(false)` must force-persist `enabled=false`
 /// regardless of what the row's `enabled` column currently holds — this is
 /// the mechanism `flows_update`'s B29 Rule 1 analogue relies on to disarm a
@@ -138,7 +135,6 @@ fn update_flow_graph_with_some_false_override_forces_disabled() {
     let reloaded = get_flow(&dir, &flow.id).unwrap().unwrap();
     assert!(!reloaded.enabled);
 }
-
 
 /// Regression for the silent live-arming race Codex flagged on this PR:
 /// `flows_update` (ops.rs) makes its manual→automatic disarm decision from
@@ -185,7 +181,6 @@ fn update_flow_graph_override_wins_over_concurrently_enabled_row() {
     assert!(!reloaded.enabled);
 }
 
-
 /// R-m2 regression: the manual→automatic disarm decision must be computed
 /// against the row `update_flow_graph` JUST re-read (`current`), never a
 /// caller-supplied belief about the flow's prior state. Before the fix,
@@ -229,7 +224,6 @@ fn update_flow_graph_disarms_transition_from_the_fresh_row_even_when_override_as
     assert!(!reloaded.enabled);
 }
 
-
 /// Sibling of the above: when there is NO transition (the row was already
 /// automatic before this call, matching what's actually in the DB right
 /// now), an ordinary `enabled_override` is honoured normally — the fix must
@@ -270,7 +264,6 @@ fn update_flow_graph_does_not_disarm_an_automatic_to_automatic_update() {
     );
 }
 
-
 #[test]
 fn update_flow_graph_can_change_require_approval() {
     let tmp = TempDir::new().unwrap();
@@ -294,5 +287,3 @@ fn update_flow_graph_can_change_require_approval() {
     let reloaded = get_flow(&dir, &flow.id).unwrap().unwrap();
     assert!(reloaded.require_approval);
 }
-
-

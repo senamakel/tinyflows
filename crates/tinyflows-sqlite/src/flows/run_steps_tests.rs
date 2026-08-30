@@ -1,9 +1,9 @@
 //! Tests for concurrent incremental step persistence.
 
 use super::*;
-use crate::flows::test_support::*;
 use crate::flows::definitions::create_flow;
 use crate::flows::runs::{get_flow_run, insert_flow_run};
+use crate::flows::test_support::*;
 use tempfile::TempDir;
 
 #[test]
@@ -71,7 +71,6 @@ fn concurrent_step_upserts_do_not_lose_a_step() {
     assert!(node_ids.contains("branch-b"));
 }
 
-
 #[test]
 fn concurrent_upserts_to_the_same_node_id_do_not_corrupt_the_step_list() {
     // Same run, same node_id, racing "replace" writes — the transaction must
@@ -117,5 +116,3 @@ fn concurrent_upserts_to_the_same_node_id_do_not_corrupt_the_step_list() {
 }
 
 // ── R-m8: schema init is gated to once per process per database path ───────
-
-

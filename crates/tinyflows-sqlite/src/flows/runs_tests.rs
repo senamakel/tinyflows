@@ -2,8 +2,8 @@
 //! resume-tracking helpers.
 
 use super::*;
-use crate::flows::test_support::*;
 use crate::flows::definitions::create_flow;
+use crate::flows::test_support::*;
 use tempfile::TempDir;
 
 #[test]
@@ -61,7 +61,6 @@ fn flow_run_insert_finish_get_round_trip() {
     assert!(finished.error.is_none());
 }
 
-
 #[test]
 fn finish_flow_run_records_error_on_failure() {
     let tmp = TempDir::new().unwrap();
@@ -94,14 +93,12 @@ fn finish_flow_run_records_error_on_failure() {
     assert_eq!(finished.error.as_deref(), Some("boom"));
 }
 
-
 #[test]
 fn get_flow_run_returns_none_for_unknown_id() {
     let tmp = TempDir::new().unwrap();
     let dir = test_dir(&tmp);
     assert!(get_flow_run(&dir, "missing").unwrap().is_none());
 }
-
 
 #[test]
 fn list_flow_runs_orders_newest_first_and_is_scoped_to_flow() {
@@ -126,7 +123,6 @@ fn list_flow_runs_orders_newest_first_and_is_scoped_to_flow() {
 
 // ── insert_duplicate_flow ─────────────────────────────────────────────────
 
-
 fn seed_run(dir: &Path, flow_id: &str, id: &str, day: u32, status: &str) {
     let started = format!("2026-01-{day:02}T00:00:00Z");
     insert_flow_run(dir, id, flow_id, id, &started).unwrap();
@@ -144,7 +140,6 @@ fn seed_run(dir: &Path, flow_id: &str, id: &str, day: u32, status: &str) {
         .unwrap();
     }
 }
-
 
 #[test]
 fn prune_flow_runs_keeps_newest_n_terminal_runs() {
@@ -164,7 +159,6 @@ fn prune_flow_runs_keeps_newest_n_terminal_runs() {
     let ids: Vec<_> = remaining.iter().map(|r| r.id.as_str()).collect();
     assert_eq!(ids, vec!["run-5", "run-4"], "newest two survive");
 }
-
 
 #[test]
 fn prune_flow_runs_never_removes_pending_approval_run() {
@@ -192,7 +186,6 @@ fn prune_flow_runs_never_removes_pending_approval_run() {
     assert_eq!(deleted, 3);
 }
 
-
 #[test]
 fn prune_flow_runs_leaves_running_rows_alone() {
     let tmp = TempDir::new().unwrap();
@@ -209,7 +202,6 @@ fn prune_flow_runs_leaves_running_rows_alone() {
     let ids: std::collections::HashSet<_> = remaining.iter().map(|r| r.id.as_str()).collect();
     assert!(ids.contains("live"), "a running run is never pruned");
 }
-
 
 #[test]
 fn insert_flow_run_auto_prunes_beyond_retention_cap() {
@@ -253,7 +245,6 @@ fn insert_flow_run_auto_prunes_beyond_retention_cap() {
     );
 }
 
-
 #[test]
 fn list_flow_runs_respects_limit() {
     let tmp = TempDir::new().unwrap();
@@ -277,7 +268,6 @@ fn list_flow_runs_respects_limit() {
 }
 
 // ── flow_suggestions ─────────────────────────────────────────────────────────
-
 
 #[test]
 fn list_running_run_ids_returns_only_running_rows() {
@@ -333,7 +323,6 @@ fn list_running_run_ids_returns_only_running_rows() {
     );
 }
 
-
 #[test]
 fn list_running_run_ids_excludes_rows_started_at_or_after_the_floor() {
     let tmp = TempDir::new().unwrap();
@@ -357,7 +346,6 @@ fn list_running_run_ids_excludes_rows_started_at_or_after_the_floor() {
     );
 }
 
-
 #[test]
 fn mark_run_interrupted_reconciles_a_running_row_with_reason() {
     let tmp = TempDir::new().unwrap();
@@ -374,7 +362,6 @@ fn mark_run_interrupted_reconciles_a_running_row_with_reason() {
     assert_eq!(row.finished_at.as_deref(), Some("2026-01-01T00:05:00Z"));
     assert_eq!(row.error.as_deref(), Some("boom reason"));
 }
-
 
 #[test]
 fn mark_run_interrupted_is_a_noop_for_a_terminal_row() {
@@ -406,7 +393,6 @@ fn mark_run_interrupted_is_a_noop_for_a_terminal_row() {
     assert_eq!(row.status, "completed");
     assert!(row.error.is_none());
 }
-
 
 /// `expire_parked_runs` must return only the runs it ACTUALLY flipped, not the
 /// candidates its `SELECT` saw.
@@ -477,5 +463,3 @@ fn expire_parked_runs_returns_only_rows_it_actually_flipped() {
 }
 
 // ── R-M4: corrupt/unmigratable graph_json rows must not brick a list ────────
-
-

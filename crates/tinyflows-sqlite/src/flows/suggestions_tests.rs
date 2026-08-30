@@ -22,7 +22,6 @@ fn sample_suggestion(id: &str, title: &str) -> FlowSuggestion {
     }
 }
 
-
 #[test]
 fn suggestions_upsert_list_roundtrip() {
     let tmp = TempDir::new().unwrap();
@@ -48,7 +47,6 @@ fn suggestions_upsert_list_roundtrip() {
     assert_eq!(alpha.trigger_hint.as_deref(), Some("schedule"));
 }
 
-
 #[test]
 fn upsert_suggestions_preserves_user_status_on_rerun() {
     let tmp = TempDir::new().unwrap();
@@ -72,14 +70,12 @@ fn upsert_suggestions_preserves_user_status_on_rerun() {
     assert!(active.is_empty());
 }
 
-
 #[test]
 fn set_suggestion_status_returns_false_for_unknown_id() {
     let tmp = TempDir::new().unwrap();
     let dir = test_dir(&tmp);
     assert!(!set_suggestion_status(&dir, "missing", SuggestionStatus::Built).unwrap());
 }
-
 
 #[test]
 fn list_suggestions_without_status_returns_all() {
@@ -96,7 +92,6 @@ fn list_suggestions_without_status_returns_all() {
     assert_eq!(list_suggestions(&dir, None, 50).unwrap().len(), 1);
 }
 
-
 #[test]
 fn upsert_suggestions_empty_is_noop() {
     let tmp = TempDir::new().unwrap();
@@ -105,5 +100,3 @@ fn upsert_suggestions_empty_is_noop() {
 }
 
 // ── Orphaned-running-run reconciliation (bug B42) ──────────────────────────
-
-
