@@ -122,6 +122,46 @@ fn update_flow_graph_bumps_updated_at_and_preserves_created_at() {
     assert_eq!(updated.graph.name, "renamed-graph");
 }
 
+/// The guarded UPDATE and the revision insert must commit as one unit. If the
+/// revision insert fails (simulated here by dropping `flow_revisions` out
+/// from under the store), the graph update must not have taken effect either
+/// — a partial commit would mean a caller-observed error where the save
+/// silently succeeded, with no revision to prove it.
+#[test]
+fn update_flow_graph_rolls_back_the_graph_update_when_revision_capture_fails() {
+    let tmp = TempDir::new().unwrap();
+    let dir = test_dir(&tmp);
+    let flow = create_flow(&dir, "demo".to_string(), trigger_graph(), false, true).unwrap();
+
+    // Sabotage the revision table so the INSERT inside the transaction fails.
+    let db_path = dir.join("flows.db");
+    let conn = Connection::open(&db_path).unwrap();
+    conn.execute_batch("DROP TABLE flow_revisions;").unwrap();
+    drop(conn);
+
+    let mut new_graph = trigger_graph();
+    new_graph.name = "renamed-graph".to_string();
+    let err = update_flow_graph(
+        &dir,
+        &flow.id,
+        "renamed".to_string(),
+        new_graph,
+        false,
+        None,
+        false,
+        None,
+    )
+    .unwrap_err();
+    assert!(matches!(err, FlowUpdateError::Store(_)));
+
+    // The UPDATE must have rolled back with the failed revision insert: the
+    // row must still read exactly as `create_flow` left it.
+    let reloaded = get_flow(&dir, &flow.id).unwrap().expect("flow still present");
+    assert_eq!(reloaded.name, "demo");
+    assert_eq!(reloaded.updated_at, flow.updated_at);
+    assert_eq!(reloaded.graph.name, flow.graph.name);
+}
+
 /// `enabled_override: None` must leave the persisted `enabled` column
 /// exactly as it was — `update_flow_graph` re-reads the current row and
 /// falls back to `current.enabled`, not to whatever the caller might have
