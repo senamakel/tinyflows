@@ -175,13 +175,12 @@ mod tests {
     use serde_json::json;
     use tempfile::TempDir;
 
-    fn test_config(tmp: &TempDir) -> Config {
-        Config {
-            workspace_dir: tmp.path().join("workspace"),
-            action_dir: tmp.path().join("workspace"),
-            config_path: tmp.path().join("dir.toml"),
-            ..Config::default()
-        }
+    /// The catalog directory a test writes drafts into. Nested under the
+    /// `TempDir` rather than being the `TempDir` itself, so the code under test
+    /// has to create it — a store that only works against a directory somebody
+    /// else made is a store that fails on first run.
+    fn test_dir(tmp: &TempDir) -> PathBuf {
+        tmp.path().join("workspace").join("flows")
     }
 
     fn sample_graph() -> Value {
@@ -191,7 +190,7 @@ mod tests {
     #[test]
     fn create_get_roundtrip() {
         let tmp = TempDir::new().unwrap();
-        let dir = test_config(&tmp);
+        let dir = test_dir(&tmp);
         let draft = create_draft(
             &dir,
             None,
@@ -210,14 +209,14 @@ mod tests {
     #[test]
     fn get_missing_is_none() {
         let tmp = TempDir::new().unwrap();
-        let dir = test_config(&tmp);
+        let dir = test_dir(&tmp);
         assert!(get_draft(&dir, "does-not-exist").unwrap().is_none());
     }
 
     #[test]
     fn update_patches_fields_and_bumps_updated_at() {
         let tmp = TempDir::new().unwrap();
-        let dir = test_config(&tmp);
+        let dir = test_dir(&tmp);
         let draft = create_draft(
             &dir,
             None,
@@ -244,7 +243,7 @@ mod tests {
     #[test]
     fn list_returns_newest_first_and_delete_removes() {
         let tmp = TempDir::new().unwrap();
-        let dir = test_config(&tmp);
+        let dir = test_dir(&tmp);
         let a = create_draft(&dir, None, "A".into(), sample_graph(), DraftOrigin::Chat).unwrap();
         // Bump a second draft's updated_at by updating it after creation.
         let b = create_draft(&dir, None, "B".into(), sample_graph(), DraftOrigin::Chat).unwrap();
@@ -265,14 +264,14 @@ mod tests {
     #[test]
     fn list_on_missing_dir_is_empty() {
         let tmp = TempDir::new().unwrap();
-        let dir = test_config(&tmp);
+        let dir = test_dir(&tmp);
         assert!(list_drafts(&dir).unwrap().is_empty());
     }
 
     #[test]
     fn rejects_path_traversal_ids() {
         let tmp = TempDir::new().unwrap();
-        let dir = test_config(&tmp);
+        let dir = test_dir(&tmp);
         assert!(get_draft(&dir, "../secret").is_err());
         assert!(draft_path(&dir, "a/b").is_err());
         assert!(draft_path(&dir, "..").is_err());
