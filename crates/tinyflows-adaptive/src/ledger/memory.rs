@@ -174,7 +174,10 @@ impl Ledger for MemoryLedger {
         Ok(inner
             .rows
             .iter()
-            .filter(|(scope, r)| self.visible((!scope.is_empty()).then_some(scope.as_str())) && cited.contains(&r.id.as_str()))
+            .filter(|(scope, r)| {
+                self.visible((!scope.is_empty()).then_some(scope.as_str()))
+                    && cited.contains(&r.id.as_str())
+            })
             .map(|(_, r)| r.clone())
             .collect())
     }
