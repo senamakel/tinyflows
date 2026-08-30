@@ -450,7 +450,7 @@ fn multiple_schedule_intervals_warn_instead_of_dropping_cadences() {
 
 #[test]
 fn non_positive_or_sub_millisecond_intervals_are_not_scheduled() {
-    for value in [-1.0, 0.0, 0.000_1] {
+    for value in [-1.0, 0.0, 0.000_1, f64::MAX] {
         let mut warnings = Vec::new();
         let cfg = trigger_config(
             "schedule",
