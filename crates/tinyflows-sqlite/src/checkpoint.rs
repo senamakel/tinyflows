@@ -112,6 +112,14 @@ impl<State> SqliteCheckpointer<State> {
     }
 }
 
+/// Locks `conn` from inside a [`tokio::task::spawn_blocking`] closure, where
+/// `self.lock()` is unavailable (the closure only owns the cloned `Arc`).
+fn lock_conn(conn: &Arc<Mutex<Connection>>) -> Result<std::sync::MutexGuard<'_, Connection>> {
+    conn.lock().map_err(|_| {
+        GraphError::Checkpoint("sqlite checkpointer: connection lock poisoned".to_string())
+    })
+}
+
 /// Table + indexes. `seq` preserves insertion order; the indexes serve thread
 /// listing, `(thread_id, checkpoint_id)` parent-chain lookups, and — since the
 /// namespace-scoped overrides landed — `(thread_id, namespace, …)` scoped
