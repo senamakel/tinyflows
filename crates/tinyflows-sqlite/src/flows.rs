@@ -644,7 +644,7 @@ pub fn update_flow_graph(
             )
             .context("Failed to prune flow revisions")?;
             Ok(())
-        })
+        }))()
     })
     .map_err(|e| {
         if e.to_string().contains("__conflict__") {
