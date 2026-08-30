@@ -374,10 +374,11 @@ fn an_agent_prompt_mentioning_an_undeclared_field_is_left_alone() {
 
 /// Bindings to node kinds with no declared output schema are the engine's
 /// business, not this gate's — refusing them would refuse most working graphs.
-/// An agent that declares no schema has committed to no shape, so there is
-/// nothing to contradict — and a host may well produce a bindable value anyway.
+/// An agent that declares no schema has no structured output to address at all,
+/// only a raw completion — so *every* field read off it resolves to null, not
+/// just an undeclared one.
 #[test]
-fn a_binding_to_an_agent_with_no_declared_schema_is_left_alone() {
+fn a_binding_to_an_agent_that_declares_no_schema_is_refused() {
     let graph = graph(json!([
         { "id": "draft", "kind": "agent", "name": "Draft", "config": {} },
         { "id": "send", "kind": "tool_call", "name": "Send", "config": {
@@ -386,7 +387,9 @@ fn a_binding_to_an_agent_with_no_declared_schema_is_left_alone() {
         } },
     ]));
 
-    assert!(failures(&graph).is_empty(), "{:?}", failures(&graph));
+    let failures = failures(&graph);
+    assert_eq!(failures.len(), 1, "{failures:?}");
+    assert!(failures[0].contains("output_parser.schema"), "{failures:?}");
 }
 
 /// A binding that skipped the envelope is already reported by the envelope

@@ -246,7 +246,7 @@ fn graph_errors(
                 continue;
             };
             errors.push(CompatibilityError {
-                code: code.to_string(),
+                code,
                 message: format!(
                     "Fan-in node '{}' has predecessor '{}' behind {routing_kind}; \
                      this topology is temporarily unsupported because it can silently lose \
@@ -254,7 +254,6 @@ fn graph_errors(
                     fan_in.id, predecessor
                 ),
                 node_id: Some(fan_in.id.clone()),
-                field: None,
             });
         }
     }
@@ -262,6 +261,15 @@ fn graph_errors(
     errors
 }
 
+/// [`errors`], collapsed to the first refusal as a `code: message` string.
+///
+/// The convenience a save path wants: it has one place to put a rejection
+/// reason, and reporting all of them would not change what the author does
+/// next — the topology has to be flattened either way.
+///
+/// # Errors
+///
+/// The first [`CompatibilityError`], formatted as `code: message`.
 pub fn ensure_compatible(graph: &WorkflowGraph) -> Result<(), String> {
     match errors(graph).into_iter().next() {
         Some(error) => Err(format!("{}: {}", error.code, error.message)),

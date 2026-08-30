@@ -172,19 +172,19 @@ fn binding_failures(graph: &WorkflowGraph) -> Vec<String> {
     failures
 }
 
-/// Tool-call arguments bound to a field an agent's declared schema omits.
+/// Tool-call arguments bound to an agent field that is not addressable.
 ///
-/// An `agent` node that declares an `output_parser.schema` has committed to a
-/// shape — that is what its own sub-port validates and repairs a completion
-/// into. A binding that reads a property the schema does not list is reading
-/// something the node cannot produce, and resolves to null every time.
+/// An `agent` node's structured output is exactly what its `output_parser.schema`
+/// declares — that is the shape the node's own sub-port validates and repairs a
+/// completion into. Reading a property the schema does not list resolves to null
+/// every time, and so does reading *any* property from an agent that declares no
+/// schema at all: without one there is no structured output to address, only the
+/// raw completion.
 ///
-/// Three deliberate narrowings, each one a false positive avoided:
+/// Two deliberate narrowings, each one a false positive avoided:
 ///
 /// - **Only a `tool_call`'s `args`.** An agent's own prompt has no schema to
 ///   check a mention against, and a vaguer answer is not a broken call.
-/// - **Only an agent that declared a schema with `properties`.** Without one
-///   the node has committed to nothing, and this gate has no grounds.
 /// - **Only a binding that went through the envelope.** One that did not is
 ///   already reported by [`binding_failures`], and the author has to fix that
 ///   first; saying it twice in different words reads as two problems.
@@ -213,29 +213,29 @@ fn agent_schema_failures(graph: &WorkflowGraph) -> Vec<String> {
             if target.kind != NodeKind::Agent {
                 continue;
             }
-            let Some(properties) = target
-                .config
-                .get("output_parser")
-                .and_then(|parser| parser.get("schema"))
-                .and_then(|schema| schema.get("properties"))
-                .and_then(|properties| properties.as_object())
-            else {
-                continue;
-            };
             let field = binding
                 .field_path
                 .split('.')
                 .next()
                 .unwrap_or(&binding.field_path);
-            if properties.contains_key(field) {
+            let declared = target
+                .config
+                .get("output_parser")
+                .and_then(|parser| parser.get("schema"))
+                .filter(|schema| !schema.is_null())
+                .and_then(|schema| schema.get("properties"))
+                .and_then(|properties| properties.as_object())
+                .is_some_and(|properties| properties.contains_key(field));
+            if declared {
                 continue;
             }
             failures.push(format!(
                 "node '{}': `{location}` (`{expr}`) reads `{field}` from agent node \
-                 `{target_id}`, whose `output_parser.schema` does not declare it — so this \
-                 resolves to null at run time and the call is made with nothing in `{field}`. \
-                 Fix: declare `{field}` in node `{target_id}`'s `output_parser.schema`, or bind \
-                 to a property it already declares.",
+                 `{target_id}`, whose `output_parser.schema` does not declare it — the agent \
+                 has no addressable `{field}`, so this resolves to null at run time and the \
+                 call is made with nothing in it. Fix: declare `{field}` in node \
+                 `{target_id}`'s `output_parser.schema`, or bind to a property it already \
+                 declares.",
                 node.id,
                 target_id = binding.node_id,
             ));
