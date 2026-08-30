@@ -48,44 +48,33 @@ use crate::observability::CapturingObserver;
 /// must not stall the author. Exceeding it is a skip, never a refusal.
 const RUN_TIMEOUT_SECS: u64 = 15;
 
-/// Sandbox-executes `graph` against `tinyflows`' deterministic MOCK
-/// capabilities (the same shape `DryRunWorkflowTool` uses — see this
-/// section's module doc) and returns one human-readable error per arg of a
-/// real (non-`=`-derived, non-native) `tool_call` node whose `=`-expression
-/// resolved to `null` during that run **and** whose expression is wired to a
-/// specific upstream node's output (directly, via the implicit
-/// `item`/`items` scope, or explicitly via `nodes.<id>...`) rather than to
-/// the trigger.
+/// Every outbound `tool_call` argument in `graph` that a sandbox run proves can
+/// never carry a value.
 ///
-/// This run always sandboxes against `json!({})` as the trigger payload (see
-/// below), so any arg wired to trigger-scoped data — `=item.<field>` /
-/// `=items...` fed directly from the trigger node, or `=run.<field>` (the
-/// trigger metadata itself) — legitimately resolves `null` here even though a
-/// real webhook/app-event/manual trigger WILL populate it at runtime. Hard
-/// gate that on an empty mock run would reject every ordinary trigger-bound
-/// workflow (Codex feedback on PR #4826). Only a `null` resolved from a
-/// genuine upstream **node** reference is escalated — that's the real B18
-/// bug this gate exists to catch: an arg wired to a node output path that can
-/// never resolve (e.g. `GMAIL_SEND_EMAIL.subject =
-/// "=nodes.build_body.item.subject"` where `build_body` never produces
-/// `subject`), which stays broken no matter what the trigger payload is.
+/// One human-readable error per argument, empty on a pass. `native_slug_prefixes`
+/// names the slug prefixes a host uses for its *own* tools (`"oh:"`, say):
+/// those are skipped, because the failure being guarded against is a provider
+/// rejecting a call, and a host's own tool is not a provider.
 ///
-/// Deliberately does **not** wrap the mock `ToolInvoker` in
-/// [`crate::openhuman::flows::tinyflows::caps::PreflightToolInvoker`] the way
-/// `DryRunWorkflowTool` does: that wrapper aborts the WHOLE sandbox run the
-/// instant a node with a `stop` `on_error` policy (the default) hits a
-/// schema-required null arg, which would lose the per-field diagnostic this
-/// gate exists to report for every OTHER node — and this check cares about
-/// EVERY arg, not just ones the schema happens to mark `required`. The plain
-/// mock tool invoker always "succeeds" (a deterministic echo), so the run
-/// settles and every node's config-resolution diagnostics get captured
-/// regardless of on_error policy or schema required-ness.
+/// The run uses an empty trigger payload and the schema-aware mocks, so what it
+/// reports is exactly a null read from an upstream node whose real output the
+/// sandbox does produce — see the module doc for the three cases deliberately
+/// skipped instead.
 ///
-/// Best-effort, same posture as [`validate_tool_contracts`]: a compile
-/// failure (structural errors are already caught by
-/// [`validate_and_migrate_graph`] before this gate ever runs) or a sandbox
-/// error/timeout is SKIPPED — never turned into a false rejection. This
-/// check only ever adds a diagnostic the sandbox actually observed.
+/// # Why the plain mock invoker, and not a validating one
+///
+/// A `ToolInvoker` that rejected a schema-required null would abort the whole
+/// run at the first offending node — the default `on_error` policy is `stop` —
+/// and every *other* node's diagnostics would be lost with it. This gate cares
+/// about every argument, not only the ones a schema happens to mark required,
+/// so it wants a run that settles. The echo invoker always succeeds, so it gets
+/// one.
+///
+/// # Best-effort by construction
+///
+/// A compile failure, a capability error, or a timeout is a skip, never a
+/// refusal: a structural problem is [`validate`](crate::validate)'s to report,
+/// and this only ever adds what a run that actually finished observed.
 pub async fn unresolvable_tool_args(
     graph: &WorkflowGraph,
     native_slug_prefixes: &[&str],
