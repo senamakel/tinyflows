@@ -5,6 +5,9 @@ use tinyflows::model::NodeKind;
 
 use super::expr::translate_config;
 
+mod http;
+use http::{contains_expression_string, named_parameters};
+
 /// Maps a single n8n node `type` + `parameters` to a tinyflows kind and config.
 /// Unrecognized types return a `transform` placeholder carrying the original
 /// type/params under `_n8n_import` and record a warning.
@@ -361,15 +364,6 @@ pub(super) fn map_http_request(
     Value::Object(cfg)
 }
 
-fn contains_expression_string(value: &Value) -> bool {
-    match value {
-        Value::String(text) => text.starts_with('=') && !text.starts_with("=.item"),
-        Value::Array(items) => items.iter().any(contains_expression_string),
-        Value::Object(map) => map.values().any(contains_expression_string),
-        _ => false,
-    }
-}
-
 fn mark_untranslated_http_config(
     cfg: &mut Map<String, Value>,
     warnings: &mut Vec<String>,
@@ -409,19 +403,6 @@ pub(super) fn map_http_request_node(
         NodeKind::HttpRequest
     };
     (kind, config)
-}
-
-/// Converts n8n's `{parameters:[{name,value}]}` collection to the object shape
-/// tinyflows uses for HTTP bodies and headers.
-fn named_parameters(value: &Value) -> Option<Value> {
-    let entries = value.get("parameters").and_then(Value::as_array)?;
-    let mut mapped = Map::new();
-    for entry in entries {
-        let name = entry.get("name").and_then(Value::as_str)?;
-        let value = entry.get("value").cloned().unwrap_or(Value::Null);
-        mapped.insert(name.to_string(), value);
-    }
-    Some(Value::Object(mapped))
 }
 
 /// Maps n8n `splitOut`/`itemLists` parameters onto tinyflows' `split_out`
