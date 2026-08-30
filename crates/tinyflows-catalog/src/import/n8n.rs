@@ -147,9 +147,30 @@ pub fn map_n8n_workflow(value: &Value) -> Result<N8nImportResult, String> {
     // tinyflows requires exactly one trigger. Reconcile the mapped triggers:
     // synthesize a manual one when none survived, or demote extras to
     // placeholders when several did — either way `validate` will pass.
-    reconcile_triggers(&mut nodes, &mut warnings);
+    let synthesized_trigger_id = reconcile_triggers(&mut nodes, &mut warnings);
 
-    let edges = map_connections(value.get("connections"), &name_to_id, &nodes, &mut warnings);
+    let mut edges = map_connections(value.get("connections"), &name_to_id, &nodes, &mut warnings);
+
+    // A synthesized trigger starts with no outgoing edges — nothing in the
+    // source export names it, since it never existed there. Without wiring it
+    // to the graph's actual entry points, the flow "validates" but running it
+    // executes only the disconnected trigger and none of the imported
+    // workflow. Wire it to every node that has no incoming edge of its own
+    // (the graph's roots), excluding the trigger itself.
+    if let Some(trigger_id) = synthesized_trigger_id {
+        let has_incoming: std::collections::HashSet<&str> =
+            edges.iter().map(|e| e.to_node.as_str()).collect();
+        for node in &nodes {
+            if node.id != trigger_id && !has_incoming.contains(node.id.as_str()) {
+                edges.push(Edge {
+                    from_node: trigger_id.clone(),
+                    from_port: "main".to_string(),
+                    to_node: node.id.clone(),
+                    to_port: "main".to_string(),
+                });
+            }
+        }
+    }
 
     let graph = WorkflowGraph {
         schema_version: tinyflows::model::CURRENT_SCHEMA_VERSION,
