@@ -156,7 +156,9 @@ fn update_flow_graph_rolls_back_the_graph_update_when_revision_capture_fails() {
 
     // The UPDATE must have rolled back with the failed revision insert: the
     // row must still read exactly as `create_flow` left it.
-    let reloaded = get_flow(&dir, &flow.id).unwrap().expect("flow still present");
+    let reloaded = get_flow(&dir, &flow.id)
+        .unwrap()
+        .expect("flow still present");
     assert_eq!(reloaded.name, "demo");
     assert_eq!(reloaded.updated_at, flow.updated_at);
     assert_eq!(reloaded.graph.name, flow.graph.name);
