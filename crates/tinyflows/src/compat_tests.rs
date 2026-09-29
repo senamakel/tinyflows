@@ -304,7 +304,7 @@ fn nested_router_reconvergence_graph(inner_kind: &str, inner_ports: &[&str]) -> 
 
 #[test]
 fn engine_compatibility_rejects_main_label_on_conditional_fan_in_path() {
-    let graph = main_port_conditional_fan_in_graph();
+    let g = main_port_conditional_fan_in_graph();
     let errs = errors(&g);
     assert_eq!(errs.len(), 1);
     assert_eq!(errs[0].code, UNSUPPORTED_MAIN_PORT_CONDITIONAL_FAN_IN);
