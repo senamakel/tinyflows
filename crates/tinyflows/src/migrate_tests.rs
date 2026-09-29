@@ -273,3 +273,92 @@ proptest! {
         }
     }
 }
+
+// ---- deserialize_graph: member-located errors ----
+//
+// Ported from OpenHuman, where this lived beside the flow ops.
+
+#[test]
+fn deserialize_graph_names_the_member_in_inputs_agents_and_edges() {
+    let err = deserialize_graph(json!({ "inputs": [{ "type": "string" }] }))
+        .expect_err("input without `name`");
+    assert!(err.starts_with("inputs[0]: "), "got: {err}");
+
+    let err = deserialize_graph(json!({ "agents": [{ "name": "no id" }] }))
+        .expect_err("agent without `id`");
+    assert!(err.starts_with("agents[0]: "), "got: {err}");
+
+    let err = deserialize_graph(json!({ "edges": [{ "from_port": "main" }] }))
+        .expect_err("edge without endpoints");
+    assert!(err.starts_with("edges[0]: "), "got: {err}");
+}
+
+#[test]
+fn deserialize_graph_names_the_node_that_is_missing_a_field() {
+    let err = deserialize_graph(json!({
+        "name": "top-level name is present and is NOT the problem",
+        "nodes": [
+            { "id": "start", "kind": "trigger", "name": "Trigger" },
+            { "id": "nameless", "kind": "trigger" }
+        ]
+    }))
+    .expect_err("a node without `name` must not deserialize");
+
+    assert!(err.starts_with("nodes[1]: "), "got: {err}");
+    // The serde detail survives the wrapping.
+    assert!(
+        err.contains("missing field") && err.contains("name"),
+        "got: {err}"
+    );
+}
+
+#[test]
+fn deserialize_graph_falls_back_when_no_member_is_at_fault() {
+    let err = deserialize_graph(json!({ "name": "valid", "nodes": "not an array" }))
+        .expect_err("a non-array `nodes` must not deserialize");
+
+    assert!(!err.contains("nodes["), "got: {err}");
+    assert!(err.contains("invalid type"), "got: {err}");
+}
+
+#[test]
+fn deserialize_graph_reports_a_non_object_graph_without_inventing_a_location() {
+    let err = deserialize_graph(json!("this is a string, not a workflow graph"))
+        .expect_err("a non-object graph must not deserialize");
+
+    assert!(!err.contains('['), "got: {err}");
+    assert!(err.contains("invalid type"), "got: {err}");
+}
+
+/// The premise of the member-naming tests: a graph with no top-level `name`
+/// deserializes, so `missing field `name`` is ambiguous without a path.
+#[test]
+fn deserialize_graph_accepts_a_graph_with_no_top_level_name() {
+    let graph = deserialize_graph(json!({
+        "nodes": [ { "id": "start", "kind": "trigger", "name": "Trigger" } ]
+    }))
+    .expect("top-level `name` is #[serde(default)] and must not be required");
+    assert_eq!(graph.name, "");
+    assert_eq!(graph.schema_version, CURRENT_SCHEMA_VERSION);
+}
+
+/// When the graph's own fields are at fault *and* a node is independently
+/// invalid, the error must not be pinned on the node.
+#[test]
+fn deserialize_graph_does_not_blame_a_node_for_a_top_level_fault() {
+    let err = deserialize_graph(json!({
+        "name": 123,
+        "nodes": [ { "id": "nameless", "kind": "trigger" } ]
+    }))
+    .expect_err("a non-string top-level `name` must not deserialize");
+
+    assert!(!err.contains("nodes["), "got: {err}");
+    assert!(err.starts_with("name: "), "got: {err}");
+}
+
+#[test]
+fn deserialize_graph_surfaces_a_migration_refusal() {
+    let err = deserialize_graph(json!({ "schema_version": CURRENT_SCHEMA_VERSION + 1 }))
+        .expect_err("a future schema must be refused");
+    assert!(!err.is_empty());
+}
