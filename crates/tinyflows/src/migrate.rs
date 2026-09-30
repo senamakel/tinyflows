@@ -14,7 +14,7 @@
 //! [`WorkflowGraph`]: crate::model::WorkflowGraph
 
 use crate::error::{Result, ValidationError};
-use crate::model::CURRENT_SCHEMA_VERSION;
+use crate::model::{CURRENT_SCHEMA_VERSION, WorkflowGraph};
 use serde_json::Value;
 
 /// Upgrades a persisted [`WorkflowGraph`] JSON value to the current schema.
@@ -100,6 +100,139 @@ pub fn migrate(mut value: Value) -> Result<Value> {
     }
 
     Ok(value)
+}
+
+/// Migrates raw graph JSON and deserializes it into a [`WorkflowGraph`],
+/// attributing any failure to the member that caused it.
+///
+/// This is [`migrate`] followed by `serde_json::from_value`, **without** the
+/// structural [`validate`](crate::validate) step, so a caller that wants every
+/// structural error (via `validate::validate_all`) can run validation itself.
+/// A failure here (an unmigratable schema, JSON that does not fit the model) is
+/// genuinely a single error, whereas structural validation can surface many.
+///
+/// `serde_json` errors carry no path, and `missing field `name`` on its own is
+/// unactionable: every field of `WorkflowGraph` is `#[serde(default)]`, so the
+/// fault is always in a nested object, and a reader who takes it for the
+/// top-level `name` they already set retries unchanged. On failure the error
+/// therefore names the offending element (`nodes[1]: missing field `name``) or
+/// top-level field (`name: invalid type: integer `123`, expected a string`).
+///
+/// # Errors
+///
+/// The [`migrate`] error, rendered, when migration refuses the document;
+/// otherwise the located serde message described above. When the fault is not
+/// in a single element or field (a non-array `nodes`, a non-object graph) the
+/// bare serde message is returned rather than a guessed location.
+///
+/// # Examples
+///
+/// ```
+/// use serde_json::json;
+/// use tinyflows::migrate::deserialize_graph;
+///
+/// let err = deserialize_graph(json!({
+///     "nodes": [
+///         { "id": "start", "kind": "trigger", "name": "Trigger" },
+///         { "id": "nameless", "kind": "trigger" }
+///     ]
+/// }))
+/// .unwrap_err();
+/// assert!(err.starts_with("nodes[1]: "), "{err}");
+/// ```
+pub fn deserialize_graph(value: Value) -> std::result::Result<WorkflowGraph, String> {
+    let migrated = migrate(value).map_err(|e| e.to_string())?;
+    serde_json::from_value::<WorkflowGraph>(migrated.clone())
+        .map_err(|e| locate_graph_error(&migrated, &e))
+}
+
+/// The `WorkflowGraph` fields whose elements carry their own required fields.
+const ELEMENT_ARRAYS: &[&str] = &["nodes", "inputs", "agents", "edges"];
+
+/// Names the element a graph-level deserialization error came from.
+///
+/// Re-deserializes each member of the arrays that carry required fields and
+/// reports the first that fails on its own, as `nodes[1]: <serde error>`. None
+/// of these types use `deny_unknown_fields`, so an element that parses in
+/// isolation is one the graph-level parse accepted too, and a failure found
+/// here is the real fault rather than an artefact of checking it alone.
+///
+/// Runs only on the error path, and falls back to the bare message when the
+/// fault is not in a single element -- a wrong type for `nodes` itself, say.
+fn locate_graph_error(migrated: &Value, err: &serde_json::Error) -> String {
+    // Re-parse with the element arrays emptied. If that still fails, the fault
+    // is in the graph's own fields -- a non-string `name`, say -- and scanning
+    // members would pin it on the first member that happens to be invalid too,
+    // which is a confident wrong answer rather than a vague right one.
+    let mut skeleton = migrated.clone();
+    if let Some(fields) = skeleton.as_object_mut() {
+        for field in ELEMENT_ARRAYS {
+            if let Some(slot) = fields.get_mut(*field) {
+                if slot.is_array() {
+                    *slot = Value::Array(Vec::new());
+                }
+            }
+        }
+    }
+    if serde_json::from_value::<WorkflowGraph>(skeleton).is_err() {
+        return locate_top_level_error(migrated, err);
+    }
+
+    macro_rules! locate {
+        ($field:literal, $ty:ty) => {
+            if let Some(items) = migrated.get($field).and_then(Value::as_array) {
+                for (index, item) in items.iter().enumerate() {
+                    if let Err(inner) = serde_json::from_value::<$ty>(item.clone()) {
+                        return format!("{}[{}]: {}", $field, index, inner);
+                    }
+                }
+            }
+        };
+    }
+
+    locate!("nodes", crate::model::Node);
+    locate!("inputs", crate::model::WorkflowInput);
+    locate!("agents", crate::model::AgentDefinition);
+    locate!("edges", crate::model::Edge);
+
+    err.to_string()
+}
+
+/// Names the graph's own field when the fault is at the top level.
+///
+/// `serde_json` reports a type mismatch as `invalid type: integer \`123\`,
+/// expected a string` with **no field name** -- the same unactionable shape as
+/// the missing-field case this helper exists to fix, so it gets the same
+/// treatment.
+///
+/// Every `WorkflowGraph` field is `#[serde(default)]`, so an object carrying a
+/// single field parses if and only if that field is valid. Probing one key at a
+/// time therefore names the offender without a hardcoded field list. Unknown
+/// keys parse (no `deny_unknown_fields`) and are skipped.
+fn locate_top_level_error(migrated: &Value, err: &serde_json::Error) -> String {
+    if let Some(fields) = migrated.as_object() {
+        // A malformed collection can coexist with malformed members in a
+        // different collection. Report the collection shape before probing
+        // individual member collections, independent of JSON map key order.
+        for key in ELEMENT_ARRAYS {
+            if let Some(value) = fields.get(*key).filter(|value| !value.is_array()) {
+                let probe =
+                    Value::Object([((*key).to_string(), value.clone())].into_iter().collect());
+                if let Err(inner) = serde_json::from_value::<WorkflowGraph>(probe) {
+                    return format!("{key}: {inner}");
+                }
+            }
+        }
+
+        for (key, value) in fields {
+            let probe = Value::Object([(key.clone(), value.clone())].into_iter().collect());
+            if let Err(inner) = serde_json::from_value::<WorkflowGraph>(probe) {
+                return format!("{key}: {inner}");
+            }
+        }
+    }
+
+    err.to_string()
 }
 
 #[cfg(test)]

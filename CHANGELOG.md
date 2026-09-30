@@ -19,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`migrate::deserialize_graph`** — `migrate` plus deserialization into a
+  `WorkflowGraph` whose failures name the offending member
+  (`nodes[1]: missing field \`name\``) or top-level field, instead of serde's
+  pathless message. Moved from a host that had been carrying it.
+
 - **`crates/tinyflows-catalog`** — the saved-workflow model *around* a graph:
   `Flow` and its revision history, `FlowRun` and its steps, authoring drafts and
   suggestions, the run and build cancellation registries, the n8n importer, and

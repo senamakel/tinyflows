@@ -481,3 +481,6 @@ fn a_nested_path_under_an_envelope_accessor_is_accepted() {
 
     assert!(failures(&graph).is_empty(), "{:?}", failures(&graph));
 }
+
+#[path = "gates_prompt_tests.rs"]
+mod prompt_tests;

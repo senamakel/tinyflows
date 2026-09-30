@@ -239,3 +239,6 @@ fn the_depth_budget_is_read_off_the_trigger() {
         crate::engine::MAX_SUB_WORKFLOW_DEPTH
     );
 }
+
+#[path = "compat_router_tests.rs"]
+mod router_tests;
