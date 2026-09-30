@@ -29,7 +29,9 @@ pub mod catalog;
 pub mod compat;
 /// The builder-facing dry-run report: null `tool_call` args (with the honest
 /// "unverifiable" variant), null agent prompts / input_context, hidden
-/// `tool_call` errors and routing divergence, in a pinned JSON shape.
+/// `tool_call` errors and routing divergence, in a pinned JSON shape. Gated with
+/// `preflight`, whose upstream-binding analysis it reads.
+#[cfg(any(test, feature = "mock"))]
 pub mod authoring_report;
 pub mod compiler;
 pub mod data;
