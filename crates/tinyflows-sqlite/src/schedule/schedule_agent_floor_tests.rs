@@ -1,14 +1,13 @@
 use super::schedule_tests::test_config;
 use super::*;
-use chrono::Utc;
 use rusqlite::params;
 use tempfile::TempDir;
 
+use anyhow::Result;
 use tinyflows_schedule::CronJob;
 use tinyflows_schedule::CronJobPatch;
 use tinyflows_schedule::Schedule;
 use tinyflows_schedule::SessionTarget;
-use anyhow::Result;
 // ── agent-job minimum interval (#6158) ──────────────────────────
 
 fn utc_cron(expr: &str) -> Schedule {

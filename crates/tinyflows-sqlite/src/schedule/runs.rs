@@ -3,13 +3,13 @@
 
 use super::CronStoreOptions;
 use super::schema::{parse_rfc3339, sql_conversion_error, with_connection};
-use tinyflows_schedule::{next_run_for_schedule, CronJob, CronRun};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use rusqlite::params;
+use tinyflows_schedule::{CronJob, CronRun, next_run_for_schedule};
 
-pub(crate) const MAX_CRON_OUTPUT_BYTES: usize = 16 * 1024;
-pub(crate) const TRUNCATED_OUTPUT_MARKER: &str = "\n...[truncated]";
+pub const MAX_CRON_OUTPUT_BYTES: usize = 16 * 1024;
+pub const TRUNCATED_OUTPUT_MARKER: &str = "\n...[truncated]";
 
 pub fn record_last_run(
     opts: &CronStoreOptions,

@@ -3,13 +3,13 @@
 
 use super::CronStoreOptions;
 use super::schema::{map_cron_job_row, with_connection};
-use tinyflows_schedule::{
-    next_run_for_schedule, schedule_cron_expression, validate_agent_schedule, validate_schedule,
-    CronJob, CronJobPatch, DeliveryConfig, JobType, Schedule, SessionTarget,
-};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use rusqlite::params;
+use tinyflows_schedule::{
+    CronJob, CronJobPatch, DeliveryConfig, JobType, Schedule, SessionTarget, next_run_for_schedule,
+    schedule_cron_expression, validate_agent_schedule, validate_schedule,
+};
 use uuid::Uuid;
 
 pub fn add_job(opts: &CronStoreOptions, expression: &str, command: &str) -> Result<CronJob> {
@@ -18,7 +18,7 @@ pub fn add_job(opts: &CronStoreOptions, expression: &str, command: &str) -> Resu
         tz: None,
         active_hours: None,
     };
-    add_shell_job(config, None, schedule, command)
+    add_shell_job(opts, None, schedule, command)
 }
 
 pub fn add_shell_job(
@@ -70,7 +70,7 @@ pub fn add_agent_job(
     delete_after_run: bool,
 ) -> Result<CronJob> {
     add_agent_job_with_definition(
-        config,
+        opts,
         name,
         schedule,
         prompt,
@@ -372,8 +372,7 @@ pub fn dedup_named_jobs(opts: &CronStoreOptions) -> Result<usize> {
 }
 
 pub fn due_jobs(opts: &CronStoreOptions, now: DateTime<Utc>) -> Result<Vec<CronJob>> {
-    let lim = i64::try_from(opts.max_tasks.max(1))
-        .context("Scheduler max_tasks overflows i64")?;
+    let lim = i64::try_from(opts.max_tasks.max(1)).context("Scheduler max_tasks overflows i64")?;
     with_connection(opts, |conn| {
         let mut stmt = conn.prepare(
             "SELECT id, expression, command, schedule, job_type, prompt, name, session_target, model,

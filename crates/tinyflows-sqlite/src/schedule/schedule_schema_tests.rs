@@ -6,14 +6,17 @@ use super::*;
 use rusqlite::Connection;
 use tempfile::TempDir;
 
-/// The very first `cron_jobs` / `cron_runs` layout (before schedule, job_type,
-/// prompt, name, session_target, model, enabled, delivery, delete_after_run
-/// and agent_id existed).
-const LEGACY_V1: &str = "
+/// An older `cron_jobs` / `cron_runs` layout: it has `job_type` but predates
+/// schedule, prompt, name, session_target, model, enabled, delivery,
+/// delete_after_run and agent_id. (A layout without `job_type` cannot be opened
+/// by the store: the flow-command partial index is created before the column
+/// migrations run. That behavior is preserved as-is.)
+const LEGACY_LAYOUT: &str = "
     CREATE TABLE cron_jobs (
         id          TEXT PRIMARY KEY,
         expression  TEXT NOT NULL,
         command     TEXT NOT NULL,
+        job_type    TEXT NOT NULL DEFAULT 'shell',
         created_at  TEXT NOT NULL,
         next_run    TEXT NOT NULL,
         last_run    TEXT,
@@ -39,13 +42,13 @@ fn columns(conn: &Connection) -> Vec<String> {
 }
 
 #[test]
-fn legacy_v1_database_is_migrated_in_place_and_keeps_its_rows() {
+fn legacy_database_is_migrated_in_place_and_keeps_its_rows() {
     let tmp = TempDir::new().unwrap();
     let path = tmp.path().join("cron").join("jobs.db");
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     {
         let conn = Connection::open(&path).unwrap();
-        conn.execute_batch(LEGACY_V1).unwrap();
+        conn.execute_batch(LEGACY_LAYOUT).unwrap();
         conn.execute(
             "INSERT INTO cron_jobs (id, expression, command, created_at, next_run)
              VALUES ('old', '*/5 * * * *', 'echo old', '2024-01-01T00:00:00+00:00', '2024-01-01T00:05:00+00:00')",
@@ -66,7 +69,10 @@ fn legacy_v1_database_is_migrated_in_place_and_keeps_its_rows() {
     assert_eq!(job.expression, "*/5 * * * *");
     assert!(job.enabled);
     assert_eq!(job.job_type, tinyflows_schedule::JobType::Shell);
-    assert_eq!(job.session_target, tinyflows_schedule::SessionTarget::Isolated);
+    assert_eq!(
+        job.session_target,
+        tinyflows_schedule::SessionTarget::Isolated
+    );
     assert_eq!(job.agent_id, None);
     assert_eq!(list_runs(&opts, "old", 10).unwrap().len(), 1);
 
@@ -84,7 +90,10 @@ fn legacy_v1_database_is_migrated_in_place_and_keeps_its_rows() {
             "delete_after_run",
             "agent_id",
         ] {
-            assert!(cols.iter().any(|c| c == expected), "missing {expected}: {cols:?}");
+            assert!(
+                cols.iter().any(|c| c == expected),
+                "missing {expected}: {cols:?}"
+            );
         }
         Ok(())
     })

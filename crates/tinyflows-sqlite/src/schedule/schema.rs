@@ -3,10 +3,10 @@
 //! run-history modules.
 
 use super::CronStoreOptions;
-use tinyflows_schedule::{CronJob, DeliveryConfig, JobType, Schedule, SessionTarget};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use rusqlite::Connection;
+use tinyflows_schedule::{CronJob, DeliveryConfig, JobType, Schedule, SessionTarget};
 
 pub(super) fn map_cron_job_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<CronJob> {
     let expression: String = row.get(1)?;

@@ -1,9 +1,9 @@
 use super::*;
-use rusqlite::params;
-use tinyflows_schedule::ActiveHours;
 use chrono::Duration as ChronoDuration;
 use chrono::Utc;
+use rusqlite::params;
 use tempfile::TempDir;
+use tinyflows_schedule::ActiveHours;
 
 use tinyflows_schedule::CronJobPatch;
 use tinyflows_schedule::JobType;
