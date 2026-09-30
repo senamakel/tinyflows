@@ -33,6 +33,9 @@
 
 use std::collections::HashSet;
 
+mod referenced;
+pub use referenced::referenced_workflow_errors;
+
 use crate::model::{NodeKind, WorkflowGraph};
 
 /// One refusal: a topology the engine cannot execute safely.
