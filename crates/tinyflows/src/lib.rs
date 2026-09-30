@@ -27,6 +27,9 @@ pub mod catalog;
 /// Topologies this engine's fan-in lowering cannot execute safely, refused
 /// before a run rather than surfacing as dropped data or a hung barrier.
 pub mod compat;
+/// The builder-facing dry-run report: null `tool_call` args (with the honest
+/// "unverifiable" variant), null agent prompts / input_context, hidden
+/// `tool_call` errors and routing divergence, in a pinned JSON shape.
 pub mod authoring_report;
 pub mod compiler;
 pub mod data;
