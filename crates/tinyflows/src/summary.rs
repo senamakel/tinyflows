@@ -51,8 +51,7 @@ fn node_kind_str(kind: &NodeKind) -> String {
 /// One-line human description of a trigger node, for the summary's
 /// `"trigger"` field — e.g. `"schedule: 0 9 * * *"`, `"app event:
 /// gmail/GMAIL_NEW_GMAIL_MESSAGE"`, `"manual"`.
-///
-/// pub fn describe_trigger(node: &Node) -> String {
+pub fn describe_trigger(node: &Node) -> String {
     let trigger_kind = node
         .config
         .get("trigger_kind")
