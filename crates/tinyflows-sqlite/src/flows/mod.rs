@@ -23,18 +23,18 @@ use std::sync::{Mutex, OnceLock};
 
 mod definitions;
 mod kv;
-mod state_store;
 mod revisions;
 mod run_steps;
 mod runs;
+mod state_store;
 mod suggestions;
 
 pub use definitions::*;
 pub use kv::*;
-pub use state_store::SqliteStateStore;
 pub use revisions::*;
 pub use run_steps::*;
 pub use runs::*;
+pub use state_store::SqliteStateStore;
 pub use suggestions::*;
 
 /// Diagnostic marker recording which flows database files this process has

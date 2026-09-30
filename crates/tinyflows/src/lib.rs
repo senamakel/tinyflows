@@ -19,6 +19,12 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+/// The builder-facing dry-run report: null `tool_call` args (with the honest
+/// "unverifiable" variant), null agent prompts / input_context, hidden
+/// `tool_call` errors and routing divergence, in a pinned JSON shape. Gated with
+/// `preflight`, whose upstream-binding analysis it reads.
+#[cfg(any(test, feature = "mock"))]
+pub mod authoring_report;
 /// Reading the expression bindings a graph declares — which node an `=`
 /// expression reads from, and whether it reads as prose.
 pub mod bindings;
@@ -27,12 +33,6 @@ pub mod catalog;
 /// Topologies this engine's fan-in lowering cannot execute safely, refused
 /// before a run rather than surfacing as dropped data or a hung barrier.
 pub mod compat;
-/// The builder-facing dry-run report: null `tool_call` args (with the honest
-/// "unverifiable" variant), null agent prompts / input_context, hidden
-/// `tool_call` errors and routing divergence, in a pinned JSON shape. Gated with
-/// `preflight`, whose upstream-binding analysis it reads.
-#[cfg(any(test, feature = "mock"))]
-pub mod authoring_report;
 pub mod compiler;
 pub mod data;
 /// Reading a run's steps for the failures a green outcome hides: null bindings,

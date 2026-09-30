@@ -52,11 +52,11 @@ impl CronStoreOptions {
 }
 
 #[cfg(test)]
-#[path = "schedule_tests.rs"]
-mod schedule_tests;
-#[cfg(test)]
 #[path = "schedule_agent_floor_tests.rs"]
 mod schedule_agent_floor_tests;
 #[cfg(test)]
 #[path = "schedule_schema_tests.rs"]
 mod schedule_schema_tests;
+#[cfg(test)]
+#[path = "schedule_tests.rs"]
+mod schedule_tests;
