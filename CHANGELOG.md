@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`tinyflows_catalog::graph_hash::compute_graph_hash`** — the content pin over
+  a graph plus its `require_approval` flag that a parked run records and a
+  resume re-checks. Extracted from OpenHuman; the digest is byte-identical to
+  what that host persisted, and a fixed-vector test keeps it so.
+- **`tinyflows_copilot::trail_off`** — `text_looks_like_question` and the
+  code-span / URL / paragraph heuristics behind the builder-convergence
+  question backstop.
+- A nested inline `sub_workflow` case in the engine-compatibility tests.
+
 ### Changed
 
 - **The repository is a virtual workspace; every crate lives under `crates/`.**

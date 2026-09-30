@@ -10,6 +10,8 @@
 //! - [`builder`] — one authoring request ([`builder::BuilderRequest`]) rendered
 //!   into the natural-language brief that opens a builder turn
 //!   ([`builder::render_prompt`]).
+//! - [`trail_off`] — the text heuristics behind the "did the turn end on a
+//!   question?" backstop.
 //!
 //! # The harness is the host's
 //!
