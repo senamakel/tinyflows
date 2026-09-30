@@ -103,9 +103,19 @@ fn a_reference_cycle_terminates_and_is_not_an_error() {
 }
 
 #[test]
-fn a_root_depth_cap_of_zero_never_resolves_a_child() {
-    let mut root = calls("bad");
-    root.nodes[0].config = json!({ "max_sub_workflow_depth": 0 });
-    let resolve = |_: &str| -> Option<WorkflowGraph> { panic!("resolver must not be called") };
+fn the_root_depth_cap_bounds_how_far_saved_children_are_followed() {
+    let mut root = calls("mid");
+    root.nodes[0].config = json!({ "max_sub_workflow_depth": 1 });
+    let seen = std::cell::RefCell::new(Vec::<String>::new());
+    let map: HashMap<String, WorkflowGraph> = [
+        ("mid".to_string(), calls("bad")),
+        ("bad".to_string(), unsafe_child()),
+    ]
+    .into();
+    let resolve = |id: &str| {
+        seen.borrow_mut().push(id.to_string());
+        map.get(id).cloned()
+    };
     assert!(referenced_workflow_errors(&root, &resolve).is_empty());
+    assert_eq!(*seen.borrow(), vec!["mid".to_string()]);
 }
