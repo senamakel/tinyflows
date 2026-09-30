@@ -26,6 +26,7 @@
 pub mod checkpoint;
 pub mod drafts;
 pub mod flows;
+pub mod schedule;
 
 #[cfg(test)]
 #[path = "checkpoint_tests.rs"]

@@ -23,6 +23,7 @@ readme = "../../README.md"
 [dependencies]
 tinyflows = { workspace = true }
 tinyflows-catalog = { version = "0.1.0", path = "../tinyflows-catalog" }
+tinyflows-schedule = { version = "0.1.0", path = "../tinyflows-schedule" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = "1.0"
