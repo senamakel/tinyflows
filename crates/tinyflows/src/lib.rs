@@ -27,12 +27,12 @@ pub mod catalog;
 /// Topologies this engine's fan-in lowering cannot execute safely, refused
 /// before a run rather than surfacing as dropped data or a hung barrier.
 pub mod compat;
+pub mod authoring_report;
 pub mod compiler;
 pub mod data;
 /// Reading a run's steps for the failures a green outcome hides: null bindings,
 /// empty agent prompts, errors an `on_error` policy swallowed, and nodes a
 /// branch routed past.
-pub mod authoring_report;
 pub mod diagnostics;
 pub mod engine;
 pub mod error;
