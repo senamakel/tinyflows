@@ -27,5 +27,7 @@
 pub mod builder;
 pub mod prompts;
 pub mod resources;
+pub mod trail_off;
 
 pub use builder::{BuildMode, BuilderRequest, render_prompt};
+pub use trail_off::text_looks_like_question;

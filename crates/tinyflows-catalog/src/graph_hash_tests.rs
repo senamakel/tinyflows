@@ -83,7 +83,10 @@ fn hash_agrees_with_the_pre_extraction_implementation() {
         WorkflowGraph::default(),
     ] {
         for approval in [false, true] {
-            assert_eq!(compute_graph_hash(&g, approval), legacy_reference(&g, approval));
+            assert_eq!(
+                compute_graph_hash(&g, approval),
+                legacy_reference(&g, approval)
+            );
         }
     }
 }
