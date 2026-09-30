@@ -111,10 +111,11 @@ fn next_run_rejects_invalid_timezone() {
         active_hours: None,
     };
     let err = next_run_for_schedule(&schedule, Utc::now()).unwrap_err();
-    assert!(err
-        .to_string()
-        .to_lowercase()
-        .contains("invalid iana timezone"));
+    assert!(
+        err.to_string()
+            .to_lowercase()
+            .contains("invalid iana timezone")
+    );
 }
 
 #[test]
