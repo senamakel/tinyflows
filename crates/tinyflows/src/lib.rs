@@ -75,6 +75,9 @@ pub mod preflight;
 /// and a file-backed store for it. Behind the `store` feature.
 #[cfg(any(test, feature = "store"))]
 pub mod store;
+/// A one-line trigger description and a per-step config hint for a graph,
+/// surfaced on workflow proposal cards.
+pub mod summary;
 /// Testing, mocking, and live debugging for workflows: programmable capability
 /// doubles, a structured run trace, breakpoints, and an agent-facing tool
 /// surface over all of it. Behind the `testkit` feature.
