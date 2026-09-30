@@ -32,6 +32,7 @@ pub mod data;
 /// Reading a run's steps for the failures a green outcome hides: null bindings,
 /// empty agent prompts, errors an `on_error` policy swallowed, and nodes a
 /// branch routed past.
+pub mod authoring_report;
 pub mod diagnostics;
 pub mod engine;
 pub mod error;
