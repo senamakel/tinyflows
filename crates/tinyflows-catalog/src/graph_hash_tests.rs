@@ -60,7 +60,7 @@ fn hash_matches_a_fixed_vector() {
     );
     assert_eq!(
         compute_graph_hash(&g, true).as_deref(),
-        Some("__VECTOR_TRUE__")
+        Some("a13666dfbcff29a5509b0ee4d0bc50199b47eb11cb32f5ba2b00c7ae626cd179")
     );
 }
 
