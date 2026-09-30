@@ -4,13 +4,11 @@
 
 use super::*;
 
-/// Imports a small n8n fixture that uses `$json` bindings end-to-end
-/// through the exact same path a host's import takes (map →
-/// re-serialize → `validate_and_migrate_graph`), then runs the imported
-/// graph through the domain's own binding-resolvability hard gate
-/// (`tinyflows::gates::failures`, the same gate
-/// a builder enforces before accepting ANY graph) and confirms it is accepted with zero errors, exactly
-/// as for a hand-authored graph.
+/// Imports a small n8n fixture that uses `$json` bindings end-to-end: map,
+/// re-serialize, deserialize + validate + engine-compat, then the
+/// binding-resolvability gate (`tinyflows::gates::failures`) that a builder
+/// enforces before accepting ANY graph. The imported graph must clear it with
+/// zero errors, exactly as a hand-authored one does.
 #[test]
 fn imported_json_bindings_pass_binding_resolvability_and_resolve_the_real_item() {
     let wf = json!({
