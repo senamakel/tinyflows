@@ -76,15 +76,28 @@ fn nothing_tentative_is_a_no_op() {
 fn failed_committed_write_keeps_tentative_for_retry() {
     let mut kv = seeded();
     kv.fail_set = true;
-    assert_eq!(commit(&kv, "n1"), CommitOutcome::CommitFailed("disk full".into()));
-    assert_eq!(kv.map.lock().unwrap()["dedup:n1:tentative"], json!(["b", "c"]));
+    assert_eq!(
+        commit(&kv, "n1"),
+        CommitOutcome::CommitFailed("disk full".into())
+    );
+    assert_eq!(
+        kv.map.lock().unwrap()["dedup:n1:tentative"],
+        json!(["b", "c"])
+    );
 }
 
 #[test]
 fn only_completed_statuses_count_as_success() {
     assert!(is_success_status("completed"));
     assert!(is_success_status("completed_with_warnings"));
-    for s in ["failed", "cancelled", "interrupted", "", "COMPLETED", "weird"] {
+    for s in [
+        "failed",
+        "cancelled",
+        "interrupted",
+        "",
+        "COMPLETED",
+        "weird",
+    ] {
         assert!(!is_success_status(s), "{s}");
     }
 }
@@ -102,7 +115,11 @@ fn malformed_stored_sets_degrade_to_empty() {
         .insert("dedup:n1:committed".into(), json!("not-an-array"));
     assert!(matches!(
         commit(&kv, "n1"),
-        CommitOutcome::Committed { added: 1, committed_len: 1, .. }
+        CommitOutcome::Committed {
+            added: 1,
+            committed_len: 1,
+            ..
+        }
     ));
     assert_eq!(kv.map.lock().unwrap()["dedup:n1:committed"], json!(["x"]));
 }
