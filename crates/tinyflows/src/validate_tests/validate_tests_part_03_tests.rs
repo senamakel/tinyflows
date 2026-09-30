@@ -1,4 +1,3 @@
-
 #[test]
 fn duplicate_id_is_reported_before_trigger_checks() {
     // Two agents sharing an id and no trigger: the duplicate-id check runs
@@ -196,9 +195,7 @@ fn approval_behaviour_selectors_must_be_known_values() {
 /// audience, so the shape is checked even though the handles are opaque.
 #[test]
 fn approval_assignees_must_be_an_array_of_strings() {
-    let errors = validate_all(&approval_graph(
-        serde_json::json!({ "assignees": "ada" }),
-    ));
+    let errors = validate_all(&approval_graph(serde_json::json!({ "assignees": "ada" })));
     assert!(
         errors.iter().any(|e| matches!(
             e,
@@ -207,12 +204,7 @@ fn approval_assignees_must_be_an_array_of_strings() {
         )),
         "got {errors:?}"
     );
-    assert!(
-        validate_all(&approval_graph(
-            serde_json::json!({ "assignees": ["ada"] })
-        ))
-        .is_empty()
-    );
+    assert!(validate_all(&approval_graph(serde_json::json!({ "assignees": ["ada"] }))).is_empty());
 }
 
 /// An empty array reaches the same silent "nobody reviews this" audience a
@@ -228,4 +220,28 @@ fn approval_assignees_must_not_be_an_empty_array() {
         )),
         "an empty `assignees` array must be refused, got {errors:?}"
     );
+}
+
+#[test]
+fn validate_all_accumulates_every_structural_error_with_stable_codes_and_anchors() {
+    // No trigger, a duplicate node id, and a dangling edge: each is reported in
+    // one call (fail-fast would surface only the first), carrying its stable
+    // code, and node-anchored errors name their node.
+    let graph = WorkflowGraph {
+        nodes: vec![node("dup", NodeKind::Agent), node("dup", NodeKind::Agent)],
+        edges: vec![Edge {
+            from_node: "dup".to_string(),
+            from_port: "main".to_string(),
+            to_node: "ghost".to_string(),
+            to_port: "main".to_string(),
+        }],
+        ..Default::default()
+    };
+    let errors = validate_all(&graph);
+    assert!(errors.len() >= 3, "{errors:?}");
+    let code = |c: &str| errors.iter().find(|e| e.code() == c);
+    assert!(code("missing_trigger").is_some(), "{errors:?}");
+    assert!(code("unknown_node").is_some(), "{errors:?}");
+    assert_eq!(code("duplicate_node_id").unwrap().node_id(), Some("dup"));
+    assert_eq!(code("missing_trigger").unwrap().node_id(), None);
 }
