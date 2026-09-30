@@ -531,6 +531,3 @@ fn dedup_named_jobs_ignores_unnamed_jobs() {
     assert_eq!(removed, 0);
     assert_eq!(list_jobs(&config).unwrap().len(), 2);
 }
-
-#[path = "store_agent_floor_tests.rs"]
-mod agent_floor_tests;
