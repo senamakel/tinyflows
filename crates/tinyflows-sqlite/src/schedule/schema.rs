@@ -107,6 +107,12 @@ fn add_column_if_missing(conn: &Connection, name: &str, sql_type: &str) -> Resul
     }
 }
 
+/// Opens the cron store and runs `f` against it.
+///
+/// Creates the database's parent directory if needed, opens the SQLite file,
+/// and creates or migrates the schema idempotently (missing columns are added
+/// and the flow-command index is created) before handing over the connection,
+/// so a database written by an older build opens unchanged.
 pub fn with_connection<T>(
     opts: &CronStoreOptions,
     f: impl FnOnce(&Connection) -> Result<T>,
@@ -155,18 +161,7 @@ pub fn with_connection<T>(
         );
         CREATE INDEX IF NOT EXISTS idx_cron_runs_job_id ON cron_runs(job_id);
         CREATE INDEX IF NOT EXISTS idx_cron_runs_started_at ON cron_runs(started_at);
-        CREATE INDEX IF NOT EXISTS idx_cron_runs_job_started ON cron_runs(job_id, started_at);
-
-        -- Guards against duplicate flow-schedule cron bindings under a
-        -- concurrent `bind_schedule_trigger` (issue B2 CodeRabbit finding):
-        -- `flows::ops::bind_schedule_trigger` does check-then-act
-        -- (`find_flow_schedule_job` then `add_flow_schedule_job`), so two
-        -- racing binds for the same flow could otherwise each observe 'no
-        -- job' and insert a duplicate. Scoped to `job_type = 'flow'` via a
-        -- partial index so it can never constrain shell/agent jobs, which
-        -- may legitimately share a `command`.
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_cron_jobs_flow_command
-            ON cron_jobs(command) WHERE job_type = 'flow';",
+        CREATE INDEX IF NOT EXISTS idx_cron_runs_job_started ON cron_runs(job_id, started_at);",
     )
     .context("Failed to initialize cron schema")?;
 
@@ -180,8 +175,70 @@ pub fn with_connection<T>(
     add_column_if_missing(&conn, "delivery", "TEXT")?;
     add_column_if_missing(&conn, "delete_after_run", "INTEGER NOT NULL DEFAULT 0")?;
     add_column_if_missing(&conn, "agent_id", "TEXT")?;
+    ensure_flow_command_index(&conn)?;
 
     f(&conn)
+}
+
+/// Creates the `idx_cron_jobs_flow_command` partial unique index, first
+/// reconciling any duplicate flow-schedule rows an older build could write.
+///
+/// The index guards against duplicate flow-schedule cron bindings under a
+/// concurrent `bind_schedule_trigger`, which does check-then-act
+/// (`find_flow_schedule_job` then `add_flow_schedule_job`): two racing binds
+/// for one flow could otherwise each observe "no job" and insert a duplicate.
+/// It is scoped to `job_type = 'flow'` so it never constrains shell/agent
+/// jobs, which may legitimately share a `command`.
+///
+/// A database written before the index existed may already hold such
+/// duplicates, and `CREATE UNIQUE INDEX` would then fail on every connection.
+/// So when the index is missing, the earliest-created row per flow is kept,
+/// the rest are deleted (their run history cascades), and the index is created,
+/// all in one transaction. Once the index exists this is a single lookup.
+fn ensure_flow_command_index(conn: &Connection) -> Result<()> {
+    let exists: bool = conn
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master
+                           WHERE type = 'index' AND name = 'idx_cron_jobs_flow_command')",
+            [],
+            |row| row.get(0),
+        )
+        .context("Failed to look up the flow-command index")?;
+    if exists {
+        return Ok(());
+    }
+
+    let tx = conn.unchecked_transaction()?;
+    let removed = tx
+        .execute(
+            "DELETE FROM cron_jobs
+             WHERE job_type = 'flow'
+               AND EXISTS (
+                 SELECT 1 FROM cron_jobs AS keep
+                 WHERE keep.job_type = 'flow'
+                   AND keep.command = cron_jobs.command
+                   AND (keep.created_at < cron_jobs.created_at
+                        OR (keep.created_at = cron_jobs.created_at
+                            AND keep.rowid < cron_jobs.rowid))
+               )",
+            [],
+        )
+        .context("Failed to reconcile duplicate flow-schedule jobs")?;
+    if removed > 0 {
+        tracing::warn!(
+            target: "cron",
+            removed,
+            "[cron] removed duplicate flow-schedule jobs before creating the flow-command index"
+        );
+    }
+    tx.execute_batch(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_cron_jobs_flow_command
+             ON cron_jobs(command) WHERE job_type = 'flow';",
+    )
+    .context("Failed to create the flow-command index")?;
+    tx.commit()
+        .context("Failed to commit the flow-command index migration")?;
+    Ok(())
 }
 
 pub(super) fn parse_rfc3339(raw: &str) -> Result<DateTime<Utc>> {

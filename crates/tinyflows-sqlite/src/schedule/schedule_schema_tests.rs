@@ -8,9 +8,7 @@ use tempfile::TempDir;
 
 /// An older `cron_jobs` / `cron_runs` layout: it has `job_type` but predates
 /// schedule, prompt, name, session_target, model, enabled, delivery,
-/// delete_after_run and agent_id. (A layout without `job_type` cannot be opened
-/// by the store: the flow-command partial index is created before the column
-/// migrations run. That behavior is preserved as-is.)
+/// delete_after_run and agent_id.
 const LEGACY_LAYOUT: &str = "
     CREATE TABLE cron_jobs (
         id          TEXT PRIMARY KEY,
