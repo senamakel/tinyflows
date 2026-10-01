@@ -21,15 +21,16 @@ homepage.workspace = true
 readme = "../../README.md"
 
 [dependencies]
-tinyflows = { workspace = true }
-tinyflows-catalog = { version = "0.1.0", path = "../tinyflows-catalog" }
+tinyflows = { workspace = true, optional = true }
+tinyflows-catalog = { version = "0.1.0", path = "../tinyflows-catalog", optional = true }
+tinyflows-schedule = { version = "0.1.0", path = "../tinyflows-schedule" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = "1.0"
-async-trait = { workspace = true }
+async-trait = { workspace = true, optional = true }
 # `checkpoint` only: every SQLite call is a blocking one, moved off the async
 # executor with `spawn_blocking` rather than held on it.
-tokio = { workspace = true }
+tokio = { workspace = true, optional = true }
 chrono = { workspace = true }
 rusqlite = { workspace = true }
 uuid = { workspace = true }
@@ -37,14 +38,21 @@ uuid = { workspace = true }
 tracing = { workspace = true }
 
 [features]
-default = []
+# `catalog` is the flow catalog, drafts, checkpointer and state store; it is the
+# half that needs the engine (`tinyflows`). `schedule` (the cron job/run store)
+# needs only `tinyflows-schedule`, so a host that runs scheduled jobs but no
+# flows can build with `default-features = false, features = ["schedule"]` and
+# pull neither the engine nor its expression stack.
+default = ["catalog", "schedule"]
+catalog = ["dep:tinyflows", "dep:tinyflows-catalog", "dep:async-trait", "dep:tokio"]
+schedule = []
 # Off by default; exposes the two fixture-only writers (`force_run_status_for_test`,
 # `force_corrupt_graph_json_for_test`) that stage states no production path can
 # produce — a terminal run flipped back to `running`, a `graph_json` column that
 # does not deserialize. They are always available inside this crate's own tests;
 # the feature is what lets a *host*'s test suite stage the same states without a
 # weaker production write existing for it.
-test-fixtures = []
+test-fixtures = ["catalog"]
 
 [dev-dependencies]
 tempfile = "3"

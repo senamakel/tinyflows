@@ -234,5 +234,8 @@ mod expr_tests;
 #[path = "graph_tests.rs"]
 mod graph_tests;
 #[cfg(test)]
+#[path = "import_gates_tests.rs"]
+mod import_gates_tests;
+#[cfg(test)]
 #[path = "node_mapping_tests.rs"]
 mod node_mapping_tests;

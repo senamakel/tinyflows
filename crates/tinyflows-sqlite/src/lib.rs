@@ -5,6 +5,8 @@
 //! - [`flows`] — the saved-flow catalog: definitions, revision history, run
 //!   records and their steps, authoring suggestions, and a namespaced key/value
 //!   table a host can bind to `tinyflows::caps::StateStore`. One `flows.db`.
+//! - [`schedule`] — the scheduled-job store: cron jobs and their run history in
+//!   one `jobs.db` (needs only `tinyflows-schedule`; feature `schedule`).
 //! - [`checkpoint`] — the engine's own durable checkpoint store, so a run can
 //!   be interrupted and resumed. Its own `checkpoints.db`.
 //! - [`drafts`] — authoring drafts, one JSON file each. Not a table on purpose:
@@ -23,10 +25,15 @@
 //! creates what it needs on first use. That is what lets a second host adopt
 //! this store without adopting anything else.
 
+#[cfg(feature = "catalog")]
 pub mod checkpoint;
+#[cfg(feature = "catalog")]
 pub mod drafts;
+#[cfg(feature = "catalog")]
 pub mod flows;
+#[cfg(feature = "schedule")]
+pub mod schedule;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "catalog"))]
 #[path = "checkpoint_tests.rs"]
 mod checkpoint_tests;

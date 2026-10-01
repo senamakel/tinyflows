@@ -8,6 +8,7 @@
 
 pub mod condition;
 pub mod dedup;
+pub mod dedup_settle;
 pub mod gather;
 pub mod loop_node;
 pub mod merge;

@@ -19,6 +19,12 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+/// The builder-facing dry-run report: null `tool_call` args (with the honest
+/// "unverifiable" variant), null agent prompts / input_context, hidden
+/// `tool_call` errors and routing divergence, in a pinned JSON shape. Gated with
+/// `preflight`, whose upstream-binding analysis it reads.
+#[cfg(any(test, feature = "mock"))]
+pub mod authoring_report;
 /// Reading the expression bindings a graph declares — which node an `=`
 /// expression reads from, and whether it reads as prose.
 pub mod bindings;
@@ -69,6 +75,9 @@ pub mod preflight;
 /// and a file-backed store for it. Behind the `store` feature.
 #[cfg(any(test, feature = "store"))]
 pub mod store;
+/// A one-line trigger description and a per-step config hint for a graph,
+/// surfaced on workflow proposal cards.
+pub mod summary;
 /// Testing, mocking, and live debugging for workflows: programmable capability
 /// doubles, a structured run trace, breakpoints, and an agent-facing tool
 /// surface over all of it. Behind the `testkit` feature.

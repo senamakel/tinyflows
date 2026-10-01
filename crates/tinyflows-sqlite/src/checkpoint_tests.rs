@@ -3,7 +3,7 @@
 //! The port's whole value is that it is *not* new code: the durable flow-run
 //! database predates it, and a run interrupted before the upgrade has to
 //! resume after it. So the tests here are about equivalence and durability
-//! rather than about the SQL — `schema_is_identical_to_the_backend_it_replaced`
+//! rather than about the SQL — `schema_objects_existing_databases_depend_on_are_pinned`
 //! is the load-bearing one, and the rest exercise the trait surface
 //! `flows_run` / `flows_resume` actually drive.
 
@@ -282,4 +282,82 @@ async fn clones_share_one_in_memory_database() {
 
     let seen = clone.get("t1", None).await.unwrap().expect("shared data");
     assert_eq!(seen.state, json!("written via original"));
+}
+
+/// An existing `checkpoints.db` is opened by this code after every upgrade, so
+/// the tables, columns and indexes it reads must not be renamed or dropped. The
+/// store began as a port of the `tinyagents-graph` backend; the pin below is the
+/// literal object list both shared, so a rename here is a test failure rather
+/// than an interrupted flow that can no longer resume.
+#[test]
+fn schema_objects_existing_databases_depend_on_are_pinned() {
+    let objects: Vec<String> = SqliteCheckpointer::<serde_json::Value>::schema_sql()
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with("CREATE "))
+        .map(|line| {
+            line.split_whitespace()
+                .skip_while(|word| *word != "EXISTS")
+                .nth(1)
+                .unwrap_or_default()
+                .to_string()
+        })
+        .collect();
+    assert_eq!(
+        objects,
+        [
+            "checkpoints",
+            "idx_checkpoints_thread",
+            "idx_checkpoints_lookup",
+            "idx_checkpoints_scoped",
+            "idx_checkpoints_scoped_lookup",
+            "checkpoint_writes",
+            "idx_checkpoint_writes_thread",
+            "thread_leases",
+        ]
+    );
+
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    conn.execute_batch(SqliteCheckpointer::<serde_json::Value>::schema_sql())
+        .unwrap();
+    let columns = |table: &str| -> Vec<String> {
+        let mut stmt = conn
+            .prepare(&format!("PRAGMA table_info({table})"))
+            .unwrap();
+        stmt.query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect()
+    };
+    assert_eq!(
+        columns("checkpoints"),
+        [
+            "seq",
+            "thread_id",
+            "checkpoint_id",
+            "parent_checkpoint_id",
+            "run_id",
+            "namespace",
+            "next_nodes",
+            "source",
+            "step",
+            "has_interrupts",
+            "record",
+            "format_version",
+            "created_at",
+        ]
+    );
+    assert_eq!(
+        columns("checkpoint_writes"),
+        [
+            "thread_id",
+            "namespace",
+            "checkpoint_id",
+            "task_id",
+            "idx",
+            "node",
+            "channel",
+            "payload",
+        ]
+    );
 }

@@ -53,3 +53,25 @@ fn terminal_status_prioritizes_approval_then_failure_then_warnings() {
     );
     assert_eq!(terminal_status(&[], &[]).status, "completed");
 }
+
+#[test]
+fn an_outstanding_approval_wins_over_a_settled_step_error() {
+    let mut errored = step("a");
+    errored.status = Some("error".to_string());
+    let summary = terminal_status(&[errored], &["gate".to_string()]);
+    assert_eq!(summary.status, "pending_approval");
+    assert_eq!(summary.error, None);
+}
+
+#[test]
+fn a_degraded_failure_names_the_failed_step_and_a_clean_run_has_no_error() {
+    let mut errored = step("x");
+    errored.status = Some("error".to_string());
+    let summary = terminal_status(&[errored], &[]);
+    assert_eq!(summary.status, "failed");
+    assert!(summary.error.unwrap().contains('x'));
+
+    let clean = terminal_status(&[step("a")], &[]);
+    assert_eq!(clean.status, "completed");
+    assert_eq!(clean.error, None);
+}
