@@ -96,7 +96,7 @@ pub fn describe_trigger(node: &Node) -> String {
 /// worth surfacing (e.g. `merge`, `output_parser`).
 pub fn config_hint(node: &Node) -> Option<String> {
     let cfg = &node.config;
-    match &node.kind {
+    let hint = match &node.kind {
         NodeKind::Agent => cfg.get("prompt").and_then(Value::as_str).map(truncate_hint),
         NodeKind::ToolCall => cfg.get("slug").and_then(Value::as_str).map(str::to_string),
         NodeKind::HttpRequest => {
@@ -206,7 +206,11 @@ pub fn config_hint(node: &Node) -> Option<String> {
         // already says on the timeline.
         NodeKind::Void => None,
         NodeKind::Merge | NodeKind::OutputParser | NodeKind::Trigger => None,
-    }
+    };
+    // Every branch can echo free-form authored config, so bound the result
+    // once here (idempotent for branches that already truncated) to keep the
+    // summary payload bounded for every kind, including future ones.
+    hint.map(|h| truncate_hint(&h))
 }
 
 /// Truncates a hint string to [`MAX_CONFIG_HINT_CHARS`], appending an
