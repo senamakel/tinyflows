@@ -181,16 +181,21 @@ pub fn structured_output_instruction(request: &Value) -> Option<String> {
     if !structured_output_requested(request) {
         return None;
     }
-    let mut instruction = "Respond with a single JSON object only — no prose, no \
-                           markdown code fences."
-        .to_string();
-    if let Some(schema) = request
+    let schema = request
         .get("output_parser")
         .and_then(|p| p.get("schema"))
-        .filter(|s| !s.is_null())
-    {
+        .filter(|s| !s.is_null());
+    // Name the value kind the schema asks for, so an array schema is not
+    // contradicted by an "object only" instruction.
+    let kind = match schema.and_then(|s| s.get("type")).and_then(Value::as_str) {
+        Some("array") => "array",
+        _ => "object",
+    };
+    let mut instruction =
+        format!("Respond with a single JSON {kind} only — no prose, no markdown code fences.");
+    if let Some(schema) = schema {
         instruction.push_str(&format!(
-            " The object must match this JSON Schema:\n{schema}"
+            " The {kind} must match this JSON Schema:\n{schema}"
         ));
     }
     Some(instruction)
@@ -468,14 +473,21 @@ pub fn resolve_run_timeout_secs(
 
 /// Inserts `system_prompt` as the first `system` message of a completion
 /// `request`, creating the `messages` array (seeded from any `prompt` string)
-/// when the request doesn't already carry one. Mirrors how
+/// when the request doesn't already carry a non-empty one. Mirrors how
 /// `OpenHumanLlm::complete` reads `messages`/`prompt`.
 pub fn prepend_system_message(request: &mut Value, system_prompt: &str) {
     let Value::Object(map) = request else {
         return;
     };
     let system_msg = json!({ "role": "system", "content": system_prompt });
-    match map.get_mut("messages").and_then(Value::as_array_mut) {
+    // An empty `messages` array falls back to `prompt` downstream, so treat
+    // it like a missing one; otherwise the inserted system message would make
+    // the array non-empty and silently drop the user prompt.
+    match map
+        .get_mut("messages")
+        .and_then(Value::as_array_mut)
+        .filter(|m| !m.is_empty())
+    {
         Some(messages) => messages.insert(0, system_msg),
         None => {
             // No `messages`: build one from the `prompt` string (if any).
