@@ -185,8 +185,7 @@ pub fn structured_output_instruction(request: &Value) -> Option<String> {
         .get("output_parser")
         .and_then(|p| p.get("schema"))
         .filter(|s| !s.is_null());
-    // Name the value kind the schema asks for, so an array schema is not
-    // contradicted by an "object only" instruction.
+    // Name the kind the schema asks for: an array schema must not say "object".
     let kind = match schema.and_then(|s| s.get("type")).and_then(Value::as_str) {
         Some("array") => "array",
         _ => "object",
@@ -480,9 +479,7 @@ pub fn prepend_system_message(request: &mut Value, system_prompt: &str) {
         return;
     };
     let system_msg = json!({ "role": "system", "content": system_prompt });
-    // An empty `messages` array falls back to `prompt` downstream, so treat
-    // it like a missing one; otherwise the inserted system message would make
-    // the array non-empty and silently drop the user prompt.
+    // An empty `messages` falls back to `prompt` downstream: treat it as absent.
     match map
         .get_mut("messages")
         .and_then(Value::as_array_mut)
