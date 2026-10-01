@@ -167,3 +167,26 @@ fn shell_config_hint_prefers_the_script_path_and_truncates_inline_source() {
     assert_eq!(inline_hint.chars().count(), MAX_CONFIG_HINT_CHARS);
     assert!(inline_hint.ends_with('…'));
 }
+
+#[test]
+fn every_authored_config_hint_is_truncated() {
+    let long = "y".repeat(300);
+    let cases = [
+        (NodeKind::ToolCall, json!({ "slug": long })),
+        (NodeKind::Code, json!({ "language": long })),
+        (NodeKind::Condition, json!({ "field": long })),
+        (NodeKind::SplitOut, json!({ "path": long })),
+        (NodeKind::Gate, json!({ "release": long })),
+        (NodeKind::Gather, json!({ "release": long, "n": 2 })),
+    ];
+    for (kind, config) in cases {
+        let hint = config_hint(&node("n", kind.clone(), "N", config))
+            .unwrap_or_else(|| panic!("{kind:?} produced no hint"));
+        assert!(
+            hint.chars().count() <= MAX_CONFIG_HINT_CHARS,
+            "{kind:?} hint not truncated: {} chars",
+            hint.chars().count()
+        );
+        assert!(hint.ends_with('…'), "{kind:?}: {hint}");
+    }
+}
