@@ -6,7 +6,6 @@ use tempfile::TempDir;
 use tinyflows_schedule::ActiveHours;
 
 use tinyflows_schedule::CronJobPatch;
-use tinyflows_schedule::JobType;
 use tinyflows_schedule::Schedule;
 pub(super) fn test_config(tmp: &TempDir) -> CronStoreOptions {
     CronStoreOptions::new(tmp.path().join("workspace").join("cron").join("jobs.db"))
