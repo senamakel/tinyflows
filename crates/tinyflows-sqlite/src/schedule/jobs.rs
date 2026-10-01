@@ -12,6 +12,8 @@ use tinyflows_schedule::{
 };
 use uuid::Uuid;
 
+/// Adds an enabled shell job on a plain cron `expression` (no time zone or
+/// active hours); shorthand for [`add_shell_job`].
 pub fn add_job(opts: &CronStoreOptions, expression: &str, command: &str) -> Result<CronJob> {
     let schedule = Schedule::Cron {
         expr: expression.to_string(),
@@ -21,6 +23,8 @@ pub fn add_job(opts: &CronStoreOptions, expression: &str, command: &str) -> Resu
     add_shell_job(opts, None, schedule, command)
 }
 
+/// Adds an enabled, unnamed-or-`name`d shell job that runs `command` on
+/// `schedule`, after validating the schedule. Returns the stored row.
 pub fn add_shell_job(
     opts: &CronStoreOptions,
     name: Option<String>,
@@ -58,6 +62,8 @@ pub fn add_shell_job(
     get_job(opts, &id)
 }
 
+/// Adds an agent job that sends `prompt` on `schedule` with no agent
+/// definition; see [`add_agent_job_with_definition`]. Returns the stored row.
 #[allow(clippy::too_many_arguments)]
 pub fn add_agent_job(
     opts: &CronStoreOptions,
@@ -233,6 +239,7 @@ pub fn find_flow_schedule_job(opts: &CronStoreOptions, flow_id: &str) -> Result<
     })
 }
 
+/// Returns every job, ordered by next run.
 pub fn list_jobs(opts: &CronStoreOptions) -> Result<Vec<CronJob>> {
     with_connection(opts, |conn| {
         let mut stmt = conn.prepare(
@@ -252,6 +259,7 @@ pub fn list_jobs(opts: &CronStoreOptions) -> Result<Vec<CronJob>> {
     })
 }
 
+/// Returns the job with `job_id`, or an error when there is none.
 pub fn get_job(opts: &CronStoreOptions, job_id: &str) -> Result<CronJob> {
     with_connection(opts, |conn| {
         let mut stmt = conn.prepare(
@@ -270,6 +278,8 @@ pub fn get_job(opts: &CronStoreOptions, job_id: &str) -> Result<CronJob> {
     })
 }
 
+/// Deletes the job with `id` (its run history cascades); errors when there is
+/// no such job.
 pub fn remove_job(opts: &CronStoreOptions, id: &str) -> Result<()> {
     let changed = with_connection(opts, |conn| {
         conn.execute("DELETE FROM cron_jobs WHERE id = ?1", params![id])
@@ -371,6 +381,8 @@ pub fn dedup_named_jobs(opts: &CronStoreOptions) -> Result<usize> {
     })
 }
 
+/// Returns enabled jobs whose `next_run` is at or before `now`, earliest
+/// first, at most [`CronStoreOptions::max_tasks`] (min 1).
 pub fn due_jobs(opts: &CronStoreOptions, now: DateTime<Utc>) -> Result<Vec<CronJob>> {
     let lim = i64::try_from(opts.max_tasks.max(1)).context("Scheduler max_tasks overflows i64")?;
     with_connection(opts, |conn| {
@@ -394,6 +406,8 @@ pub fn due_jobs(opts: &CronStoreOptions, now: DateTime<Utc>) -> Result<Vec<CronJ
     })
 }
 
+/// Applies `patch` to the job with `job_id` and returns the updated row.
+/// Re-enabling a job whose `next_run` is stale recomputes it from now.
 pub fn update_job(opts: &CronStoreOptions, job_id: &str, patch: CronJobPatch) -> Result<CronJob> {
     let mut job = get_job(opts, job_id)?;
     let was_enabled = job.enabled;

@@ -6,11 +6,16 @@ use super::schema::{parse_rfc3339, sql_conversion_error, with_connection};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use rusqlite::params;
-use tinyflows_schedule::{CronJob, CronRun, next_run_for_schedule};
+use tinyflows_schedule::{CronJob, CronRun, Schedule, next_run_for_schedule};
 
+/// Largest job output, in bytes, stored in `last_output` or a run row; longer
+/// output is cut at a char boundary and ends with [`TRUNCATED_OUTPUT_MARKER`].
 pub const MAX_CRON_OUTPUT_BYTES: usize = 16 * 1024;
+/// Suffix appended to output cut to [`MAX_CRON_OUTPUT_BYTES`].
 pub const TRUNCATED_OUTPUT_MARKER: &str = "\n...[truncated]";
 
+/// Records a run's outcome on the job row (`last_run`, `last_status`,
+/// bounded `last_output`) without touching `next_run` or `enabled`.
 pub fn record_last_run(
     opts: &CronStoreOptions,
     job_id: &str,
@@ -32,6 +37,11 @@ pub fn record_last_run(
     })
 }
 
+/// Records a run's outcome on the job row and advances `next_run` from now.
+///
+/// A `Schedule::At` job has no later occurrence: its next run is the same past
+/// instant, which would leave it due on every poll. Such a job is disabled
+/// here instead, so it runs once (the row and its history are kept).
 pub fn reschedule_after_run(
     opts: &CronStoreOptions,
     job: &CronJob,
@@ -40,20 +50,23 @@ pub fn reschedule_after_run(
 ) -> Result<()> {
     let now = Utc::now();
     let next_run = next_run_for_schedule(&job.schedule, now)?;
+    let one_shot = matches!(job.schedule, Schedule::At { .. });
     let status = if success { "ok" } else { "error" };
     let bounded_output = truncate_cron_output(output);
 
     with_connection(opts, |conn| {
         conn.execute(
             "UPDATE cron_jobs
-             SET next_run = ?1, last_run = ?2, last_status = ?3, last_output = ?4
+             SET next_run = ?1, last_run = ?2, last_status = ?3, last_output = ?4,
+                 enabled = CASE WHEN ?6 THEN 0 ELSE enabled END
              WHERE id = ?5",
             params![
                 next_run.to_rfc3339(),
                 now.to_rfc3339(),
                 status,
                 bounded_output,
-                job.id
+                job.id,
+                one_shot
             ],
         )
         .context("Failed to update cron job run state")?;
@@ -61,6 +74,9 @@ pub fn reschedule_after_run(
     })
 }
 
+/// Appends one run to the job's history (bounded output) and prunes the
+/// history to the newest [`CronStoreOptions::max_run_history`] runs, in one
+/// transaction.
 pub fn record_run(
     opts: &CronStoreOptions,
     job_id: &str,
@@ -142,6 +158,7 @@ fn truncate_cron_output(output: &str) -> String {
     truncated
 }
 
+/// Returns the job's newest runs, most recent first, at most `limit` (min 1).
 pub fn list_runs(opts: &CronStoreOptions, job_id: &str, limit: usize) -> Result<Vec<CronRun>> {
     with_connection(opts, |conn| {
         let lim = i64::try_from(limit.max(1)).context("Run history limit overflow")?;
