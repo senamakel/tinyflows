@@ -181,15 +181,11 @@ pub fn structured_output_instruction(request: &Value) -> Option<String> {
     if !structured_output_requested(request) {
         return None;
     }
-    let schema = request
-        .get("output_parser")
-        .and_then(|p| p.get("schema"))
-        .filter(|s| !s.is_null());
+    let schema = request.get("output_parser").and_then(|p| p.get("schema"));
+    let schema = schema.filter(|s| !s.is_null());
     // Name the kind the schema asks for: an array schema must not say "object".
-    let kind = match schema.and_then(|s| s.get("type")).and_then(Value::as_str) {
-        Some("array") => "array",
-        _ => "object",
-    };
+    let is_array = schema.and_then(|s| s.get("type")).and_then(Value::as_str) == Some("array");
+    let kind = if is_array { "array" } else { "object" };
     let mut instruction =
         format!("Respond with a single JSON {kind} only — no prose, no markdown code fences.");
     if let Some(schema) = schema {
