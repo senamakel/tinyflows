@@ -23,7 +23,7 @@ pub fn add_job(opts: &CronStoreOptions, expression: &str, command: &str) -> Resu
     add_shell_job(opts, None, schedule, command)
 }
 
-/// Adds an enabled, unnamed-or-`name`d shell job that runs `command` on
+/// Adds an enabled, optionally named shell job that runs `command` on
 /// `schedule`, after validating the schedule. Returns the stored row.
 pub fn add_shell_job(
     opts: &CronStoreOptions,
