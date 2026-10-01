@@ -503,3 +503,6 @@ pub fn prepend_system_message(request: &mut Value, system_prompt: &str) {
 #[cfg(test)]
 #[path = "agent_prompt_tests.rs"]
 mod tests;
+#[cfg(test)]
+#[path = "agent_prompt_shape_tests.rs"]
+mod shape_tests;
