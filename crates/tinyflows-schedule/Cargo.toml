@@ -20,7 +20,7 @@ readme = "../../README.md"
 serde = { workspace = true }
 chrono = { workspace = true }
 anyhow = "1.0"
-cron = "0.12"
+cron = "0.17"
 chrono-tz = "0.10"
 tracing = { workspace = true }
 
