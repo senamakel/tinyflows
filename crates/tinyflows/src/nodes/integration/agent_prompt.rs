@@ -173,10 +173,8 @@ pub fn structured_output_requested(request: &Value) -> bool {
 
 /// Builds the JSON-steering instruction that a structured-output node needs (an
 /// `output_parser.schema` or `response_format: "json"`), or `None` when the node
-/// didn't request structured output. Shared shape with
-/// `OpenHumanLlm::complete`'s inline steering; the harness path appends it to
-/// the run prompt (rather than inserting a system message) because `run_single`
-/// takes a single user message.
+/// didn't request structured output. The harness path appends it to the run
+/// prompt because `run_single` takes a single user message.
 pub fn structured_output_instruction(request: &Value) -> Option<String> {
     if !structured_output_requested(request) {
         return None;
