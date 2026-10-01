@@ -37,8 +37,9 @@ pub trait DedupKv {
 pub enum CommitOutcome {
     /// There were no tentative keys; nothing was written.
     NothingTentative,
-    /// The committed set could not be written; `tentative` was left in place
-    /// so the next successful run retries the commit.
+    /// A stored set could not be read, or the committed set could not be
+    /// written; both sets were left in place so the next successful run
+    /// retries the commit.
     CommitFailed(String),
     /// Tentative keys were unioned into `committed`.
     Committed {
@@ -86,12 +87,21 @@ pub fn commit(kv: &dyn DedupKv, node_id: &str) -> CommitOutcome {
     let tentative_key = tentative_key(node_id);
     let committed_key = committed_key(node_id);
 
-    let tentative = load_key_set(kv, &tentative_key);
+    let tentative = match load_key_set(kv, &tentative_key) {
+        Ok(set) => set,
+        Err(e) => return CommitOutcome::CommitFailed(e),
+    };
     if tentative.is_empty() {
         return CommitOutcome::NothingTentative;
     }
 
-    let mut committed = load_key_set(kv, &committed_key);
+    // A failed committed read must not be treated as an empty set: writing
+    // only the tentative keys back would forget every previously committed
+    // key and let those items through the dedup again.
+    let mut committed = match load_key_set(kv, &committed_key) {
+        Ok(set) => set,
+        Err(e) => return CommitOutcome::CommitFailed(e),
+    };
     let added = tentative
         .iter()
         .filter(|k| committed.insert((*k).clone()))
@@ -114,10 +124,12 @@ pub fn release(kv: &dyn DedupKv, node_id: &str) -> Result<(), String> {
 }
 
 /// Loads a key set (a JSON array of strings). A missing key, non-array value,
-/// non-string elements, or a store error all degrade to an empty set: a first
-/// run against a fresh store has nothing recorded, which is not a fault.
-fn load_key_set(kv: &dyn DedupKv, key: &str) -> HashSet<String> {
-    match kv.kv_get(key) {
+/// or non-string elements degrade to an empty set: a first run against a fresh
+/// store has nothing recorded, which is not a fault. A store error is
+/// propagated, since treating it as empty would let [`commit`] overwrite the
+/// real committed set.
+fn load_key_set(kv: &dyn DedupKv, key: &str) -> Result<HashSet<String>, String> {
+    Ok(match kv.kv_get(key) {
         Ok(Some(value)) => value
             .as_array()
             .map(|arr| {
@@ -129,10 +141,10 @@ fn load_key_set(kv: &dyn DedupKv, key: &str) -> HashSet<String> {
             .unwrap_or_default(),
         Ok(None) => HashSet::new(),
         Err(e) => {
-            tracing::warn!(key, error = %e, "[dedup-commit] failed to load key set — treating as empty");
-            HashSet::new()
+            tracing::warn!(key, error = %e, "[dedup-commit] failed to load key set — aborting commit");
+            return Err(e);
         }
-    }
+    })
 }
 
 /// Persists `set` as a sorted JSON array of strings (stable, diffable).

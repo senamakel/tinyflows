@@ -7,10 +7,14 @@ use std::sync::Mutex;
 struct MemKv {
     map: Mutex<HashMap<String, Value>>,
     fail_set: bool,
+    fail_get: Option<&'static str>,
 }
 
 impl DedupKv for MemKv {
     fn kv_get(&self, key: &str) -> Result<Option<Value>, String> {
+        if self.fail_get == Some(key) {
+            return Err("read timeout".into());
+        }
         Ok(self.map.lock().unwrap().get(key).cloned())
     }
     fn kv_set(&self, key: &str, value: &Value) -> Result<(), String> {
@@ -122,4 +126,31 @@ fn malformed_stored_sets_degrade_to_empty() {
         }
     ));
     assert_eq!(kv.map.lock().unwrap()["dedup:n1:committed"], json!(["x"]));
+}
+
+#[test]
+fn failed_committed_read_aborts_without_touching_either_set() {
+    let mut kv = seeded();
+    kv.fail_get = Some("dedup:n1:committed");
+    assert_eq!(
+        commit(&kv, "n1"),
+        CommitOutcome::CommitFailed("read timeout".into())
+    );
+    let map = kv.map.lock().unwrap();
+    assert_eq!(map["dedup:n1:committed"], json!(["a", "b"]));
+    assert_eq!(map["dedup:n1:tentative"], json!(["b", "c"]));
+}
+
+#[test]
+fn failed_tentative_read_aborts_the_commit() {
+    let mut kv = seeded();
+    kv.fail_get = Some("dedup:n1:tentative");
+    assert_eq!(
+        commit(&kv, "n1"),
+        CommitOutcome::CommitFailed("read timeout".into())
+    );
+    assert_eq!(
+        kv.map.lock().unwrap()["dedup:n1:committed"],
+        json!(["a", "b"])
+    );
 }
