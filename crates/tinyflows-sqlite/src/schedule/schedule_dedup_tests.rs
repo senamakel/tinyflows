@@ -261,5 +261,9 @@ fn reschedule_after_run_disables_a_one_shot_at_job() {
     let stored = get_job(&config, &job.id).unwrap();
     assert!(!stored.enabled, "a one-shot job must not stay due");
     assert_eq!(stored.last_status.as_deref(), Some("ok"));
-    assert!(due_jobs(&config, at + ChronoDuration::hours(1)).unwrap().is_empty());
+    assert!(
+        due_jobs(&config, at + ChronoDuration::hours(1))
+            .unwrap()
+            .is_empty()
+    );
 }

@@ -8,8 +8,14 @@ use serde_json::json;
 fn structured_output_instruction_names_an_array_for_an_array_schema() {
     let request = json!({ "output_parser": { "schema": { "type": "array" } } });
     let inst = structured_output_instruction(&request).expect("instruction");
-    assert!(inst.starts_with("Respond with a single JSON array only"), "{inst}");
-    assert!(inst.contains("The array must match this JSON Schema"), "{inst}");
+    assert!(
+        inst.starts_with("Respond with a single JSON array only"),
+        "{inst}"
+    );
+    assert!(
+        inst.contains("The array must match this JSON Schema"),
+        "{inst}"
+    );
     assert!(!inst.contains("object"), "{inst}");
 }
 
@@ -17,7 +23,10 @@ fn structured_output_instruction_names_an_array_for_an_array_schema() {
 fn structured_output_instruction_keeps_object_wording_without_a_schema_type() {
     let request = json!({ "response_format": "json" });
     let inst = structured_output_instruction(&request).expect("instruction");
-    assert!(inst.starts_with("Respond with a single JSON object only"), "{inst}");
+    assert!(
+        inst.starts_with("Respond with a single JSON object only"),
+        "{inst}"
+    );
 }
 
 #[test]
