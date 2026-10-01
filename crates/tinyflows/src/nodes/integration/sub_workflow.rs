@@ -134,7 +134,7 @@ fn approvals_for_child(ctx: &NodeContext<'_>) -> Vec<String> {
         .run
         .get("trigger")
         .and_then(|trigger| trigger.get("approvals"))
-        .map(&strip)
+        .map(strip)
         .unwrap_or_default();
     if let Some(resume) = ctx.resume.as_ref().and_then(|value| value.get("approved")) {
         approved.extend(strip(resume));
