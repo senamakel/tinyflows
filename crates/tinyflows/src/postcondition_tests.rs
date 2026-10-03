@@ -236,3 +236,43 @@ fn validate_rejects_a_field_with_an_empty_segment() {
     assert!(require_field("field_present", "json..id").validate().is_err());
     assert!(require_field("non_empty_list", "json.").validate().is_err());
 }
+
+// --- the engine's side of the gate ---
+
+fn node_with(config: Value) -> Node {
+    Node {
+        id: "x".to_string(),
+        kind: crate::model::NodeKind::Agent,
+        type_version: 1,
+        name: "x".to_string(),
+        config,
+        ports: Vec::new(),
+        position: None,
+    }
+}
+
+/// A pause, re-entry or fan-out is not the node's settled answer; checking
+/// it would fail every gated node that waits.
+#[test]
+fn an_output_carrying_control_is_not_checked() {
+    let node = node_with(json!({ "postcondition": { "require": "non_empty" } }));
+    let pausing = NodeOutput {
+        control: Some(crate::nodes::NodeControl::Reenter { after_ms: 10 }),
+        ..NodeOutput::empty()
+    };
+    assert!(enforce(&node, &pausing).is_ok());
+    assert!(enforce(&node, &NodeOutput::empty()).is_err());
+}
+
+#[test]
+fn a_malformed_declaration_fails_the_attempt() {
+    let node = node_with(json!({ "postcondition": ["non_empty"] }));
+    let output = NodeOutput::main(vec![Item::new(json!({ "text": "fine" }))]);
+    let err = enforce(&node, &output).unwrap_err().to_string();
+    assert!(err.contains("malformed"), "{err}");
+}
+
+#[test]
+fn an_undeclared_gate_passes_anything() {
+    assert!(enforce(&node_with(json!({})), &NodeOutput::empty()).is_ok());
+}

@@ -224,9 +224,6 @@ impl Postcondition {
 /// An output carrying a control request is not the node's settled answer and
 /// passes unchecked. A declaration that cannot be read fails the attempt.
 pub(crate) fn enforce(node: &Node, output: &NodeOutput) -> Result<(), EngineError> {
-    if output.control.is_some() {
-        return Ok(());
-    }
     let Some(declared) = Postcondition::from_config(&node.config) else {
         return Ok(());
     };
