@@ -146,7 +146,8 @@ impl Postcondition {
                     // `json` key is checked as a whole.
                     None => output.get("json").or(Some(output)),
                 };
-                let described = field.map_or_else(|| "the output".to_string(), |p| format!("`{p}`"));
+                let described =
+                    field.map_or_else(|| "the output".to_string(), |p| format!("`{p}`"));
                 match target {
                     Some(Value::Array(items)) if !items.is_empty() => Ok(()),
                     Some(Value::Array(_)) => Err(format!(
@@ -155,7 +156,9 @@ impl Postcondition {
                     Some(Value::Null) | None => Err(format!(
                         "{described} is missing — nothing came back to advance on."
                     )),
-                    Some(_) => Err(format!("{described} is not a list — the shape does not match.")),
+                    Some(_) => Err(format!(
+                        "{described} is not a list — the shape does not match."
+                    )),
                 }
             }
             other => Err(format!(
@@ -242,14 +245,18 @@ pub(crate) fn enforce(node: &Node, output: &NodeOutput) -> Result<(), EngineErro
         .and_then(|postcondition| postcondition.check_items(&output.items))
         .map_err(|gap| {
             tracing::warn!(node = %node.id, %gap, "node output failed its postcondition");
-            EngineError::Capability(format!("node '{}' failed its postcondition: {gap}", node.id))
+            EngineError::Capability(format!(
+                "node '{}' failed its postcondition: {gap}",
+                node.id
+            ))
         })
 }
 
 /// Resolves a dot-separated path (`"a.b.c"`) through nested JSON objects.
 /// Every hop is an object-key lookup; arrays are not indexed.
 fn resolve_path<'a>(value: &'a Value, path: &str) -> Option<&'a Value> {
-    path.split('.').try_fold(value, |acc, key| acc.as_object()?.get(key))
+    path.split('.')
+        .try_fold(value, |acc, key| acc.as_object()?.get(key))
 }
 
 #[cfg(test)]

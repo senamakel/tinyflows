@@ -34,7 +34,11 @@ fn non_empty_fails_on_blank_text() {
 #[test]
 fn non_empty_fails_on_missing_or_null_text() {
     assert!(require("non_empty").check(&json!({ "json": {} })).is_err());
-    assert!(require("non_empty").check(&json!({ "text": null })).is_err());
+    assert!(
+        require("non_empty")
+            .check(&json!({ "text": null }))
+            .is_err()
+    );
 }
 
 // --- `field_present` ---
@@ -60,7 +64,11 @@ fn field_present_fails_when_the_path_breaks_partway() {
 #[test]
 fn field_present_fails_on_an_explicit_null() {
     let output = json!({ "json": null, "text": "prose" });
-    assert!(require_field("field_present", "json").check(&output).is_err());
+    assert!(
+        require_field("field_present", "json")
+            .check(&output)
+            .is_err()
+    );
 }
 
 #[test]
@@ -204,14 +212,20 @@ fn the_wire_shape_omits_an_absent_field() {
 fn validate_accepts_every_well_formed_declaration() {
     assert_eq!(require("non_empty").validate(), Ok(()));
     assert_eq!(require("non_empty_list").validate(), Ok(()));
-    assert_eq!(require_field("non_empty_list", "json.items").validate(), Ok(()));
+    assert_eq!(
+        require_field("non_empty_list", "json.items").validate(),
+        Ok(())
+    );
     assert_eq!(require_field("field_present", "json.id").validate(), Ok(()));
 }
 
 #[test]
 fn validate_rejects_an_unknown_requirement() {
     let reason = require("nonempty").validate().unwrap_err();
-    assert!(reason.contains("non_empty, field_present, non_empty_list"), "{reason}");
+    assert!(
+        reason.contains("non_empty, field_present, non_empty_list"),
+        "{reason}"
+    );
 }
 
 #[test]
@@ -233,7 +247,11 @@ fn validate_rejects_an_expression_as_the_field() {
 
 #[test]
 fn validate_rejects_a_field_with_an_empty_segment() {
-    assert!(require_field("field_present", "json..id").validate().is_err());
+    assert!(
+        require_field("field_present", "json..id")
+            .validate()
+            .is_err()
+    );
     assert!(require_field("non_empty_list", "json.").validate().is_err());
 }
 

@@ -2,8 +2,8 @@
 //! fails it is a failed attempt, retried and then handed to `on_error`.
 
 use super::*;
-use crate::caps::mock::{mock_capabilities, mock_capabilities_with_agent};
 use crate::caps::AgentRunner;
+use crate::caps::mock::{mock_capabilities, mock_capabilities_with_agent};
 use crate::compiler::compile;
 use crate::model::{Edge, Node, WorkflowGraph};
 use std::sync::Mutex;
@@ -97,8 +97,10 @@ async fn an_output_that_clears_the_postcondition_advances() {
 #[tokio::test]
 async fn an_output_that_fails_the_postcondition_stops_the_run() {
     let runner = Scripted::new(vec![json!("   ")]);
-    let compiled =
-        compile(&agent(json!({ "postcondition": { "require": "non_empty" } }))).expect("compile");
+    let compiled = compile(&agent(
+        json!({ "postcondition": { "require": "non_empty" } }),
+    ))
+    .expect("compile");
     let err = run(&compiled, json!({}), &mock_capabilities_with_agent(runner))
         .await
         .expect_err("an empty reply must not advance");
@@ -161,5 +163,8 @@ async fn a_node_without_a_postcondition_is_not_checked() {
     let outcome = run(&compiled, json!({}), &mock_capabilities_with_agent(runner))
         .await
         .expect("run");
-    assert_eq!(outcome.output["nodes"]["x"]["items"][0]["json"]["text"], json!(""));
+    assert_eq!(
+        outcome.output["nodes"]["x"]["items"][0]["json"]["text"],
+        json!("")
+    );
 }
