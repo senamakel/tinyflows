@@ -202,9 +202,10 @@ impl Postcondition {
                     .to_string(),
             );
         }
-        if let Some(field) = field.filter(|f| !f.is_empty())
-            && (field.starts_with('=') || field.split('.').any(str::is_empty))
-        {
+        let malformed = field
+            .filter(|f| !f.is_empty())
+            .filter(|f| f.starts_with('=') || f.split('.').any(str::is_empty));
+        if let Some(field) = malformed {
             return Err(format!(
                 "`postcondition.field` `{field}` must be a literal dotted path into the node's \
                  output (e.g. `json.items`); it is never expression-resolved"
