@@ -51,6 +51,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::data::Item;
+use crate::error::EngineError;
+use crate::model::Node;
+use crate::nodes::NodeOutput;
 
 /// The predicates a [`Postcondition::require`] may name, in the order an
 /// authoring error lists them.
@@ -213,6 +216,26 @@ impl Postcondition {
         }
         Ok(())
     }
+}
+
+/// The engine's side of the gate: checks the postcondition `node` declares
+/// against an executor's successful `output`.
+///
+/// An output carrying a control request is not the node's settled answer and
+/// passes unchecked. A declaration that cannot be read fails the attempt.
+pub(crate) fn enforce(node: &Node, output: &NodeOutput) -> Result<(), EngineError> {
+    if output.control.is_some() {
+        return Ok(());
+    }
+    let Some(declared) = Postcondition::from_config(&node.config) else {
+        return Ok(());
+    };
+    declared
+        .and_then(|postcondition| postcondition.check_items(&output.items))
+        .map_err(|gap| {
+            tracing::warn!(node = %node.id, %gap, "node output failed its postcondition");
+            EngineError::Capability(format!("node '{}' failed its postcondition: {gap}", node.id))
+        })
 }
 
 /// Resolves a dot-separated path (`"a.b.c"`) through nested JSON objects.
