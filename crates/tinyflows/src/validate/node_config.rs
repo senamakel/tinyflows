@@ -3,9 +3,10 @@
 //! The half of [`validate_all`](super::validate_all) that reads a node's
 //! `config` object rather than the graph's shape: the `sub_workflow` child
 //! reference, per-item fan-out selectors, `memory` scope rules, the `dedup`
-//! key, the `approval` enums, and a declared `postcondition`. Every check here is about one node in
-//! isolation — nothing in this module looks at an edge — which is what makes it
-//! a module of its own rather than an arbitrary cut through `validate_all`.
+//! key, the `approval` enums, and a declared `postcondition`. Every check here
+//! is about one node in isolation — nothing in this module looks at an edge —
+//! which is what makes it a module of its own rather than an arbitrary cut
+//! through `validate_all`.
 
 use serde_json::Value;
 
