@@ -94,6 +94,14 @@ impl Postcondition {
     #[must_use]
     pub fn from_config(config: &Value) -> Option<Result<Self, String>> {
         let declared = config.get("postcondition")?;
+        // Checked before decoding: serde's derive also accepts a sequence for
+        // a struct, which would read `["non_empty"]` as a real declaration.
+        if !declared.is_object() {
+            return Some(Err(format!(
+                "the node's `postcondition` is malformed: expected an object like \
+                 {{\"require\": \"non_empty\"}}, got {declared}"
+            )));
+        }
         Some(
             serde_json::from_value(declared.clone())
                 .map_err(|err| format!("the node's `postcondition` is malformed: {err}")),
@@ -224,6 +232,9 @@ impl Postcondition {
 /// An output carrying a control request is not the node's settled answer and
 /// passes unchecked. A declaration that cannot be read fails the attempt.
 pub(crate) fn enforce(node: &Node, output: &NodeOutput) -> Result<(), EngineError> {
+    if output.control.is_some() {
+        return Ok(());
+    }
     let Some(declared) = Postcondition::from_config(&node.config) else {
         return Ok(());
     };
