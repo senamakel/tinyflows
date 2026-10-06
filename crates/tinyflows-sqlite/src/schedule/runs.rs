@@ -6,7 +6,7 @@ use super::schema::{parse_rfc3339, sql_conversion_error, with_connection};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use rusqlite::params;
-use tinyflows_schedule::{CronJob, CronRun, Schedule, next_run_for_schedule};
+use tinyflows_schedule::{CronJob, CronRun, DeliveryStatus, Schedule, next_run_for_schedule};
 
 /// Largest job output, in bytes, stored in `last_output` or a run row; longer
 /// output is cut at a char boundary and ends with [`TRUNCATED_OUTPUT_MARKER`].
@@ -76,7 +76,7 @@ pub fn reschedule_after_run(
 
 /// Appends one run to the job's history (bounded output) and prunes the
 /// history to the newest [`CronStoreOptions::max_run_history`] runs, in one
-/// transaction.
+/// transaction. Records no delivery status; see [`record_run_with_delivery`].
 pub fn record_run(
     opts: &CronStoreOptions,
     job_id: &str,
@@ -86,6 +86,38 @@ pub fn record_run(
     output: Option<&str>,
     duration_ms: i64,
 ) -> Result<()> {
+    record_run_with_delivery(
+        opts,
+        job_id,
+        started_at,
+        finished_at,
+        status,
+        output,
+        duration_ms,
+        None,
+    )
+}
+
+/// [`record_run`] that also stores what happened to the run's result
+/// (`cron_runs.delivery_status`, `NULL` when `None`).
+#[allow(clippy::too_many_arguments)]
+pub fn record_run_with_delivery(
+    opts: &CronStoreOptions,
+    job_id: &str,
+    started_at: DateTime<Utc>,
+    finished_at: DateTime<Utc>,
+    status: &str,
+    output: Option<&str>,
+    duration_ms: i64,
+    delivery_status: Option<DeliveryStatus>,
+) -> Result<()> {
+    tracing::debug!(
+        target: "cron",
+        %job_id,
+        status,
+        delivery_status = delivery_status.as_ref().map(DeliveryStatus::as_str),
+        "[cron] record_run_with_delivery"
+    );
     let bounded_output = output.map(truncate_cron_output);
     with_connection(opts, |conn| {
         // Wrap INSERT + pruning DELETE in an explicit transaction so that
@@ -94,8 +126,9 @@ pub fn record_run(
         let tx = conn.unchecked_transaction()?;
 
         tx.execute(
-            "INSERT INTO cron_runs (job_id, started_at, finished_at, status, output, duration_ms)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO cron_runs (job_id, started_at, finished_at, status, output, duration_ms,
+                 delivery_status)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
                 job_id,
                 started_at.to_rfc3339(),
@@ -103,6 +136,7 @@ pub fn record_run(
                 status,
                 bounded_output.as_deref(),
                 duration_ms,
+                delivery_status.as_ref().map(DeliveryStatus::as_str),
             ],
         )
         .context("Failed to insert cron run")?;
@@ -139,6 +173,17 @@ pub fn delete_queued_runs(opts: &CronStoreOptions, job_id: &str) -> Result<usize
     })
 }
 
+/// Reads `cron_runs.delivery_status`; a value this build does not know reads
+/// as `None` rather than failing the whole history listing.
+fn decode_delivery_status(raw: Option<String>) -> Option<DeliveryStatus> {
+    let raw = raw?;
+    let parsed = DeliveryStatus::parse(&raw);
+    if parsed.is_none() {
+        tracing::debug!(target: "cron", raw, "[cron] list_runs: unknown delivery_status, reading as none");
+    }
+    parsed
+}
+
 fn truncate_cron_output(output: &str) -> String {
     if output.len() <= MAX_CRON_OUTPUT_BYTES {
         return output.to_string();
@@ -163,7 +208,8 @@ pub fn list_runs(opts: &CronStoreOptions, job_id: &str, limit: usize) -> Result<
     with_connection(opts, |conn| {
         let lim = i64::try_from(limit.max(1)).context("Run history limit overflow")?;
         let mut stmt = conn.prepare(
-            "SELECT id, job_id, started_at, finished_at, status, output, duration_ms
+            "SELECT id, job_id, started_at, finished_at, status, output, duration_ms,
+                    delivery_status
              FROM cron_runs
              WHERE job_id = ?1
              ORDER BY started_at DESC, id DESC
@@ -181,6 +227,7 @@ pub fn list_runs(opts: &CronStoreOptions, job_id: &str, limit: usize) -> Result<
                 status: row.get(4)?,
                 output: row.get(5)?,
                 duration_ms: row.get(6)?,
+                delivery_status: decode_delivery_status(row.get(7)?),
             })
         })?;
 

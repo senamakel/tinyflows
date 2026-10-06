@@ -7,8 +7,7 @@ use chrono::{Duration as ChronoDuration, Utc};
 use rusqlite::Connection;
 use tempfile::TempDir;
 use tinyflows_schedule::{
-    CronJobPatch, DeliveryConfig, DeliveryStatus, JobOrigin, Schedule, SessionTarget,
-    delivery_mode,
+    CronJobPatch, DeliveryConfig, DeliveryStatus, JobOrigin, Schedule, SessionTarget, delivery_mode,
 };
 
 fn opts(tmp: &TempDir) -> CronStoreOptions {
@@ -169,7 +168,10 @@ fn spec_honours_disabled_definition_and_channel_origin() {
     assert_eq!(job.agent_id.as_deref(), Some("morning_briefing"));
     assert_eq!(job.model.as_deref(), Some("m1"));
     assert_eq!(job.session_target, SessionTarget::Isolated);
-    assert_eq!(get_job(&opts, &job.id).unwrap().origin, Some(channel_origin()));
+    assert_eq!(
+        get_job(&opts, &job.id).unwrap().origin,
+        Some(channel_origin())
+    );
 }
 
 #[test]
@@ -298,5 +300,8 @@ fn an_unknown_stored_delivery_status_reads_as_none() {
         Ok(())
     })
     .unwrap();
-    assert_eq!(list_runs(&opts, &job.id, 10).unwrap()[0].delivery_status, None);
+    assert_eq!(
+        list_runs(&opts, &job.id, 10).unwrap()[0].delivery_status,
+        None
+    );
 }

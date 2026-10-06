@@ -2,13 +2,13 @@
 //! patching, deduplicating, and selecting due jobs.
 
 use super::CronStoreOptions;
-use super::schema::{map_cron_job_row, with_connection};
+use super::schema::{JOB_COLUMNS, encode_origin, map_cron_job_row, with_connection};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use rusqlite::params;
 use tinyflows_schedule::{
-    CronJob, CronJobPatch, DeliveryConfig, JobType, Schedule, SessionTarget, next_run_for_schedule,
-    schedule_cron_expression, validate_agent_schedule, validate_schedule,
+    CronJob, CronJobPatch, DeliveryConfig, JobOrigin, JobType, Schedule, SessionTarget,
+    next_run_for_schedule, schedule_cron_expression, validate_agent_schedule, validate_schedule,
 };
 use uuid::Uuid;
 
@@ -89,6 +89,7 @@ pub fn add_agent_job(
 /// Like [`add_agent_job`] but accepts an optional built-in agent definition
 /// ID. When set, the scheduler resolves the agent definition from the
 /// registry and runs with its prompt, tool allowlist, and iteration cap.
+/// Stores no origin; see [`add_agent_job_from_spec`] for that.
 #[allow(clippy::too_many_arguments)]
 pub fn add_agent_job_with_definition(
     opts: &CronStoreOptions,
@@ -102,6 +103,76 @@ pub fn add_agent_job_with_definition(
     agent_id: Option<String>,
     enabled: bool,
 ) -> Result<CronJob> {
+    add_agent_job_from_spec(
+        opts,
+        AgentJobSpec {
+            name,
+            schedule,
+            prompt: prompt.to_string(),
+            session_target,
+            model,
+            delivery,
+            delete_after_run,
+            agent_id,
+            enabled,
+            origin: None,
+        },
+    )
+}
+
+/// Everything an agent job is created with. [`AgentJobSpec::new`] gives an
+/// enabled, isolated job with no name, model, definition or origin.
+#[derive(Debug, Clone)]
+pub struct AgentJobSpec {
+    pub name: Option<String>,
+    pub schedule: Schedule,
+    pub prompt: String,
+    pub session_target: SessionTarget,
+    pub model: Option<String>,
+    /// `None` stores [`DeliveryConfig::default`].
+    pub delivery: Option<DeliveryConfig>,
+    pub delete_after_run: bool,
+    /// Built-in agent definition to run with (see [`add_agent_job_with_definition`]).
+    pub agent_id: Option<String>,
+    /// Inserted in this state in one statement, so an opt-in job is never
+    /// briefly enabled.
+    pub enabled: bool,
+    /// The conversation the job was created from.
+    pub origin: Option<JobOrigin>,
+}
+
+impl AgentJobSpec {
+    pub fn new(schedule: Schedule, prompt: impl Into<String>) -> Self {
+        Self {
+            name: None,
+            schedule,
+            prompt: prompt.into(),
+            session_target: SessionTarget::default(),
+            model: None,
+            delivery: None,
+            delete_after_run: false,
+            agent_id: None,
+            enabled: true,
+            origin: None,
+        }
+    }
+}
+
+/// Adds an agent job described by `spec`, including its origin conversation
+/// and session target.
+pub fn add_agent_job_from_spec(opts: &CronStoreOptions, spec: AgentJobSpec) -> Result<CronJob> {
+    let AgentJobSpec {
+        name,
+        schedule,
+        prompt,
+        session_target,
+        model,
+        delivery,
+        delete_after_run,
+        agent_id,
+        enabled,
+        origin,
+    } = spec;
     let now = Utc::now();
     // Agent runs are inference turns: on top of the generic checks, refuse a
     // schedule tighter than `MIN_AGENT_JOB_INTERVAL` (#6158).
@@ -111,6 +182,13 @@ pub fn add_agent_job_with_definition(
     let expression = schedule_cron_expression(&schedule).unwrap_or_default();
     let schedule_json = serde_json::to_string(&schedule)?;
     let delivery = delivery.unwrap_or_default();
+    let origin_json = encode_origin(origin.as_ref())?;
+    tracing::debug!(
+        target: "cron",
+        session_target = session_target.as_str(),
+        origin_kind = origin.as_ref().map(JobOrigin::kind_str),
+        "[cron] add_agent_job_from_spec: inserting agent job"
+    );
 
     with_connection(opts, |conn| {
         // `enabled` is bound (?13) rather than hard-coded so callers can insert a
@@ -120,13 +198,13 @@ pub fn add_agent_job_with_definition(
         conn.execute(
             "INSERT INTO cron_jobs (
                 id, expression, command, schedule, job_type, prompt, name, session_target, model,
-                enabled, delivery, delete_after_run, created_at, next_run, agent_id
-             ) VALUES (?1, ?2, '', ?3, 'agent', ?4, ?5, ?6, ?7, ?13, ?8, ?9, ?10, ?11, ?12)",
+                enabled, delivery, delete_after_run, created_at, next_run, agent_id, origin
+             ) VALUES (?1, ?2, '', ?3, 'agent', ?4, ?5, ?6, ?7, ?13, ?8, ?9, ?10, ?11, ?12, ?14)",
             params![
                 id,
                 expression,
                 schedule_json,
-                prompt,
+                prompt.as_str(),
                 name,
                 session_target.as_str(),
                 model,
@@ -136,6 +214,7 @@ pub fn add_agent_job_with_definition(
                 next_run.to_rfc3339(),
                 agent_id,
                 if enabled { 1 } else { 0 },
+                origin_json,
             ],
         )
         .context("Failed to insert cron agent job")?;
@@ -222,12 +301,9 @@ pub fn add_flow_schedule_job(
 /// it down on disable.
 pub fn find_flow_schedule_job(opts: &CronStoreOptions, flow_id: &str) -> Result<Option<CronJob>> {
     with_connection(opts, |conn| {
-        let mut stmt = conn.prepare(
-            "SELECT id, expression, command, schedule, job_type, prompt, name, session_target, model,
-                    enabled, delivery, delete_after_run, created_at, next_run, last_run, last_status, last_output,
-                    agent_id
-             FROM cron_jobs WHERE job_type = 'flow' AND command = ?1 LIMIT 1",
-        )?;
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {JOB_COLUMNS} FROM cron_jobs WHERE job_type = 'flow' AND command = ?1 LIMIT 1"
+        ))?;
         let mut rows = stmt.query(params![flow_id])?;
         match rows.next()? {
             Some(row) => Ok(Some(map_cron_job_row(row)?)),
@@ -239,12 +315,9 @@ pub fn find_flow_schedule_job(opts: &CronStoreOptions, flow_id: &str) -> Result<
 /// Returns every job, ordered by next run.
 pub fn list_jobs(opts: &CronStoreOptions) -> Result<Vec<CronJob>> {
     with_connection(opts, |conn| {
-        let mut stmt = conn.prepare(
-            "SELECT id, expression, command, schedule, job_type, prompt, name, session_target, model,
-                    enabled, delivery, delete_after_run, created_at, next_run, last_run, last_status, last_output,
-                    agent_id
-             FROM cron_jobs ORDER BY next_run ASC",
-        )?;
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {JOB_COLUMNS} FROM cron_jobs ORDER BY next_run ASC"
+        ))?;
 
         let rows = stmt.query_map([], map_cron_job_row)?;
 
@@ -259,12 +332,9 @@ pub fn list_jobs(opts: &CronStoreOptions) -> Result<Vec<CronJob>> {
 /// Returns the job with `job_id`, or an error when there is none.
 pub fn get_job(opts: &CronStoreOptions, job_id: &str) -> Result<CronJob> {
     with_connection(opts, |conn| {
-        let mut stmt = conn.prepare(
-            "SELECT id, expression, command, schedule, job_type, prompt, name, session_target, model,
-                    enabled, delivery, delete_after_run, created_at, next_run, last_run, last_status, last_output,
-                    agent_id
-             FROM cron_jobs WHERE id = ?1",
-        )?;
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {JOB_COLUMNS} FROM cron_jobs WHERE id = ?1"
+        ))?;
 
         let mut rows = stmt.query(params![job_id])?;
         if let Some(row) = rows.next()? {
@@ -381,15 +451,12 @@ pub fn dedup_named_jobs(opts: &CronStoreOptions) -> Result<usize> {
 pub fn due_jobs(opts: &CronStoreOptions, now: DateTime<Utc>) -> Result<Vec<CronJob>> {
     let lim = i64::try_from(opts.max_tasks.max(1)).context("Scheduler max_tasks overflows i64")?;
     with_connection(opts, |conn| {
-        let mut stmt = conn.prepare(
-            "SELECT id, expression, command, schedule, job_type, prompt, name, session_target, model,
-                    enabled, delivery, delete_after_run, created_at, next_run, last_run, last_status, last_output,
-                    agent_id
-             FROM cron_jobs
-             WHERE enabled = 1 AND next_run <= ?1
-             ORDER BY next_run ASC
-             LIMIT ?2",
-        )?;
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {JOB_COLUMNS} FROM cron_jobs
+                 WHERE enabled = 1 AND next_run <= ?1
+                 ORDER BY next_run ASC
+                 LIMIT ?2"
+        ))?;
 
         let rows = stmt.query_map(params![now.to_rfc3339(), lim], map_cron_job_row)?;
 
@@ -446,6 +513,9 @@ pub fn update_job(opts: &CronStoreOptions, job_id: &str, patch: CronJobPatch) ->
     if let Some(agent_id) = patch.agent_id {
         job.agent_id = agent_id;
     }
+    if let Some(origin) = patch.origin {
+        job.origin = origin;
+    }
     if schedule_changed {
         job.next_run = next_run_for_schedule(&job.schedule, Utc::now())?;
     } else if job.enabled && !was_enabled {
@@ -473,7 +543,7 @@ pub fn update_job(opts: &CronStoreOptions, job_id: &str, patch: CronJobPatch) ->
             "UPDATE cron_jobs
              SET expression = ?1, command = ?2, schedule = ?3, job_type = ?4, prompt = ?5, name = ?6,
                  session_target = ?7, model = ?8, enabled = ?9, delivery = ?10, delete_after_run = ?11,
-                 next_run = ?12, agent_id = ?14
+                 next_run = ?12, agent_id = ?14, origin = ?15
              WHERE id = ?13",
             params![
                 job.expression,
@@ -490,6 +560,7 @@ pub fn update_job(opts: &CronStoreOptions, job_id: &str, patch: CronJobPatch) ->
                 job.next_run.to_rfc3339(),
                 job.id,
                 job.agent_id,
+                encode_origin(job.origin.as_ref())?,
             ],
         )
         .context("Failed to update cron job")?;

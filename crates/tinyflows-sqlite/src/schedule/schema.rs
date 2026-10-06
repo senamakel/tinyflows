@@ -195,14 +195,29 @@ pub fn with_connection<T>(
     .context("Failed to initialize cron schema")?;
 
     add_column_if_missing(&conn, "cron_jobs", "schedule", "TEXT")?;
-    add_column_if_missing(&conn, "cron_jobs", "job_type", "TEXT NOT NULL DEFAULT 'shell'")?;
+    add_column_if_missing(
+        &conn,
+        "cron_jobs",
+        "job_type",
+        "TEXT NOT NULL DEFAULT 'shell'",
+    )?;
     add_column_if_missing(&conn, "cron_jobs", "prompt", "TEXT")?;
     add_column_if_missing(&conn, "cron_jobs", "name", "TEXT")?;
-    add_column_if_missing(&conn, "cron_jobs", "session_target", "TEXT NOT NULL DEFAULT 'isolated'")?;
+    add_column_if_missing(
+        &conn,
+        "cron_jobs",
+        "session_target",
+        "TEXT NOT NULL DEFAULT 'isolated'",
+    )?;
     add_column_if_missing(&conn, "cron_jobs", "model", "TEXT")?;
     add_column_if_missing(&conn, "cron_jobs", "enabled", "INTEGER NOT NULL DEFAULT 1")?;
     add_column_if_missing(&conn, "cron_jobs", "delivery", "TEXT")?;
-    add_column_if_missing(&conn, "cron_jobs", "delete_after_run", "INTEGER NOT NULL DEFAULT 0")?;
+    add_column_if_missing(
+        &conn,
+        "cron_jobs",
+        "delete_after_run",
+        "INTEGER NOT NULL DEFAULT 0",
+    )?;
     add_column_if_missing(&conn, "cron_jobs", "agent_id", "TEXT")?;
     add_column_if_missing(&conn, "cron_jobs", "origin", "TEXT")?;
     add_column_if_missing(&conn, "cron_runs", "delivery_status", "TEXT")?;
