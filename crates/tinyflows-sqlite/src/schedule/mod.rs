@@ -58,6 +58,9 @@ mod schedule_agent_floor_tests;
 #[path = "schedule_dedup_tests.rs"]
 mod schedule_dedup_tests;
 #[cfg(test)]
+#[path = "schedule_origin_tests.rs"]
+mod schedule_origin_tests;
+#[cfg(test)]
 #[path = "schedule_schema_tests.rs"]
 mod schedule_schema_tests;
 #[cfg(test)]
