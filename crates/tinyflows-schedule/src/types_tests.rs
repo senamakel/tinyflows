@@ -441,7 +441,10 @@ fn delivery_status_parse_as_str_and_serde_agree() {
             format!("\"{wire}\"")
         );
     }
-    assert_eq!(DeliveryStatus::parse("DELIVERED"), Some(DeliveryStatus::Delivered));
+    assert_eq!(
+        DeliveryStatus::parse("DELIVERED"),
+        Some(DeliveryStatus::Delivered)
+    );
     assert_eq!(DeliveryStatus::parse("bogus"), None);
 }
 
@@ -456,7 +459,12 @@ fn cron_run_delivery_status_is_optional_on_the_wire() {
     });
     let run: CronRun = serde_json::from_value(legacy).unwrap();
     assert_eq!(run.delivery_status, None);
-    assert!(serde_json::to_value(&run).unwrap().get("delivery_status").is_none());
+    assert!(
+        serde_json::to_value(&run)
+            .unwrap()
+            .get("delivery_status")
+            .is_none()
+    );
 
     let mut with = serde_json::to_value(&run).unwrap();
     with["delivery_status"] = json!("delivered");
