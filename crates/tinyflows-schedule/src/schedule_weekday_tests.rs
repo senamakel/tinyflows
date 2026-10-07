@@ -124,8 +124,10 @@ fn every_numeric_range_and_step_matches_posix() {
     for start in 0..=7u32 {
         for end in start..=7 {
             for step in 1..=7u32 {
-                let expected: BTreeSet<u32> =
-                    (start..=end).step_by(step as usize).map(|d| d % 7).collect();
+                let expected: BTreeSet<u32> = (start..=end)
+                    .step_by(step as usize)
+                    .map(|d| d % 7)
+                    .collect();
                 let field = format!("{start}-{end}/{step}");
                 assert_eq!(fire_days(&field), expected, "{field}");
             }

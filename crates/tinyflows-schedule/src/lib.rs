@@ -8,6 +8,7 @@
 //!
 //! No runtime, storage or configuration lives here; a host supplies those.
 
+mod posix_weekday;
 pub mod schedule;
 pub mod types;
 
