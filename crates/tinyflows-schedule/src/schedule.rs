@@ -370,3 +370,7 @@ mod tests;
 #[cfg(test)]
 #[path = "schedule_gap_tests.rs"]
 mod gap_tests;
+
+#[cfg(test)]
+#[path = "schedule_weekday_tests.rs"]
+mod weekday_tests;
