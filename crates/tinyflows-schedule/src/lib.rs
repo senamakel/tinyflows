@@ -4,7 +4,8 @@
 //!   persists. Their serde shapes are a wire contract (a host's job store and
 //!   RPC surface carry them), pinned by `wire_tests`.
 //! * [`schedule`] — next-run computation, validation, cron-expression
-//!   normalisation and the minimum-cadence check.
+//!   normalisation (POSIX crontab weekdays into the `cron` crate's numbering)
+//!   and the minimum-cadence check.
 //!
 //! No runtime, storage or configuration lives here; a host supplies those.
 
