@@ -227,7 +227,7 @@ pub fn list_jobs(opts: &CronStoreOptions) -> Result<Vec<CronJob>> {
 }
 
 /// Returns the job with `job_id`, or an error when there is none.
-pub(super) fn get_job(opts: &CronStoreOptions, job_id: &str) -> Result<CronJob> {
+pub fn get_job(opts: &CronStoreOptions, job_id: &str) -> Result<CronJob> {
     with_connection(opts, |conn| {
         let mut stmt = conn.prepare(&format!(
             "SELECT {JOB_COLUMNS} FROM cron_jobs WHERE id = ?1"

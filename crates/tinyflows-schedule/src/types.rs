@@ -408,8 +408,13 @@ pub struct CronJobPatch {
     #[serde(default, deserialize_with = "deserialize_double_option")]
     pub agent_id: Option<Option<String>>,
     /// Set (`Some(Some(_))`) or clear (`Some(None)`) the job's origin
-    /// conversation; `None` leaves it unchanged.
-    #[serde(default, deserialize_with = "deserialize_double_option")]
+    /// conversation; `None` leaves it unchanged (and is omitted when
+    /// serialized, so a round trip never turns it into a clear).
+    #[serde(
+        default,
+        deserialize_with = "deserialize_double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub origin: Option<Option<JobOrigin>>,
 }
 
