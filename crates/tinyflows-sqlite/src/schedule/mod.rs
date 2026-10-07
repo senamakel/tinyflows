@@ -13,13 +13,14 @@
 
 use std::path::PathBuf;
 
+mod agent_jobs;
 mod jobs;
 mod runs;
 mod schema;
 
+pub use agent_jobs::{AgentJobSpec, add_agent_job_from_spec};
 pub use jobs::{
-    AgentJobSpec, add_agent_job, add_agent_job_from_spec, add_agent_job_with_definition,
-    add_flow_schedule_job, add_job, add_shell_job, clear_all_jobs, dedup_named_jobs, due_jobs,
+    add_agent_job, add_agent_job_with_definition, add_flow_schedule_job, add_job, add_shell_job, clear_all_jobs, dedup_named_jobs, due_jobs,
     find_flow_schedule_job, get_job, list_jobs, remove_job, update_job,
 };
 pub use runs::{
