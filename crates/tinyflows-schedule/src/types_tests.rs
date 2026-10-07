@@ -471,3 +471,27 @@ fn cron_run_delivery_status_is_optional_on_the_wire() {
     let run: CronRun = serde_json::from_value(with).unwrap();
     assert_eq!(run.delivery_status, Some(DeliveryStatus::Delivered));
 }
+
+#[test]
+fn patch_without_origin_roundtrips_as_no_change() {
+    let patch = CronJobPatch {
+        enabled: Some(false),
+        ..Default::default()
+    };
+    let v = serde_json::to_value(&patch).unwrap();
+    assert!(v.get("origin").is_none(), "absent origin must be omitted");
+    let back: CronJobPatch = serde_json::from_value(v).unwrap();
+    assert_eq!(back.origin, None);
+}
+
+#[test]
+fn patch_clearing_origin_serializes_explicit_null() {
+    let patch = CronJobPatch {
+        origin: Some(None),
+        ..Default::default()
+    };
+    let v = serde_json::to_value(&patch).unwrap();
+    assert!(v.get("origin").is_some_and(|o| o.is_null()));
+    let back: CronJobPatch = serde_json::from_value(v).unwrap();
+    assert_eq!(back.origin, Some(None));
+}
