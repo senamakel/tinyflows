@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! POSIX crontab weekday numbers, rewritten into the `cron` crate's.
 //!
 //! A standard 5-field crontab numbers the days of the week 0–7, with both 0
