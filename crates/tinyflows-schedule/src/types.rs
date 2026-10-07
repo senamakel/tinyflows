@@ -37,12 +37,18 @@ impl JobType {
     }
 }
 
+/// Which session an agent job runs in.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum SessionTarget {
+    /// A fresh, detached session with no conversation bound to it.
     #[default]
     Isolated,
+    /// The host's main session.
     Main,
+    /// A detached run whose context and result delivery are bound to the
+    /// conversation that created the job ([`CronJob::origin`]).
+    Current,
 }
 
 impl SessionTarget {
@@ -50,14 +56,61 @@ impl SessionTarget {
         match self {
             Self::Isolated => "isolated",
             Self::Main => "main",
+            Self::Current => "current",
         }
     }
 
+    /// Case-insensitive; anything unrecognised reads as [`Self::Isolated`].
     pub fn parse(raw: &str) -> Self {
         if raw.eq_ignore_ascii_case("main") {
             Self::Main
+        } else if raw.eq_ignore_ascii_case("current") {
+            Self::Current
         } else {
             Self::Isolated
+        }
+    }
+}
+
+/// The conversation a job was created from, captured at creation time so a
+/// run can bind its context to it and route its result back there.
+///
+/// Serializes internally tagged by `kind` (`"web"` or `"channel"`); absent
+/// optional fields are omitted.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum JobOrigin {
+    /// Desktop/web chat thread.
+    Web {
+        /// The chat thread the job was created in.
+        thread_id: String,
+        /// The agent that owned that thread, when it was not the default one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        agent_id: Option<String>,
+    },
+    /// External messaging channel (Telegram, Discord, Slack, ...).
+    Channel {
+        /// Channel backend name, e.g. `"telegram"`.
+        channel: String,
+        /// Where a reply is sent on that channel (chat, room or user id).
+        reply_target: String,
+        /// The host's conversation-history key for that chat.
+        history_key: String,
+        /// The sender whose message created the job.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        sender: Option<String>,
+        /// Channel-side thread or topic within the chat.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        thread_id: Option<String>,
+    },
+}
+
+impl JobOrigin {
+    /// The serialized `kind` tag: `"web"` or `"channel"`.
+    pub fn kind_str(&self) -> &'static str {
+        match self {
+            Self::Web { .. } => "web",
+            Self::Channel { .. } => "channel",
         }
     }
 }
@@ -188,8 +241,23 @@ impl<'de> Deserialize<'de> for Schedule {
     }
 }
 
+/// The [`DeliveryConfig::mode`] values a host understands.
+pub mod delivery_mode {
+    /// Keep the result in the run history only.
+    pub const NONE: &str = "none";
+    /// Announce the result on [`DeliveryConfig::channel`] / [`DeliveryConfig::to`].
+    pub const ANNOUNCE: &str = "announce";
+    /// Surface the result as a proactive message.
+    pub const PROACTIVE: &str = "proactive";
+    /// Commit the result into the job's origin conversation
+    /// ([`CronJob::origin`](super::CronJob::origin)) and send it once there.
+    pub const ORIGIN: &str = "origin";
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DeliveryConfig {
+    /// One of the [`delivery_mode`] constants. `"origin"` routes the result
+    /// to the conversation recorded in [`CronJob::origin`].
     #[serde(default)]
     pub mode: String,
     #[serde(default)]
@@ -203,7 +271,7 @@ pub struct DeliveryConfig {
 impl Default for DeliveryConfig {
     fn default() -> Self {
         Self {
-            mode: "none".to_string(),
+            mode: delivery_mode::NONE.to_string(),
             channel: None,
             to: None,
             best_effort: true,
@@ -240,6 +308,47 @@ pub struct CronJob {
     pub last_run: Option<DateTime<Utc>>,
     pub last_status: Option<String>,
     pub last_output: Option<String>,
+    /// The conversation that created the job, when it was created from one.
+    /// Absent on jobs that predate origin capture.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<JobOrigin>,
+}
+
+/// What happened to a run's result after the run finished.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DeliveryStatus {
+    /// The result was delivered to its destination.
+    Delivered,
+    /// Delivery was requested but deliberately skipped (e.g. empty output).
+    Suppressed,
+    /// Delivery was attempted and failed.
+    Failed,
+    /// The job's delivery mode asked for no delivery.
+    NotRequested,
+}
+
+impl DeliveryStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Delivered => "delivered",
+            Self::Suppressed => "suppressed",
+            Self::Failed => "failed",
+            Self::NotRequested => "not_requested",
+        }
+    }
+
+    /// Case-insensitive; `None` for an unknown value.
+    pub fn parse(raw: &str) -> Option<Self> {
+        [
+            Self::Delivered,
+            Self::Suppressed,
+            Self::Failed,
+            Self::NotRequested,
+        ]
+        .into_iter()
+        .find(|status| raw.eq_ignore_ascii_case(status.as_str()))
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -251,6 +360,10 @@ pub struct CronRun {
     pub status: String,
     pub output: Option<String>,
     pub duration_ms: Option<i64>,
+    /// Outcome of delivering this run's result; absent on runs recorded
+    /// without one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delivery_status: Option<DeliveryStatus>,
 }
 
 /// Deserialize a nullable patch field with true double-option semantics:
@@ -294,6 +407,15 @@ pub struct CronJobPatch {
     /// to honor a wire `null` as a clear rather than a silent no-op.
     #[serde(default, deserialize_with = "deserialize_double_option")]
     pub agent_id: Option<Option<String>>,
+    /// Set (`Some(Some(_))`) or clear (`Some(None)`) the job's origin
+    /// conversation; `None` leaves it unchanged (and is omitted when
+    /// serialized, so a round trip never turns it into a clear).
+    #[serde(
+        default,
+        deserialize_with = "deserialize_double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub origin: Option<Option<JobOrigin>>,
 }
 
 #[cfg(test)]

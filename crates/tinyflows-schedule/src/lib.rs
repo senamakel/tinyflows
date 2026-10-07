@@ -16,7 +16,8 @@ pub use schedule::{
     runs_closer_than, schedule_cron_expression, validate_agent_schedule, validate_schedule,
 };
 pub use types::{
-    ActiveHours, CronJob, CronJobPatch, CronRun, DeliveryConfig, JobType, Schedule, SessionTarget,
+    ActiveHours, CronJob, CronJobPatch, CronRun, DeliveryConfig, DeliveryStatus, JobOrigin,
+    JobType, Schedule, SessionTarget, delivery_mode,
 };
 
 #[cfg(test)]

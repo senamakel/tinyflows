@@ -263,3 +263,235 @@ fn cron_job_patch_agent_id_supports_explicit_none_clearing() {
     assert!(p.agent_id.is_some());
     assert!(p.agent_id.as_ref().unwrap().is_none());
 }
+
+// ── SessionTarget::Current ─────────────────────────────────────
+
+#[test]
+fn session_target_parses_current_main_isolated_and_unknown() {
+    assert_eq!(SessionTarget::parse("current"), SessionTarget::Current);
+    assert_eq!(SessionTarget::parse("CURRENT"), SessionTarget::Current);
+    assert_eq!(SessionTarget::parse("main"), SessionTarget::Main);
+    assert_eq!(SessionTarget::parse("isolated"), SessionTarget::Isolated);
+    assert_eq!(SessionTarget::parse("bogus"), SessionTarget::Isolated);
+    assert_eq!(SessionTarget::Current.as_str(), "current");
+}
+
+#[test]
+fn session_target_current_serializes_as_current() {
+    assert_eq!(
+        serde_json::to_string(&SessionTarget::Current).unwrap(),
+        "\"current\""
+    );
+    let back: SessionTarget = serde_json::from_str("\"current\"").unwrap();
+    assert_eq!(back, SessionTarget::Current);
+}
+
+// ── JobOrigin ──────────────────────────────────────────────────
+
+#[test]
+fn job_origin_web_roundtrips_and_omits_absent_agent_id() {
+    let origin = JobOrigin::Web {
+        thread_id: "t-1".into(),
+        agent_id: None,
+    };
+    let v = serde_json::to_value(&origin).unwrap();
+    assert_eq!(v, json!({ "kind": "web", "thread_id": "t-1" }));
+    let back: JobOrigin = serde_json::from_value(v).unwrap();
+    assert_eq!(back, origin);
+    assert_eq!(origin.kind_str(), "web");
+
+    let with_agent = JobOrigin::Web {
+        thread_id: "t-2".into(),
+        agent_id: Some("orchestrator".into()),
+    };
+    let v = serde_json::to_value(&with_agent).unwrap();
+    assert_eq!(v["agent_id"], "orchestrator");
+    assert_eq!(serde_json::from_value::<JobOrigin>(v).unwrap(), with_agent);
+}
+
+#[test]
+fn job_origin_channel_roundtrips_with_and_without_optionals() {
+    let full = JobOrigin::Channel {
+        channel: "telegram".into(),
+        reply_target: "chat-42".into(),
+        history_key: "telegram:chat-42".into(),
+        sender: Some("alice".into()),
+        thread_id: Some("topic-7".into()),
+    };
+    let v = serde_json::to_value(&full).unwrap();
+    assert_eq!(v["kind"], "channel");
+    assert_eq!(v["sender"], "alice");
+    assert_eq!(v["thread_id"], "topic-7");
+    assert_eq!(serde_json::from_value::<JobOrigin>(v).unwrap(), full);
+    assert_eq!(full.kind_str(), "channel");
+
+    let minimal = json!({
+        "kind": "channel",
+        "channel": "discord",
+        "reply_target": "c1",
+        "history_key": "discord:c1"
+    });
+    let parsed: JobOrigin = serde_json::from_value(minimal.clone()).unwrap();
+    assert_eq!(
+        parsed,
+        JobOrigin::Channel {
+            channel: "discord".into(),
+            reply_target: "c1".into(),
+            history_key: "discord:c1".into(),
+            sender: None,
+            thread_id: None,
+        }
+    );
+    assert_eq!(serde_json::to_value(&parsed).unwrap(), minimal);
+}
+
+// ── CronJob.origin ─────────────────────────────────────────────
+
+fn legacy_job_json() -> serde_json::Value {
+    json!({
+        "id": "j1",
+        "expression": "0 9 * * *",
+        "schedule": { "kind": "cron", "expr": "0 9 * * *" },
+        "command": "",
+        "prompt": "brief me",
+        "name": null,
+        "job_type": "agent",
+        "session_target": "isolated",
+        "model": null,
+        "agent_id": null,
+        "enabled": true,
+        "delivery": { "mode": "none" },
+        "delete_after_run": false,
+        "created_at": "2026-02-16T00:00:00Z",
+        "next_run": "2026-02-16T09:00:00Z",
+        "last_run": null,
+        "last_status": null,
+        "last_output": null
+    })
+}
+
+#[test]
+fn legacy_cron_job_without_origin_deserializes_to_none() {
+    let job: CronJob = serde_json::from_value(legacy_job_json()).unwrap();
+    assert_eq!(job.origin, None);
+    let v = serde_json::to_value(&job).unwrap();
+    assert!(v.get("origin").is_none(), "absent origin is not serialized");
+}
+
+#[test]
+fn cron_job_with_origin_roundtrips() {
+    let mut raw = legacy_job_json();
+    raw["session_target"] = json!("current");
+    raw["origin"] = json!({ "kind": "web", "thread_id": "t-9" });
+    let job: CronJob = serde_json::from_value(raw).unwrap();
+    assert_eq!(job.session_target, SessionTarget::Current);
+    assert_eq!(
+        job.origin,
+        Some(JobOrigin::Web {
+            thread_id: "t-9".into(),
+            agent_id: None,
+        })
+    );
+    let v = serde_json::to_value(&job).unwrap();
+    assert_eq!(v["origin"], json!({ "kind": "web", "thread_id": "t-9" }));
+}
+
+// ── CronJobPatch.origin ────────────────────────────────────────
+
+#[test]
+fn patch_origin_wire_double_option_semantics() {
+    let absent: CronJobPatch = serde_json::from_value(json!({})).unwrap();
+    assert_eq!(absent.origin, None, "absent key means no change");
+    let cleared: CronJobPatch = serde_json::from_value(json!({ "origin": null })).unwrap();
+    assert_eq!(cleared.origin, Some(None), "wire null clears the origin");
+    let set: CronJobPatch =
+        serde_json::from_value(json!({ "origin": { "kind": "web", "thread_id": "t" } })).unwrap();
+    assert_eq!(
+        set.origin,
+        Some(Some(JobOrigin::Web {
+            thread_id: "t".into(),
+            agent_id: None,
+        }))
+    );
+}
+
+// ── Delivery mode + status ─────────────────────────────────────
+
+#[test]
+fn delivery_mode_constants_are_the_wire_strings() {
+    assert_eq!(delivery_mode::NONE, "none");
+    assert_eq!(delivery_mode::ANNOUNCE, "announce");
+    assert_eq!(delivery_mode::PROACTIVE, "proactive");
+    assert_eq!(delivery_mode::ORIGIN, "origin");
+    assert_eq!(DeliveryConfig::default().mode, delivery_mode::NONE);
+}
+
+#[test]
+fn delivery_status_parse_as_str_and_serde_agree() {
+    for (status, wire) in [
+        (DeliveryStatus::Delivered, "delivered"),
+        (DeliveryStatus::Suppressed, "suppressed"),
+        (DeliveryStatus::Failed, "failed"),
+        (DeliveryStatus::NotRequested, "not_requested"),
+    ] {
+        assert_eq!(status.as_str(), wire);
+        assert_eq!(DeliveryStatus::parse(wire), Some(status.clone()));
+        assert_eq!(
+            serde_json::to_string(&status).unwrap(),
+            format!("\"{wire}\"")
+        );
+    }
+    assert_eq!(
+        DeliveryStatus::parse("DELIVERED"),
+        Some(DeliveryStatus::Delivered)
+    );
+    assert_eq!(DeliveryStatus::parse("bogus"), None);
+}
+
+// ── CronRun.delivery_status ────────────────────────────────────
+
+#[test]
+fn cron_run_delivery_status_is_optional_on_the_wire() {
+    let legacy = json!({
+        "id": 1, "job_id": "j1",
+        "started_at": "2026-02-16T09:00:00Z", "finished_at": "2026-02-16T09:00:01Z",
+        "status": "ok", "output": null, "duration_ms": 1000
+    });
+    let run: CronRun = serde_json::from_value(legacy).unwrap();
+    assert_eq!(run.delivery_status, None);
+    assert!(
+        serde_json::to_value(&run)
+            .unwrap()
+            .get("delivery_status")
+            .is_none()
+    );
+
+    let mut with = serde_json::to_value(&run).unwrap();
+    with["delivery_status"] = json!("delivered");
+    let run: CronRun = serde_json::from_value(with).unwrap();
+    assert_eq!(run.delivery_status, Some(DeliveryStatus::Delivered));
+}
+
+#[test]
+fn patch_without_origin_roundtrips_as_no_change() {
+    let patch = CronJobPatch {
+        enabled: Some(false),
+        ..Default::default()
+    };
+    let v = serde_json::to_value(&patch).unwrap();
+    assert!(v.get("origin").is_none(), "absent origin must be omitted");
+    let back: CronJobPatch = serde_json::from_value(v).unwrap();
+    assert_eq!(back.origin, None);
+}
+
+#[test]
+fn patch_clearing_origin_serializes_explicit_null() {
+    let patch = CronJobPatch {
+        origin: Some(None),
+        ..Default::default()
+    };
+    let v = serde_json::to_value(&patch).unwrap();
+    assert!(v.get("origin").is_some_and(|o| o.is_null()));
+    let back: CronJobPatch = serde_json::from_value(v).unwrap();
+    assert_eq!(back.origin, Some(None));
+}

@@ -17,6 +17,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `on_error`. An unrecognised predicate or an unreadable declaration fails the
   node rather than silently passing; `validate_all` refuses both at author
   time. Ported from OpenCompany's host-side agent gate.
+- **Job origin and origin delivery (`tinyflows-schedule`, `tinyflows-sqlite`).**
+  A job can record the conversation that created it: `JobOrigin::Web
+  { thread_id, agent_id }` or `JobOrigin::Channel { channel, reply_target,
+  history_key, sender, thread_id }`, stored as `CronJob::origin` and patchable
+  (set or clear) through `CronJobPatch::origin`. `SessionTarget::Current`
+  (`"current"`) runs detached but binds context and delivery to that origin;
+  the `delivery_mode` constants add `"origin"` (commit the result into the
+  origin conversation and send it once there). Run records gain an optional
+  `CronRun::delivery_status` (`DeliveryStatus`: `delivered`, `suppressed`,
+  `failed`, `not_requested`). The SQLite store adds the nullable
+  `cron_jobs.origin` and `cron_runs.delivery_status` columns on open, so older
+  databases load with no origin and no status; `AgentJobSpec` +
+  `add_agent_job_from_spec` create an agent job with an origin, and
+  `record_run_with_delivery` records a run with its delivery status. Existing
+  creation and `record_run` calls are unchanged and store `NULL`. Both new
+  fields are omitted from JSON when absent, so existing job and run bytes are
+  unchanged. Hosts that match `SessionTarget` exhaustively must handle
+  `Current`.
 - **`crates/tinyflows-schedule`** — the schedule model (`Schedule`,
   `ActiveHours`, the job/run records) and its pure logic: cron-expression
   normalisation, time-zone and active-window aware next-run computation,

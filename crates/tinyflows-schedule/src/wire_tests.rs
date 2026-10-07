@@ -4,7 +4,8 @@
 //! stored job has been orphaned.
 
 use crate::{
-    ActiveHours, CronJob, CronJobPatch, CronRun, DeliveryConfig, JobType, Schedule, SessionTarget,
+    ActiveHours, CronJob, CronJobPatch, CronRun, DeliveryConfig, DeliveryStatus, JobOrigin,
+    JobType, Schedule, SessionTarget,
 };
 
 fn assert_bytes<T>(json: &str, expected: &T)
@@ -76,6 +77,8 @@ fn enum_and_delivery_wire_bytes() {
     assert_bytes(r#""flow""#, &JobType::Flow);
     assert_bytes(r#""isolated""#, &SessionTarget::Isolated);
     assert_bytes(r#""main""#, &SessionTarget::Main);
+    assert_bytes(r#""current""#, &SessionTarget::Current);
+    assert_bytes(r#""not_requested""#, &DeliveryStatus::NotRequested);
     assert_bytes(
         r#"{"mode":"none","channel":null,"to":null,"best_effort":true}"#,
         &DeliveryConfig::default(),
@@ -101,4 +104,36 @@ fn patch_double_option_wire_semantics() {
     assert_eq!(cleared.agent_id, Some(None));
     let set: CronJobPatch = serde_json::from_str(r#"{"agent_id":"welcome"}"#).unwrap();
     assert_eq!(set.agent_id, Some(Some("welcome".into())));
+}
+
+#[test]
+fn origin_wire_bytes() {
+    assert_bytes(
+        r#"{"kind":"web","thread_id":"t1","agent_id":"orchestrator"}"#,
+        &JobOrigin::Web {
+            thread_id: "t1".into(),
+            agent_id: Some("orchestrator".into()),
+        },
+    );
+    assert_bytes(
+        r#"{"kind":"channel","channel":"telegram","reply_target":"42","history_key":"telegram:42","sender":"alice","thread_id":"7"}"#,
+        &JobOrigin::Channel {
+            channel: "telegram".into(),
+            reply_target: "42".into(),
+            history_key: "telegram:42".into(),
+            sender: Some("alice".into()),
+            thread_id: Some("7".into()),
+        },
+    );
+}
+
+#[test]
+fn job_with_origin_and_run_with_delivery_status_wire_bytes() {
+    let job_json = r#"{"id":"j1","expression":"0 9 * * *","schedule":{"kind":"cron","expr":"0 9 * * *","tz":null,"active_hours":null},"command":"","prompt":"brief","name":null,"job_type":"agent","session_target":"current","model":null,"agent_id":null,"enabled":true,"delivery":{"mode":"origin","channel":null,"to":null,"best_effort":true},"delete_after_run":false,"created_at":"2026-02-16T00:00:00Z","next_run":"2026-02-16T09:00:00Z","last_run":null,"last_status":null,"last_output":null,"origin":{"kind":"web","thread_id":"t1"}}"#;
+    let job: CronJob = serde_json::from_str(job_json).unwrap();
+    assert_eq!(serde_json::to_string(&job).unwrap(), job_json);
+
+    let run_json = r#"{"id":7,"job_id":"j1","started_at":"2026-02-16T09:00:00Z","finished_at":"2026-02-16T09:00:02Z","status":"ok","output":"hi","duration_ms":2000,"delivery_status":"delivered"}"#;
+    let run: CronRun = serde_json::from_str(run_json).unwrap();
+    assert_eq!(serde_json::to_string(&run).unwrap(), run_json);
 }

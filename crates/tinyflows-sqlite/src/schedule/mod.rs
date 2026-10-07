@@ -13,10 +13,12 @@
 
 use std::path::PathBuf;
 
+mod agent_jobs;
 mod jobs;
 mod runs;
 mod schema;
 
+pub use agent_jobs::{AgentJobSpec, add_agent_job_from_spec};
 pub use jobs::{
     add_agent_job, add_agent_job_with_definition, add_flow_schedule_job, add_job, add_shell_job,
     clear_all_jobs, dedup_named_jobs, due_jobs, find_flow_schedule_job, get_job, list_jobs,
@@ -24,7 +26,7 @@ pub use jobs::{
 };
 pub use runs::{
     MAX_CRON_OUTPUT_BYTES, TRUNCATED_OUTPUT_MARKER, delete_queued_runs, list_runs, record_last_run,
-    record_run, reschedule_after_run,
+    record_run, record_run_with_delivery, reschedule_after_run,
 };
 pub use schema::with_connection;
 
@@ -57,6 +59,9 @@ mod schedule_agent_floor_tests;
 #[cfg(test)]
 #[path = "schedule_dedup_tests.rs"]
 mod schedule_dedup_tests;
+#[cfg(test)]
+#[path = "schedule_origin_tests.rs"]
+mod schedule_origin_tests;
 #[cfg(test)]
 #[path = "schedule_schema_tests.rs"]
 mod schedule_schema_tests;
