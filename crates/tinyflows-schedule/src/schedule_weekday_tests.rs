@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use super::*;
 use chrono::{Datelike, TimeZone};
 use std::collections::BTreeSet;
