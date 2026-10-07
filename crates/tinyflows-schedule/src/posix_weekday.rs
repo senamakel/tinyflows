@@ -31,9 +31,15 @@ fn translate_item(item: &str) -> Result<String> {
         Some((base, step)) => (base, Some(parse_step(step)?)),
         None => (item, None),
     };
-    // A wildcard is every day in both numberings, and a step over it picks the
-    // same days: POSIX `*/n` walks 0, n, 2n… and the crate walks 1, 1+n,
-    // 1+2n…, the same days one number up. Names need no translation.
+    // A wildcard with a step needs to be rewritten. POSIX `*/n` walks 0, n, 2n…
+    // over days 0–7, but the crate walks 1, 1+n, 1+2n… over days 1–7, so we
+    // must emit an explicit range `1-7/n` to get the right days.
+    // A bare wildcard or a name needs no translation.
+    if (base == "*" || base == "?") && step.is_some() {
+        // Stepped wildcard: rewrite to explicit crate range.
+        let step_val = step.unwrap();
+        return Ok(format!("1-7/{step_val}"));
+    }
     if base == "*" || base == "?" || base.chars().any(|c| c.is_ascii_alphabetic()) {
         return Ok(item.to_string());
     }
