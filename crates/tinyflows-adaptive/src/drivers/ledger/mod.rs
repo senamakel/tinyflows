@@ -18,7 +18,7 @@ use tokio::sync::OnceCell;
 use super::{CAS_ATTEMPTS, is_race};
 
 mod trait_impl;
-use crate::ledger::{Ledger, LedgerError, LedgerRow, Lesson, LessonKind, Result};
+use crate::ledger::{LedgerError, LedgerRow, Lesson, LessonKind, Result};
 
 pub(super) const COUNTERS: &str = "adaptive_counters";
 pub(super) const ROWS: &str = "adaptive_rows";

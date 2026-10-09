@@ -99,8 +99,12 @@ impl Vault for DriverVault {
             .await
             .map_err(backend)?
         {
-            let raw = stored.doc.get("record").cloned().unwrap_or(Value::Null);
-            let record: WorkflowRecord = serde_json::from_value(raw).map_err(|e| {
+            let raw = stored
+                .doc
+                .get("record")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let record: WorkflowRecord = serde_json::from_str(raw).map_err(|e| {
                 WorkflowError::Engine(format!("stored workflow no longer parses: {e}"))
             })?;
             chosen.insert(record.id.clone(), record);
@@ -110,7 +114,10 @@ impl Vault for DriverVault {
 
     async fn put(&self, record: &WorkflowRecord) -> Result<(), WorkflowError> {
         self.declared().await?;
-        let encoded = serde_json::to_value(record)
+        // A JSON string, not a nested object: node configs carry arbitrary
+        // keys (dotted file names, `$`-prefixed fields) that a MongoDB-backed
+        // port would reject — the native Mongo vault stores a string too.
+        let encoded = serde_json::to_string(record)
             .map_err(|e| WorkflowError::Engine(format!("workflow will not serialize: {e}")))?;
         let doc = json!({
             "scope_key": self.bucket(),

@@ -2664,11 +2664,9 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "tempfile",
  "thiserror",
  "tinyflows",
  "tinystoragedrivers-core",
- "tinystoragedrivers-sqlite",
  "tokio",
 ]
 
@@ -2734,17 +2732,6 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
-]
-
-[[package]]
-name = "tinystoragedrivers-sqlite"
-version = "0.4.0"
-source = "git+https://github.com/tinyhumansai/tinystoragedrivers?tag=v0.4.0#f7d603878985966581f90a474eb36bfa1e1ba0f3"
-dependencies = [
- "rusqlite",
- "serde_json",
- "tinystoragedrivers-core",
- "tokio",
 ]
 
 [[package]]

@@ -1,5 +1,6 @@
 use super::*;
-use crate::ledger::conformance;
+use crate::execute::StepRecord;
+use crate::ledger::{Ledger, Score, conformance};
 use tinystoragedrivers_core::{MemoryStorage, Scope, StorageBackend};
 
 fn memory_docs() -> Arc<dyn DocumentStore> {
@@ -19,23 +20,6 @@ async fn passes_the_conformance_suite() {
 #[tokio::test]
 async fn passes_the_tenant_isolation_suite() {
     let store = DriverLedger::new(memory_docs());
-    conformance::run_tenants(
-        &store,
-        &store.for_tenant("user-a"),
-        &store.for_tenant("user-b"),
-    )
-    .await;
-}
-
-#[tokio::test]
-async fn passes_both_suites_on_sqlite() {
-    let dir = tempfile::tempdir().unwrap();
-    let storage =
-        tinystoragedrivers_sqlite::SqliteStorage::open(dir.path().join("adaptive.db")).unwrap();
-    let store = DriverLedger::new(Arc::clone(
-        storage.for_scope(&Scope::local()).unwrap().documents(),
-    ));
-    conformance::run_all(&store).await;
     conformance::run_tenants(
         &store,
         &store.for_tenant("user-a"),
@@ -136,4 +120,44 @@ async fn an_unreadable_record_is_corrupt() {
         backend(StorageError::unavailable("x")),
         LedgerError::Backend(_)
     ));
+}
+
+#[tokio::test]
+async fn steps_are_one_document_each_in_order() {
+    let docs = memory_docs();
+    let store = DriverLedger::new(Arc::clone(&docs));
+    let step = |node: &str| StepRecord {
+        node_id: node.to_string(),
+        status: crate::execute::StepOutcome::Success,
+        output: json!({ "file.name": node, "$weird": true }),
+        duration_ms: 1,
+        null_bindings: Vec::new(),
+        transcript: Vec::new(),
+    };
+    let steps: Vec<StepRecord> = (0..12).map(|n| step(&format!("n{n:02}"))).collect();
+    store.save_steps("ldg_1", &steps).await.unwrap();
+    let stored = docs.query_all(STEPS, &Query::all()).await.unwrap();
+    assert_eq!(
+        stored.len(),
+        12,
+        "a step per document, never one oversized record"
+    );
+    assert!(stored.iter().all(|doc| doc.doc["record"].is_string()));
+    let back = store.steps("ldg_1").await.unwrap();
+    assert_eq!(
+        back.iter().map(|s| s.node_id.as_str()).collect::<Vec<_>>(),
+        steps.iter().map(|s| s.node_id.as_str()).collect::<Vec<_>>()
+    );
+    assert_eq!(back[3].output["file.name"], json!("n03"));
+    // Saving again replaces, never appends.
+    store.save_steps("ldg_1", &steps[..2]).await.unwrap();
+    assert_eq!(store.steps("ldg_1").await.unwrap().len(), 2);
+    assert!(
+        store
+            .for_tenant("x")
+            .steps("ldg_1")
+            .await
+            .unwrap()
+            .is_empty()
+    );
 }

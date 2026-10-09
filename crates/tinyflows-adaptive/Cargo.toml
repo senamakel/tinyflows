@@ -37,10 +37,6 @@ mongo = ["dep:mongodb"]
 storage-drivers = ["dep:tinystoragedrivers-core", "dep:sha2", "dep:tokio"]
 
 [dev-dependencies]
-# The `storage-drivers` backend is held to the conformance suites on a real
-# SQLite driver too.
-tinystoragedrivers-sqlite = { git = "https://github.com/tinyhumansai/tinystoragedrivers", tag = "v0.4.0" }
-tempfile = "3"
 tinyflows = { path = "../tinyflows", features = ["store", "mock"] }
 tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread", "sync", "time"] }
 

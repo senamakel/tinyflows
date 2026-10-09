@@ -54,3 +54,13 @@ async fn storage_scopes_both_halves_together() {
         .unwrap();
     assert!(storage.vault().load().await.unwrap().is_empty());
 }
+
+#[tokio::test]
+async fn records_are_stored_as_strings() {
+    let docs = memory_docs();
+    let vault = DriverVault::new(Arc::clone(&docs));
+    vault.put(&conformance::record("wf")).await.unwrap();
+    let stored = docs.query_all(WORKFLOWS, &Query::all()).await.unwrap();
+    assert!(stored[0].doc["record"].is_string());
+    assert_eq!(vault.load().await.unwrap()[0].id, "wf");
+}
