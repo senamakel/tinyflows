@@ -13,13 +13,9 @@
 //! at superstep boundaries only — never mid-node — so resuming always reruns a
 //! node from its start.
 
-#[cfg(feature = "storage-drivers")]
-mod drivers;
 mod file;
 mod types;
 
-#[cfg(feature = "storage-drivers")]
-pub use drivers::{DEFAULT_PREFIX as DRIVER_DEFAULT_PREFIX, DriverCheckpointer};
 pub use file::FileCheckpointer;
 pub use types::{
     BarrierArrivals, Checkpoint, CheckpointConfig, CheckpointMetadata, CheckpointSource,
