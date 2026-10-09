@@ -4,8 +4,8 @@
 //! the driver layout adds.
 
 use super::*;
-use tinyflows::graph::ids::NodeId;
 use serde_json::json;
+use tinyflows::graph::ids::NodeId;
 use tinystoragedrivers_core::{MemoryStorage, Scope, StorageBackend};
 
 fn docs(storage: &MemoryStorage, scope: &str) -> Arc<dyn DocumentStore> {

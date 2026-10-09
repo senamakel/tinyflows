@@ -2650,7 +2650,6 @@ dependencies = [
  "sha2",
  "tempfile",
  "thiserror",
- "tinystoragedrivers-core",
  "tokio",
  "tracing",
 ]
@@ -2688,6 +2687,20 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "tinyflows-drivers"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tinyflows",
+ "tinystoragedrivers-core",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

@@ -25,12 +25,12 @@
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-use tinyflows::graph::error::{GraphError, Result};
-use tinyflows::graph::ids::CheckpointId;
 use async_trait::async_trait;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
+use tinyflows::graph::error::{GraphError, Result};
+use tinyflows::graph::ids::CheckpointId;
 use tinystoragedrivers_core::{
     CollectionSpec, DocumentStore, DocumentStoreExt, ErrorKind, Filter, IndexSpec, Precondition,
     Query, Sort, StorageError, Versioned,
@@ -38,8 +38,8 @@ use tinystoragedrivers_core::{
 use tokio::sync::OnceCell;
 
 use tinyflows::graph::{
-    Checkpoint, CheckpointConfig, CheckpointMetadata, CheckpointTuple, Checkpointer,
-    PendingWrite, merge_writes,
+    Checkpoint, CheckpointConfig, CheckpointMetadata, CheckpointTuple, Checkpointer, PendingWrite,
+    merge_writes,
 };
 
 /// How many times a compare-and-swap loop retries before giving up.
@@ -157,7 +157,8 @@ impl<State> DriverCheckpointer<State> {
                         )),
                     CollectionSpec::new(&self.threads),
                     CollectionSpec::new(&self.writes)
-                        .index(IndexSpec::new("by_thread", ["thread"])),
+                        .index(IndexSpec::new("by_thread", ["thread"]))
+                        .index(IndexSpec::new("by_namespace", ["thread", "ns_key"])),
                 ];
                 for spec in &specs {
                     self.docs.ensure_collection(spec).await.map_err(map_error)?;
@@ -296,6 +297,101 @@ where
         page.items.into_iter().next().map(Self::decode).transpose()
     }
 
+    /// One indexed read of the namespace's checkpoints and one of its
+    /// pending writes, then the lineage walk in memory — instead of the
+    /// trait default's `get_scoped` plus `get_writes` per hop, which on a
+    /// remote backend is two round trips per ancestor.
+    async fn state_history(
+        &self,
+        thread_id: &str,
+        namespace: &[String],
+        limit: Option<usize>,
+    ) -> Result<Vec<CheckpointTuple<State>>> {
+        self.declared().await?;
+        let ns_key = namespace_key(namespace);
+        let query = Query::filter(
+            Filter::eq("thread", thread_id).and(Filter::eq("namespace", ns_key.as_str())),
+        )
+        .sort(Sort::asc("seq"));
+        let records = self
+            .docs
+            .query_all(&self.checkpoints, &query)
+            .await
+            .map_err(map_error)?;
+        if records.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut writes: std::collections::HashMap<String, Vec<PendingWrite>> =
+            std::collections::HashMap::new();
+        let stored_writes = self
+            .docs
+            .query_all(
+                &self.writes,
+                &Query::filter(
+                    Filter::eq("thread", thread_id).and(Filter::eq("ns_key", ns_key.as_str())),
+                ),
+            )
+            .await
+            .map_err(map_error)?;
+        for stored in stored_writes {
+            let Some(id) = stored.doc.get("checkpoint_id").and_then(Value::as_str) else {
+                continue;
+            };
+            let batch: Vec<PendingWrite> =
+                serde_json::from_value(stored.doc.get("writes").cloned().unwrap_or(Value::Null))?;
+            writes.insert(id.to_string(), batch);
+        }
+
+        // Last write wins for a re-used id, matching `get`.
+        let mut by_id: std::collections::HashMap<String, Checkpoint<State>> =
+            std::collections::HashMap::with_capacity(records.len());
+        let mut cursor: Option<String> = None;
+        for stored in records {
+            let checkpoint = Self::decode(stored)?;
+            cursor = Some(checkpoint.checkpoint_id.clone());
+            by_id.insert(checkpoint.checkpoint_id.clone(), checkpoint);
+        }
+
+        let mut out = Vec::new();
+        while let Some(id) = cursor {
+            if limit.is_some_and(|limit| out.len() >= limit) {
+                break;
+            }
+            // `remove` doubles as the cycle guard: each id is visited once.
+            let Some(checkpoint) = by_id.remove(&id) else {
+                break;
+            };
+            cursor = checkpoint.parent_checkpoint_id.clone();
+            let config = CheckpointConfig {
+                thread_id: checkpoint.thread_id.clone(),
+                checkpoint_id: Some(checkpoint.checkpoint_id.clone()),
+                namespace: checkpoint.namespace.clone(),
+            };
+            let parent_config =
+                checkpoint
+                    .parent_checkpoint_id
+                    .as_ref()
+                    .map(|parent| CheckpointConfig {
+                        thread_id: checkpoint.thread_id.clone(),
+                        checkpoint_id: Some(parent.clone()),
+                        namespace: checkpoint.namespace.clone(),
+                    });
+            // The persisted write ledger when there is one, the record's own
+            // inline writes otherwise — `resolved_writes`' rule.
+            let pending_writes = writes
+                .remove(&checkpoint.checkpoint_id)
+                .filter(|batch| !batch.is_empty())
+                .unwrap_or_else(|| checkpoint.pending_writes.clone());
+            out.push(CheckpointTuple {
+                config,
+                checkpoint,
+                parent_config,
+                pending_writes,
+            });
+        }
+        Ok(out)
+    }
+
     async fn list(&self, thread_id: &str) -> Result<Vec<CheckpointMetadata>> {
         Ok(self
             .get_thread(thread_id)
@@ -392,6 +488,7 @@ where
             let doc = json!({
                 "thread": config.thread_id,
                 "namespace": config.namespace,
+                "ns_key": namespace_key(&config.namespace),
                 "checkpoint_id": checkpoint_id,
                 "writes": serde_json::to_value(&stored)?,
             });
