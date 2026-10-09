@@ -7,8 +7,6 @@
 
 pub mod agent;
 pub mod approval;
-#[cfg(feature = "storage-drivers")]
-mod drivers;
 #[cfg(any(test, feature = "host-caps"))]
 pub mod host;
 #[cfg(any(test, feature = "mock"))]
@@ -206,9 +204,6 @@ pub trait StateStore: Send + Sync {
     /// Persists a value under `key`.
     async fn store(&self, key: &str, value: Value) -> Result<()>;
 }
-
-#[cfg(feature = "storage-drivers")]
-pub use drivers::DriverStateStore;
 
 /// The bundle of capabilities handed to the engine for a run.
 ///
