@@ -266,7 +266,8 @@ impl FlowCatalogDocuments {
                 continue;
             };
             let cutoff = instant_ns(&next_stamp(None)) - ABANDONED_AFTER_NS;
-            let still_abandoned = flag(&current.doc, "pending") && last_activity_ns(&current.doc) < cutoff;
+            let still_abandoned =
+                flag(&current.doc, "pending") && last_activity_ns(&current.doc) < cutoff;
             // An update may have named it since the partition read the
             // definition; a named revision is never abandoned.
             let named = still_abandoned
