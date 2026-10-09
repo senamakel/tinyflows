@@ -8,8 +8,8 @@ use chrono::{DateTime, Utc};
 use rusqlite::params;
 use tinyflows_schedule::{CronJob, CronRun, DeliveryStatus, Schedule, next_run_for_schedule};
 
-pub use tinyflows_schedule::{MAX_CRON_OUTPUT_BYTES, TRUNCATED_OUTPUT_MARKER};
 use tinyflows_schedule::truncate_cron_output;
+pub use tinyflows_schedule::{MAX_CRON_OUTPUT_BYTES, TRUNCATED_OUTPUT_MARKER};
 
 /// Records a run's outcome on the job row (`last_run`, `last_status`,
 /// bounded `last_output`) without touching `next_run` or `enabled`.

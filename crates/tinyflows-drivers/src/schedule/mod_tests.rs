@@ -48,7 +48,12 @@ async fn a_corrupt_job_document_is_an_error_naming_the_field() {
     store.ensure().await.unwrap();
     store
         .docs
-        .put(JOBS, "bad", json!({ "job_type": "shell" }), Precondition::Absent)
+        .put(
+            JOBS,
+            "bad",
+            json!({ "job_type": "shell" }),
+            Precondition::Absent,
+        )
         .await
         .unwrap();
     let error = store.get_job("bad").await.unwrap_err().to_string();

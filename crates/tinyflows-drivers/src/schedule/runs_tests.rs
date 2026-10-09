@@ -92,7 +92,10 @@ async fn an_unknown_delivery_status_reads_as_none() {
         .put(RUNS, &run_id(1), doc, Precondition::Absent)
         .await
         .unwrap();
-    assert_eq!(store.list_runs(&job.id, 10).await.unwrap()[0].delivery_status, None);
+    assert_eq!(
+        store.list_runs(&job.id, 10).await.unwrap()[0].delivery_status,
+        None
+    );
 }
 
 #[tokio::test]
@@ -120,8 +123,14 @@ async fn record_last_run_leaves_the_schedule_alone() {
     let store = store();
     let job = store.add_job("0 9 * * *", "x").await.unwrap();
     let at = Utc::now();
-    store.record_last_run(&job.id, at, false, "boom").await.unwrap();
-    store.record_last_run("missing", at, true, "").await.unwrap();
+    store
+        .record_last_run(&job.id, at, false, "boom")
+        .await
+        .unwrap();
+    store
+        .record_last_run("missing", at, true, "")
+        .await
+        .unwrap();
     let read = store.get_job(&job.id).await.unwrap();
     assert_eq!(read.last_status.as_deref(), Some("error"));
     assert_eq!(read.last_output.as_deref(), Some("boom"));
@@ -139,23 +148,26 @@ async fn reschedule_records_the_outcome_and_advances_once() {
     // Make the job due now, as the scheduler would see it.
     let due_at = Utc::now() - Duration::seconds(5);
     let fired = store
-        .update_job(
-            &job.id,
-            tinyflows_schedule::CronJobPatch::default(),
-        )
+        .update_job(&job.id, tinyflows_schedule::CronJobPatch::default())
         .await
         .unwrap();
     let mut fired = fired;
     set_due(&store, &fired.id, due_at).await;
     fired.next_run = store.get_job(&job.id).await.unwrap().next_run;
 
-    store.reschedule_after_run(&fired, true, "done").await.unwrap();
+    store
+        .reschedule_after_run(&fired, true, "done")
+        .await
+        .unwrap();
     let after = store.get_job(&job.id).await.unwrap();
     assert!(after.next_run > Utc::now());
     assert_eq!(after.last_status.as_deref(), Some("ok"));
 
     // A second reschedule of the same fired occurrence only records.
-    store.reschedule_after_run(&fired, false, "again").await.unwrap();
+    store
+        .reschedule_after_run(&fired, false, "again")
+        .await
+        .unwrap();
     let twice = store.get_job(&job.id).await.unwrap();
     assert_eq!(twice.next_run, after.next_run);
     assert_eq!(twice.last_status.as_deref(), Some("error"));
@@ -183,7 +195,13 @@ async fn a_one_shot_job_is_disabled_after_its_run() {
     store.reschedule_after_run(&job, true, "").await.unwrap();
     let read = store.get_job(&job.id).await.unwrap();
     assert!(!read.enabled);
-    assert!(store.due_jobs(at + Duration::minutes(1)).await.unwrap().is_empty());
+    assert!(
+        store
+            .due_jobs(at + Duration::minutes(1))
+            .await
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -215,7 +233,10 @@ async fn concurrent_recording_keeps_every_run_and_advances_once() {
     ids.dedup();
     assert_eq!(ids.len(), 8, "every run kept, each with its own number");
     let advanced = store.get_job(&job.id).await.unwrap().next_run;
-    assert_ne!(advanced, job.next_run, "advanced exactly from the fired run");
+    assert_ne!(
+        advanced, job.next_run,
+        "advanced exactly from the fired run"
+    );
 }
 
 #[tokio::test]
@@ -230,7 +251,10 @@ async fn dedup_keeps_the_job_with_the_most_history() {
         .add_shell_job(Some("brief".into()), daily(), "b")
         .await
         .unwrap();
-    store.add_shell_job(Some("other".into()), daily(), "c").await.unwrap();
+    store
+        .add_shell_job(Some("other".into()), daily(), "c")
+        .await
+        .unwrap();
     store.add_shell_job(None, daily(), "d").await.unwrap();
     store.add_shell_job(None, daily(), "e").await.unwrap();
     run(&store, &busy.id, "ok", 2).await;
@@ -240,7 +264,11 @@ async fn dedup_keeps_the_job_with_the_most_history() {
     assert!(store.get_job(&quiet.id).await.is_err());
     assert!(store.list_runs(&quiet.id, 10).await.unwrap().is_empty());
     assert!(store.get_job(&busy.id).await.is_ok());
-    assert_eq!(store.list_jobs().await.unwrap().len(), 4, "unnamed jobs untouched");
+    assert_eq!(
+        store.list_jobs().await.unwrap().len(),
+        4,
+        "unnamed jobs untouched"
+    );
     assert_eq!(store.dedup_named_jobs().await.unwrap(), 0, "idempotent");
 }
 

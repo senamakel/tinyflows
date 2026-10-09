@@ -164,7 +164,12 @@ impl CronDocuments {
                 .map_or(Precondition::Absent, |stored| stored.unchanged());
             match self
                 .docs
-                .put(COUNTERS, RUN_COUNTER, json!({ "next": next + 1 }), precondition)
+                .put(
+                    COUNTERS,
+                    RUN_COUNTER,
+                    json!({ "next": next + 1 }),
+                    precondition,
+                )
                 .await
             {
                 Ok(_) => return Ok(next),

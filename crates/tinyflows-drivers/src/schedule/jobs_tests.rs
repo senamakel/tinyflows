@@ -95,7 +95,15 @@ async fn agent_jobs_carry_their_spec_and_origin() {
 #[tokio::test]
 async fn an_agent_job_tighter_than_the_floor_is_refused() {
     let error = store()
-        .add_agent_job(None, every(1), "p", SessionTarget::Isolated, None, None, false)
+        .add_agent_job(
+            None,
+            every(1),
+            "p",
+            SessionTarget::Isolated,
+            None,
+            None,
+            false,
+        )
         .await;
     assert!(error.is_err());
 }
@@ -112,11 +120,19 @@ async fn flow_schedule_jobs_are_one_per_flow() {
     assert_eq!(first.job_type, JobType::Flow);
     assert_eq!(store.list_jobs().await.unwrap().len(), 1);
     assert_eq!(
-        store.find_flow_schedule_job("f1").await.unwrap().map(|j| j.id),
+        store
+            .find_flow_schedule_job("f1")
+            .await
+            .unwrap()
+            .map(|j| j.id),
         Some(first.id.clone())
     );
     store.add_job("0 9 * * *", "f1").await.unwrap();
-    assert_eq!(store.list_jobs().await.unwrap().len(), 2, "shell jobs may share a command");
+    assert_eq!(
+        store.list_jobs().await.unwrap().len(),
+        2,
+        "shell jobs may share a command"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -153,7 +169,10 @@ async fn add_list_remove_round_trip() {
     assert_eq!(listed[0], job.id, "ordered by next run");
     store.remove_job(&late.id).await.unwrap();
     let error = store.remove_job(&late.id).await.unwrap_err();
-    assert_eq!(error.to_string(), format!("Cron job '{}' not found", late.id));
+    assert_eq!(
+        error.to_string(),
+        format!("Cron job '{}' not found", late.id)
+    );
     assert!(store.get_job(&late.id).await.is_err());
     assert_eq!(store.clear_all_jobs().await.unwrap(), 1);
     assert!(store.list_jobs().await.unwrap().is_empty());
@@ -214,7 +233,10 @@ async fn update_job_applies_the_patch() {
     assert_eq!(updated.expression, "");
     assert_eq!(updated.agent_id.as_deref(), Some("a"));
     assert!(updated.delete_after_run);
-    assert_eq!(store.get_job(&job.id).await.unwrap().name.as_deref(), Some("n"));
+    assert_eq!(
+        store.get_job(&job.id).await.unwrap().name.as_deref(),
+        Some("n")
+    );
     assert!(
         store
             .update_job("missing", CronJobPatch::default())

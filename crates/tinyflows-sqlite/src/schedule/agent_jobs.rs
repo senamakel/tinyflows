@@ -8,8 +8,7 @@ use anyhow::{Context, Result};
 use chrono::Utc;
 use rusqlite::params;
 use tinyflows_schedule::{
-    CronJob, JobOrigin, next_run_for_schedule,
-    schedule_cron_expression, validate_agent_schedule,
+    CronJob, JobOrigin, next_run_for_schedule, schedule_cron_expression, validate_agent_schedule,
 };
 use uuid::Uuid;
 

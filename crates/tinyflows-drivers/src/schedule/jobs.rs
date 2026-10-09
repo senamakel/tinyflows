@@ -180,7 +180,11 @@ impl CronDocuments {
     /// Idempotent and race-safe: the job's id is derived from `flow_id` and
     /// written only if absent, so two concurrent registrations get back the
     /// same single job and neither errors.
-    pub async fn add_flow_schedule_job(&self, flow_id: &str, schedule: Schedule) -> Result<CronJob> {
+    pub async fn add_flow_schedule_job(
+        &self,
+        flow_id: &str,
+        schedule: Schedule,
+    ) -> Result<CronJob> {
         let now = Utc::now();
         validate_schedule(&schedule, now)?;
         let mut job = new_job(JobType::Flow, schedule, now)?;
@@ -200,14 +204,18 @@ impl CronDocuments {
                     %flow_id,
                     "[cron] add_flow_schedule_job: the flow already has a job — returning it"
                 );
-                self.find_flow_schedule_job(flow_id).await?.with_context(|| {
-                    format!(
-                        "add_flow_schedule_job: insert for flow '{flow_id}' conflicted but no \
+                self.find_flow_schedule_job(flow_id)
+                    .await?
+                    .with_context(|| {
+                        format!(
+                            "add_flow_schedule_job: insert for flow '{flow_id}' conflicted but no \
                          existing flow-schedule job was found"
-                    )
-                })
+                        )
+                    })
             }
-            Err(error) => Err(storage_error(error)).context("Failed to insert cron flow-schedule job"),
+            Err(error) => {
+                Err(storage_error(error)).context("Failed to insert cron flow-schedule job")
+            }
         }
     }
 
@@ -457,7 +465,11 @@ fn apply_patch(mut job: CronJob, patch: CronJobPatch) -> Result<CronJob> {
 }
 
 /// Marks `doc` as rescheduled to `next_run` (used by the run bookkeeping).
-pub(super) fn reschedule(doc: &mut serde_json::Map<String, Value>, next_run: DateTime<Utc>, one_shot: bool) {
+pub(super) fn reschedule(
+    doc: &mut serde_json::Map<String, Value>,
+    next_run: DateTime<Utc>,
+    one_shot: bool,
+) {
     set_next_run(doc, next_run);
     if one_shot {
         doc.insert("enabled".into(), json!(false));

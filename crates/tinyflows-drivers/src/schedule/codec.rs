@@ -57,12 +57,19 @@ pub(super) fn job_to_doc(job: &CronJob) -> Result<Value> {
     );
     doc.insert("delete_after_run".into(), json!(job.delete_after_run));
     doc.insert("created_at".into(), json!(job.created_at.to_rfc3339()));
-    doc.insert("created_ms".into(), json!(job.created_at.timestamp_millis()));
+    doc.insert(
+        "created_ms".into(),
+        json!(job.created_at.timestamp_millis()),
+    );
     set_next_run(&mut doc, job.next_run);
     set(&mut doc, "prompt", job.prompt.as_ref().map(|v| json!(v)));
     set(&mut doc, "name", job.name.as_ref().map(|v| json!(v)));
     set(&mut doc, "model", job.model.as_ref().map(|v| json!(v)));
-    set(&mut doc, "agent_id", job.agent_id.as_ref().map(|v| json!(v)));
+    set(
+        &mut doc,
+        "agent_id",
+        job.agent_id.as_ref().map(|v| json!(v)),
+    );
     set(
         &mut doc,
         "origin",
