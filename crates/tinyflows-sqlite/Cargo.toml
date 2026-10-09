@@ -14,7 +14,8 @@ name = "tinyflows-sqlite"
 version = "0.1.0"
 description = "SQLite-backed flow catalog, draft store and graph checkpointer for tinyflows"
 edition.workspace = true
-rust-version.workspace = true
+# The SQLite driver this crate opens its databases through needs 1.88.
+rust-version = "1.88"
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
@@ -33,6 +34,11 @@ async-trait = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
 chrono = { workspace = true }
 rusqlite = { workspace = true }
+# `flows.db` and `jobs.db` open through the SQLite driver's native mode: the
+# driver owns the per-file connection (shared with any other handle on the
+# same file in the process), this crate keeps its own tables and SQL. Named by
+# git tag so a host that vendors the storage crates once can `[patch]` it.
+tinystoragedrivers-sqlite = { git = "https://github.com/tinyhumansai/tinystoragedrivers", tag = "v0.4.0" }
 uuid = { workspace = true }
 # Diagnostics only: what was written, skipped, or found corrupt on disk.
 tracing = { workspace = true }

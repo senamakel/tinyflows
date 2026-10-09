@@ -25,6 +25,7 @@
 //! creates what it needs on first use. That is what lets a second host adopt
 //! this store without adopting anything else.
 
+mod native;
 #[cfg(feature = "catalog")]
 pub mod checkpoint;
 #[cfg(feature = "catalog")]
