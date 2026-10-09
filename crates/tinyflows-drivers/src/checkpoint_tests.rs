@@ -505,7 +505,7 @@ async fn state_history_walks_the_lineage_newest_first_in_one_read() {
         .unwrap();
     let ledger = PendingWrite::data("n", "task", 0, "out", json!("ledger"));
     saver
-        .put_writes(&addressed("t", "b"), &[ledger.clone()])
+        .put_writes(&addressed("t", "b"), std::slice::from_ref(&ledger))
         .await
         .unwrap();
     // Another namespace never leaks into the root's history.
