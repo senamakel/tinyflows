@@ -37,6 +37,8 @@ use tinystoragedrivers_core::{
 };
 use tokio::sync::OnceCell;
 
+use crate::checkpoint_keys::{key, map_error, namespace_key, require_checkpoint_id};
+
 use tinyflows::graph::checkpoint::merge_writes;
 use tinyflows::graph::{
     Checkpoint, CheckpointConfig, CheckpointMetadata, CheckpointTuple, Checkpointer, PendingWrite,
@@ -45,54 +47,8 @@ use tinyflows::graph::{
 /// How many times a compare-and-swap loop retries before giving up.
 const CAS_ATTEMPTS: usize = 64;
 
-/// Map a storage driver failure onto the graph's checkpoint error.
-fn map_error(error: StorageError) -> GraphError {
-    GraphError::Checkpoint(format!("storage driver: {error}"))
-}
-
-/// Longest id stored as is; longer ones are hashed.
-const MAX_KEY_LEN: usize = 400;
-
-/// A document id for `parts`: length-prefixed so no two tuples collide, and
-/// replaced by its SHA-256 when it would exceed the driver's id limit.
-fn key(parts: &[&str]) -> String {
-    let joined: String = parts
-        .iter()
-        .map(|part| format!("{}:{part}", part.len()))
-        .collect::<Vec<_>>()
-        .join("/");
-    if joined.len() <= MAX_KEY_LEN {
-        joined
-    } else {
-        use sha2::{Digest, Sha256};
-        let digest = Sha256::digest(joined.as_bytes());
-        let hex: String = digest.iter().map(|byte| format!("{byte:02x}")).collect();
-        format!("h:{hex}")
-    }
-}
-
-/// `namespace` as one string, injectively: each component is
-/// length-prefixed, so `["a", "b"]` and `["a/b"]` never meet.
-fn namespace_key(namespace: &[String]) -> String {
-    namespace
-        .iter()
-        .map(|part| format!("{}:{part};", part.len()))
-        .collect()
-}
-
 /// The collection prefix [`DriverCheckpointer::new`] uses.
 pub const DEFAULT_PREFIX: &str = "flows_graph";
-
-/// The checkpoint id a write must name; a write against "the latest
-/// checkpoint" has no meaning, so it is refused.
-fn require_checkpoint_id(config: &CheckpointConfig) -> Result<String> {
-    config.checkpoint_id.clone().ok_or_else(|| {
-        GraphError::Checkpoint(format!(
-            "put_writes requires an explicit checkpoint_id (thread `{}`)",
-            config.thread_id
-        ))
-    })
-}
 
 /// A [`Checkpointer`] that stores everything in a driver [`DocumentStore`].
 pub struct DriverCheckpointer<State> {
@@ -522,3 +478,6 @@ where
 #[cfg(test)]
 #[path = "checkpoint_tests.rs"]
 mod tests;
+#[cfg(test)]
+#[path = "checkpoint_history_tests.rs"]
+mod history_tests;

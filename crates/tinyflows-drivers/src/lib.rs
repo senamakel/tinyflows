@@ -20,6 +20,7 @@
 //! [`Checkpointer`]: tinyflows::graph::Checkpointer
 
 mod checkpoint;
+mod checkpoint_keys;
 mod state_store;
 
 pub use checkpoint::{DEFAULT_PREFIX, DriverCheckpointer};
