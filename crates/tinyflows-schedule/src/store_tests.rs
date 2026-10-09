@@ -26,13 +26,31 @@ fn a_new_spec_is_an_enabled_isolated_job() {
 
 #[test]
 fn only_a_flow_jobs_command_is_pinned() {
-    let mut job: CronJob = serde_json::from_value(serde_json::json!({
-        "id": "flow:a", "expression": "0 9 * * *",
-        "schedule": { "kind": "cron", "expr": "0 9 * * *" },
-        "command": "a", "job_type": "flow", "enabled": true,
-        "created_at": "2026-01-01T00:00:00Z", "next_run": "2026-01-02T09:00:00Z"
-    }))
-    .unwrap();
+    let mut job = CronJob {
+        id: "flow:a".into(),
+        expression: "0 9 * * *".into(),
+        schedule: Schedule::Cron {
+            expr: "0 9 * * *".into(),
+            tz: None,
+            active_hours: None,
+        },
+        command: "a".into(),
+        prompt: None,
+        name: None,
+        job_type: crate::JobType::Flow,
+        session_target: SessionTarget::default(),
+        model: None,
+        agent_id: None,
+        enabled: true,
+        delivery: DeliveryConfig::default(),
+        delete_after_run: false,
+        created_at: chrono::Utc::now(),
+        next_run: chrono::Utc::now(),
+        last_run: None,
+        last_status: None,
+        last_output: None,
+        origin: None,
+    };
     let retarget = CronJobPatch {
         command: Some("b".into()),
         ..CronJobPatch::default()
