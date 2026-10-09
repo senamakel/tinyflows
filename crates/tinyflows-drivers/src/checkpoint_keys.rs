@@ -49,4 +49,3 @@ pub(crate) fn require_checkpoint_id(config: &CheckpointConfig) -> Result<String>
         ))
     })
 }
-

@@ -33,7 +33,7 @@ use tinyflows::graph::error::{GraphError, Result};
 use tinyflows::graph::ids::CheckpointId;
 use tinystoragedrivers_core::{
     CollectionSpec, DocumentStore, DocumentStoreExt, ErrorKind, Filter, IndexSpec, Precondition,
-    Query, Sort, StorageError, Versioned,
+    Query, Sort, Versioned,
 };
 use tokio::sync::OnceCell;
 
@@ -476,8 +476,8 @@ where
 }
 
 #[cfg(test)]
-#[path = "checkpoint_tests.rs"]
-mod tests;
-#[cfg(test)]
 #[path = "checkpoint_history_tests.rs"]
 mod history_tests;
+#[cfg(test)]
+#[path = "checkpoint_tests.rs"]
+mod tests;

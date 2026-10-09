@@ -46,3 +46,23 @@ async fn an_unstorable_key_is_a_capability_error() {
         .unwrap_err();
     assert!(error.to_string().contains("state store"), "{error}");
 }
+
+#[tokio::test]
+async fn a_document_without_a_value_is_a_capability_error_not_missing_state() {
+    let backing = docs(&MemoryStorage::new(), "local");
+    let store = DriverStateStore::new(Arc::clone(&backing));
+    // Declares the collection, then plant a document some other writer shaped.
+    store.store("seed", json!(1)).await.unwrap();
+    backing
+        .put(
+            &store.collection,
+            "bad",
+            json!({ "key": "bad" }),
+            Precondition::None,
+        )
+        .await
+        .unwrap();
+    let error = store.load("bad").await.unwrap_err();
+    assert!(matches!(error, EngineError::Capability(_)), "{error:?}");
+    assert!(error.to_string().contains("no `value` field"), "{error}");
+}

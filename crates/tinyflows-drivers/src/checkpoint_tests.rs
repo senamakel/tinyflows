@@ -56,7 +56,13 @@ async fn get_without_an_id_returns_the_most_recently_written_checkpoint() {
         .await
         .unwrap();
     store
-        .put(checkpoint("t1", "aa-second", Some("zz-first"), 2, json!({ "n": 2 })))
+        .put(checkpoint(
+            "t1",
+            "aa-second",
+            Some("zz-first"),
+            2,
+            json!({ "n": 2 }),
+        ))
         .await
         .unwrap();
 
@@ -64,7 +70,11 @@ async fn get_without_an_id_returns_the_most_recently_written_checkpoint() {
     assert_eq!(latest.checkpoint_id, "aa-second");
     assert_eq!(latest.state, json!({ "n": 2 }));
 
-    let addressed = store.get("t1", Some("zz-first")).await.unwrap().expect("zz-first");
+    let addressed = store
+        .get("t1", Some("zz-first"))
+        .await
+        .unwrap()
+        .expect("zz-first");
     assert_eq!(addressed.state, json!({ "n": 1 }));
 
     assert!(store.get("t1", Some("nope")).await.unwrap().is_none());
