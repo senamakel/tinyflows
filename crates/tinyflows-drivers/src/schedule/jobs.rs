@@ -298,7 +298,7 @@ impl CronDocuments {
     /// incarnation only, so a job re-created under the same id meanwhile (a
     /// flow's schedule job) keeps its own runs. `false` when the job changed
     /// or was already removed.
-    async fn remove_stored(&self, stored: &Versioned<Value>) -> Result<bool> {
+    pub(super) async fn remove_stored(&self, stored: &Versioned<Value>) -> Result<bool> {
         match self.docs.delete(JOBS, &stored.id, stored.unchanged()).await {
             Ok(true) => {}
             Ok(false) => return Ok(false),
