@@ -6,6 +6,8 @@
 //! curated Composio tools, `HttpRequestTool`, and sandboxed code runtimes.
 
 pub mod agent;
+#[cfg(feature = "storage-drivers")]
+mod drivers;
 pub mod approval;
 #[cfg(any(test, feature = "host-caps"))]
 pub mod host;
@@ -204,6 +206,9 @@ pub trait StateStore: Send + Sync {
     /// Persists a value under `key`.
     async fn store(&self, key: &str, value: Value) -> Result<()>;
 }
+
+#[cfg(feature = "storage-drivers")]
+pub use drivers::DriverStateStore;
 
 /// The bundle of capabilities handed to the engine for a run.
 ///

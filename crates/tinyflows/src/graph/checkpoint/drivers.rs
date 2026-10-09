@@ -37,8 +37,8 @@ use tinystoragedrivers_core::{
 };
 use tokio::sync::OnceCell;
 
-use super::in_memory::require_checkpoint_id;
-use super::{Checkpoint, CheckpointConfig, CheckpointMetadata, Checkpointer, PendingWrite, merge_writes};
+use super::{
+    require_checkpoint_id,Checkpoint, CheckpointConfig, CheckpointMetadata, Checkpointer, PendingWrite, merge_writes};
 
 /// How many times a compare-and-swap loop retries before giving up.
 const CAS_ATTEMPTS: usize = 64;

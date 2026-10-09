@@ -48,8 +48,18 @@ font8x8 = { version = "0.3", default-features = false, features = ["unicode"], o
 jaq-core = "3.1.0"
 jaq-std = { version = "3.0.1", default-features = false }
 jaq-json = { version = "2.0.1", features = ["serde"] }
+# `storage-drivers` only: the storage ports (no database client). Named by git
+# tag so a host that vendors tinystoragedrivers once (OpenHuman, through
+# tinyagents) can `[patch]` this URL onto its single copy, as it does for
+# tinytools.
+tinystoragedrivers-core = { git = "https://github.com/tinyhumansai/tinystoragedrivers", tag = "v0.4.0", optional = true }
 
 [features]
+# Off by default; `DriverStateStore` and `graph::checkpoint::DriverCheckpointer`
+# over `tinystoragedrivers` document ports, so a host keeps run state and graph
+# checkpoints in whichever backend it opened (SQLite, MongoDB, memory). Needs
+# Rust 1.88, the storage crates' MSRV.
+storage-drivers = ["dep:tinystoragedrivers-core"]
 # Off by default; enables in-memory mock capability impls for downstream tests
 # and examples. Mocks are always available inside this crate's own tests.
 default = []
