@@ -137,3 +137,31 @@ async fn the_sweep_keeps_a_run_with_no_job_id() {
             .is_some()
     );
 }
+
+#[tokio::test]
+async fn reschedule_tells_apart_two_occurrences_past_2262() {
+    let store = store();
+    let job = store.add_job("0 9 * * *", "far").await.unwrap();
+    let at = |y: &str| {
+        DateTime::parse_from_rfc3339(&format!("{y}-01-01T09:00:00Z"))
+            .unwrap()
+            .with_timezone(&Utc)
+    };
+    // Both saturate to the same nanosecond value; only milliseconds differ.
+    let (fired, moved) = (at("2300"), at("2301"));
+    let stored = store.docs.get(JOBS, &job.id).await.unwrap().unwrap();
+    let mut doc = stored.doc.as_object().cloned().unwrap();
+    super::super::codec::set_next_run(&mut doc, moved);
+    store
+        .docs
+        .put(JOBS, &job.id, Value::Object(doc), stored.unchanged())
+        .await
+        .unwrap();
+    let mut seen = store.get_job(&job.id).await.unwrap();
+    seen.next_run = fired;
+
+    store.reschedule_after_run(&seen, true, "ok").await.unwrap();
+    let after = store.get_job(&job.id).await.unwrap();
+    assert_eq!(after.next_run, moved, "another occurrence: not advanced");
+    assert_eq!(after.last_status.as_deref(), Some("ok"));
+}

@@ -412,3 +412,7 @@ pub(super) fn reschedule(
 #[cfg(test)]
 #[path = "jobs_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "jobs_more_tests.rs"]
+mod more_tests;

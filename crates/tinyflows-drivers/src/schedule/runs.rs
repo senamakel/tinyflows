@@ -72,12 +72,16 @@ impl CronDocuments {
         compare_and_swap(&self.docs, JOBS, &job.id, |doc| {
             let mut next = doc.as_object().cloned().unwrap_or_default();
             set_last_run(&mut next, now, success, output.clone());
-            // Nanoseconds when the document has them; a document written
-            // before `next_run_ns` compares at millisecond precision.
-            let same_occurrence = match doc.get("next_run_ns") {
-                Some(stored) => stored.as_i64() == Some(fired_ns),
-                None => doc.get("next_run_ms").and_then(Value::as_i64) == Some(fired_ms),
-            };
+            // Milliseconds must match, and nanoseconds too when the document
+            // has them: past 2262 every instant saturates to the same
+            // nanosecond value, so nanoseconds alone could match two
+            // different occurrences. A document written before `next_run_ns`
+            // compares at millisecond precision.
+            let same_ms = doc.get("next_run_ms").and_then(Value::as_i64) == Some(fired_ms);
+            let same_ns = doc
+                .get("next_run_ns")
+                .is_none_or(|stored| stored.as_i64() == Some(fired_ns));
+            let same_occurrence = same_ms && same_ns;
             let unmoved = same_occurrence
                 && doc.get("schedule").and_then(Value::as_str) == Some(fired_schedule.as_str());
             if unmoved {
