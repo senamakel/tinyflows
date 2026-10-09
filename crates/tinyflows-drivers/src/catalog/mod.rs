@@ -46,9 +46,12 @@
 //! - `updated_at` advances strictly on every write, so it is
 //!   a sound optimistic-concurrency token and revision order is total.
 //! - Removing a flow removes its runs and revisions first and the definition
-//!   last, so a failure part-way is retried by calling it again; a run
-//!   inserted concurrently either sees the flow gone and removes itself or is
-//!   swept after the definition goes.
+//!   last, so a failure part-way is retried by calling it again. A run or
+//!   revision written concurrently can still land after the final sweep (or
+//!   its writer be cancelled before undoing it), so every dependent records
+//!   the incarnation of the flow it was written under and readers show only
+//!   dependents of a flow that still exists with that incarnation: an orphan
+//!   is never visible, and readers reclaim it (`lineage`).
 
 use std::future::Future;
 use std::sync::Arc;
@@ -68,6 +71,7 @@ pub use tinyflows_catalog::store::{
 mod definitions;
 mod drafts;
 mod kv;
+mod lineage;
 mod revisions;
 mod runs;
 mod state;
