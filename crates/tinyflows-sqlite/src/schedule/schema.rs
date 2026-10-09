@@ -143,6 +143,11 @@ fn add_column_if_missing(conn: &Connection, table: &str, name: &str, sql_type: &
 /// migrates the schema idempotently (missing columns are added
 /// and the flow-command index is created) before handing over the connection,
 /// so a database written by an older build opens unchanged.
+///
+/// `f` runs while the driver's per-file lock is held, and that lock is not
+/// reentrant: do the work on the `Connection` passed in. Calling another
+/// store API for the same database from inside `f` (which opens the same
+/// shared handle) would wait on the lock forever.
 pub fn with_connection<T>(
     opts: &CronStoreOptions,
     f: impl FnOnce(&Connection) -> Result<T>,
