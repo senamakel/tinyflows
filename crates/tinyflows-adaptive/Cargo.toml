@@ -14,6 +14,12 @@ async-trait = "0.1"
 thiserror = "2"
 rusqlite = { version = "0.40", features = ["bundled"], optional = true }
 mongodb = { version = "3.6.0", optional = true }
+# `storage-drivers` only: the storage ports (no database client), named by git
+# tag so a host that vendors tinystoragedrivers once can `[patch]` it; SHA-256
+# for over-long document ids; tokio's `OnceCell` for one-time collection setup.
+tinystoragedrivers-core = { git = "https://github.com/tinyhumansai/tinystoragedrivers", tag = "v0.4.0", optional = true }
+sha2 = { version = "0.11", optional = true }
+tokio = { version = "1", features = ["sync"], optional = true }
 
 [features]
 # Persistence out of the box. The alternative — no backend unless asked — meant
@@ -25,6 +31,10 @@ mongodb = { version = "3.6.0", optional = true }
 default = ["sqlite"]
 sqlite = ["dep:rusqlite"]
 mongo = ["dep:mongodb"]
+# The ledger and vault on a `tinystoragedrivers` document port
+# (`Storage::from_documents`), so the host's storage backend (SQLite, MongoDB,
+# memory) holds them alongside everything else. Needs Rust 1.88.
+storage-drivers = ["dep:tinystoragedrivers-core", "dep:sha2", "dep:tokio"]
 
 [dev-dependencies]
 tinyflows = { path = "../tinyflows", features = ["store", "mock"] }
