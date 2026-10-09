@@ -23,7 +23,6 @@ pub(crate) fn steps_in(doc: &Value) -> serde_json::Result<Vec<FlowRunStep>> {
 }
 
 /// `doc` with its step list replaced by `steps`.
-#[cfg(test)]
 pub(crate) fn with_steps(doc: &Value, steps: &[FlowRunStep]) -> Result<Value> {
     let mut next = doc.clone();
     next["steps_json"] =

@@ -10,7 +10,7 @@ use tinystoragedrivers_core::{DocumentStoreExt, Filter, Precondition, Query, Sor
 use uuid::Uuid;
 
 use super::{
-    DEFINITIONS, FlowCatalogDocuments, REVISIONS, RUNS, STEPS, compare_and_swap, flag, instant_ns,
+    DEFINITIONS, FlowCatalogDocuments, REVISIONS, RUNS, compare_and_swap, flag, instant_ns, next_stamp,
     required, set_optional, text, upsert,
 };
 
@@ -163,39 +163,40 @@ impl FlowCatalogDocuments {
         Ok((flows, skipped))
     }
 
-    /// Deletes a flow and its revisions, runs and steps.
+    /// Deletes a flow and its runs (with their steps) and revisions.
+    ///
+    /// Dependents go first and the definition last, so a failure part-way
+    /// leaves the flow in place and calling this again finishes the job. The
+    /// runs are swept once more after the definition is gone: a run inserted
+    /// concurrently either lands before that sweep or sees the flow missing
+    /// and removes itself (`insert_flow_run`), so none outlives its flow.
     ///
     /// # Errors
     ///
     /// When no such flow exists.
     pub async fn remove_flow(&self, id: &str) -> Result<()> {
         let docs = self.docs().await?;
-        if !docs.delete(DEFINITIONS, id, Precondition::None).await? {
+        if docs.get(DEFINITIONS, id).await?.is_none() {
             bail!("flow '{id}' not found");
-        }
-        let runs = docs
-            .query_all(RUNS, &Query::filter(Filter::eq("flow_id", id)))
-            .await?;
-        let run_ids: Vec<Value> = runs.iter().map(|run| json!(run.id)).collect();
-        if !run_ids.is_empty() {
-            docs.delete_where(STEPS, &Filter::one_of("run_id", run_ids))
-                .await?;
         }
         docs.delete_where(RUNS, &Filter::eq("flow_id", id)).await?;
         docs.delete_where(REVISIONS, &Filter::eq("flow_id", id))
             .await?;
+        if !docs.delete(DEFINITIONS, id, Precondition::None).await? {
+            bail!("flow '{id}' not found");
+        }
+        docs.delete_where(RUNS, &Filter::eq("flow_id", id)).await?;
         tracing::debug!(flow_id = %id, "[flows] removed flow definition");
         Ok(())
     }
 
     /// Toggles a flow's `enabled` flag, returning the updated flow.
     pub async fn set_enabled(&self, id: &str, enabled: bool) -> Result<Flow> {
-        let now = Utc::now().to_rfc3339();
         let docs = self.docs().await?;
         let updated = compare_and_swap(docs, DEFINITIONS, id, |doc| {
             let mut next = doc.clone();
             next["enabled"] = json!(enabled);
-            next["updated_at"] = json!(now);
+            next["updated_at"] = json!(next_stamp(text(doc, "updated_at")));
             Some(next)
         })
         .await
