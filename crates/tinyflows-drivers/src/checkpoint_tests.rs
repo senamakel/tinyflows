@@ -17,12 +17,12 @@ fn docs(storage: &MemoryStorage, scope: &str) -> Arc<dyn DocumentStore> {
     )
 }
 
-fn store() -> DriverCheckpointer<serde_json::Value> {
+pub(super) fn store() -> DriverCheckpointer<serde_json::Value> {
     DriverCheckpointer::new(docs(&MemoryStorage::new(), "local"))
 }
 
 /// One checkpoint in `thread`, at `step`, chained to `parent`.
-fn checkpoint(
+pub(super) fn checkpoint(
     thread: &str,
     id: &str,
     parent: Option<&str>,
@@ -52,19 +52,19 @@ fn checkpoint(
 async fn get_without_an_id_returns_the_most_recently_written_checkpoint() {
     let store = store();
     store
-        .put(checkpoint("t1", "cp-1", None, 1, json!({ "n": 1 })))
+        .put(checkpoint("t1", "zz-first", None, 1, json!({ "n": 1 })))
         .await
         .unwrap();
     store
-        .put(checkpoint("t1", "cp-2", Some("cp-1"), 2, json!({ "n": 2 })))
+        .put(checkpoint("t1", "aa-second", Some("zz-first"), 2, json!({ "n": 2 })))
         .await
         .unwrap();
 
     let latest = store.get("t1", None).await.unwrap().expect("latest");
-    assert_eq!(latest.checkpoint_id, "cp-2");
+    assert_eq!(latest.checkpoint_id, "aa-second");
     assert_eq!(latest.state, json!({ "n": 2 }));
 
-    let addressed = store.get("t1", Some("cp-1")).await.unwrap().expect("cp-1");
+    let addressed = store.get("t1", Some("zz-first")).await.unwrap().expect("zz-first");
     assert_eq!(addressed.state, json!({ "n": 1 }));
 
     assert!(store.get("t1", Some("nope")).await.unwrap().is_none());

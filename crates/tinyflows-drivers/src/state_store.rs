@@ -73,7 +73,19 @@ impl StateStore for DriverStateStore {
             .get(&self.collection, key)
             .await
             .map_err(map_error)?;
-        Ok(found.and_then(|mut stored| stored.doc.get_mut("value").map(Value::take)))
+        match found {
+            None => Ok(None),
+            Some(mut stored) => stored
+                .doc
+                .get_mut("value")
+                .map(Value::take)
+                .map(Some)
+                .ok_or_else(|| {
+                    EngineError::Capability(format!(
+                        "state store: document `{key}` has no `value` field"
+                    ))
+                }),
+        }
     }
 
     async fn store(&self, key: &str, value: Value) -> Result<()> {
