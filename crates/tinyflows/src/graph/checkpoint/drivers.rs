@@ -1,14 +1,16 @@
 //! A [`Checkpointer`] over `tinystoragedrivers` document ports.
 //!
-//! [`DriverCheckpointer`] puts graph checkpoints, their pending writes and the
-//!  on whatever backend the host opened (SQLite on a
-//! desktop, MongoDB in the cloud, memory in tests). The document handle is
+//! [`DriverCheckpointer`] puts graph checkpoints and their pending writes on
+//! whatever backend the host opened (SQLite on a desktop, MongoDB in the
+//! cloud, memory in tests). The document handle is
 //! already bound to a tenant scope, so two tenants' threads never meet even
 //! when they share a thread id.
 //!
 //! # Layout
 //!
-//! Three collections, named from a prefix (default `graph`):
+//! Three collections, named from a prefix (default [`DEFAULT_PREFIX`], kept
+//! apart from TinyAgents' own `graph_*` checkpointer collections so both can
+//! share one backend):
 //!
 //! - `<prefix>_checkpoints`: one document per stored checkpoint,
 //!   `{thread, namespace, seq, checkpoint_id, record}` (`namespace` is the
@@ -76,6 +78,9 @@ fn namespace_key(namespace: &[String]) -> String {
         .collect()
 }
 
+/// The collection prefix [`DriverCheckpointer::new`] uses.
+pub const DEFAULT_PREFIX: &str = "flows_graph";
+
 /// A [`Checkpointer`] that stores everything in a driver [`DocumentStore`].
 pub struct DriverCheckpointer<State> {
     docs: Arc<dyn DocumentStore>,
@@ -108,9 +113,9 @@ impl<State> std::fmt::Debug for DriverCheckpointer<State> {
 }
 
 impl<State> DriverCheckpointer<State> {
-    /// Store checkpoints in the `graph_*` collections of `docs`.
+    /// Store checkpoints in the `flows_graph_*` collections of `docs`.
     pub fn new(docs: Arc<dyn DocumentStore>) -> Self {
-        Self::with_prefix(docs, "graph")
+        Self::with_prefix(docs, DEFAULT_PREFIX)
     }
 
     /// Store checkpoints in the `<prefix>_*` collections of `docs`, so
