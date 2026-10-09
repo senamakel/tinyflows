@@ -2704,6 +2704,7 @@ dependencies = [
  "sha2",
  "tinyflows",
  "tinyflows-catalog",
+ "tinyflows-schedule",
  "tinystoragedrivers-core",
  "tokio",
  "tracing",

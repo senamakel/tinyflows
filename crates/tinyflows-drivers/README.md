@@ -10,6 +10,7 @@ scoped per tenant by the document handle it passes in.
 | --- | --- | --- |
 | `DriverStateStore` | `tinyflows::caps::StateStore` | one document per key in `flows_state` |
 | `DriverCheckpointer<State>` | `tinyflows::graph::Checkpointer<State>` | `flows_graph_checkpoints`, `_threads`, `_writes` |
+| `schedule::CronDocuments` | the cron job store of `tinyflows_sqlite::schedule` | `cron_jobs`, `cron_runs`, `cron_counters` |
 
 ```rust
 use std::sync::Arc;
@@ -26,7 +27,12 @@ let checkpointer = DriverCheckpointer::<serde_json::Value>::new(docs);
 | --- | --- | --- |
 | `engine` | yes | `DriverStateStore`, `DriverCheckpointer` (needs `tinyflows`) |
 | `catalog` | no | `catalog::FlowCatalogDocuments`, `catalog::FlowStateDocuments` |
+| `schedule` | no | `schedule::CronDocuments`; needs only `tinyflows-schedule`, not the engine |
 | `test-fixtures` | no | the catalog's two fixture-only writers |
+
+A host that runs scheduled jobs but no flows builds with
+`default-features = false, features = ["schedule"]` and pulls neither the
+engine nor its expression stack.
 
 ## The flow catalog (`catalog`)
 
@@ -77,6 +83,34 @@ documents as `kv_get` / `kv_set` / `kv_delete`. It is the engine's
 storage crates' `Blocking` bridge (one per process, or the host's own via
 `with_bridge`), so it is safe inside any runtime. `DriverStateStore` is
 unchanged: un-namespaced, for a host that gives each run its own collection.
+
+## Cron store
+
+`CronDocuments` has the same operations as `tinyflows_sqlite::schedule` (same
+names and arguments minus the options struct, same results and error
+messages), as `async` methods:
+
+```rust
+use tinyflows_drivers::schedule::CronDocuments;
+
+let cron = CronDocuments::new(docs).with_limits(max_run_history, max_tasks);
+let job = cron.add_job("0 9 * * *", "echo hi").await?;
+for due in cron.due_jobs(chrono::Utc::now()).await? { /* run it */ }
+```
+
+Across processes sharing one database:
+
+- every job update is compare-and-swap, so concurrent writers never lose a
+  field;
+- `reschedule_after_run` advances `next_run` only from the occurrence the
+  caller fired, so it never advances twice or overwrites an edited schedule;
+- a flow's schedule job has a deterministic id written only if absent, so
+  registering it is idempotent;
+- run numbers come from a compare-and-swap counter.
+
+`due_jobs` is a read, so two schedulers can both run the same due job (as
+with two processes on one SQLite file); recording a run and pruning history
+are separate writes.
 
 ## Checkpointer guarantees
 

@@ -6,14 +6,21 @@
 //! * [`schedule`] — next-run computation, validation, cron-expression
 //!   normalisation and the minimum-cadence check.
 //!
+//! * [`store`] — what every job store shares: [`AgentJobSpec`] and the
+//!   bound on stored run output.
+//!
 //! No runtime, storage or configuration lives here; a host supplies those.
 
 pub mod schedule;
+pub mod store;
 pub mod types;
 
 pub use schedule::{
     MIN_AGENT_JOB_INTERVAL, TooFrequent, next_run_for_schedule, normalize_expression,
     runs_closer_than, schedule_cron_expression, validate_agent_schedule, validate_schedule,
+};
+pub use store::{
+    AgentJobSpec, MAX_CRON_OUTPUT_BYTES, TRUNCATED_OUTPUT_MARKER, truncate_cron_output,
 };
 pub use types::{
     ActiveHours, CronJob, CronJobPatch, CronRun, DeliveryConfig, DeliveryStatus, JobOrigin,

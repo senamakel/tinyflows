@@ -16,13 +16,16 @@
 //!   drafts: [`catalog::FlowCatalogDocuments`], the document-port counterpart
 //!   of `tinyflows-sqlite`'s `flows` and `drafts`, and
 //!   [`catalog::FlowStateDocuments`], one flow's namespaced state.
+//! - [`schedule::CronDocuments`] (feature `schedule`) is the cron job and
+//!   run-history store, the document-port twin of `tinyflows_sqlite::schedule`.
+//!   It needs only `tinyflows-schedule`, not the engine.
 //!
 //! The default collections (`flows_state`, `flows_graph_*`) stay apart from
 //! TinyAgents' own checkpointer collections, so both can share one scoped
 //! backend.
 //!
-//! [`StateStore`]: tinyflows::caps::StateStore
-//! [`Checkpointer`]: tinyflows::graph::Checkpointer
+//! [`StateStore`]: https://docs.rs/tinyflows/latest/tinyflows/caps/trait.StateStore.html
+//! [`Checkpointer`]: https://docs.rs/tinyflows/latest/tinyflows/graph/checkpoint/trait.Checkpointer.html
 
 #[cfg(feature = "catalog")]
 pub mod catalog;
@@ -30,6 +33,8 @@ pub mod catalog;
 mod checkpoint;
 #[cfg(feature = "engine")]
 mod checkpoint_keys;
+#[cfg(feature = "schedule")]
+pub mod schedule;
 #[cfg(feature = "engine")]
 mod state_store;
 
