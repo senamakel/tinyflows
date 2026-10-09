@@ -98,10 +98,20 @@ impl FlowCatalogDocuments {
 
         // A previous update that crashed after its swap left its revision
         // pending; the flow names it, so confirm it before moving past it.
-        if let Ok(Some(stored)) = docs.get(DEFINITIONS, id).await
-            && let Some(last) = text(&stored.doc, "last_revision_id")
+        // If confirming it fails the save stops here: moving `last_revision_id`
+        // past an unconfirmed revision would hide that audit snapshot for good.
+        let stored = docs
+            .get(DEFINITIONS, id)
+            .await
+            .map_err(|error| FlowUpdateError::Store(error.into()))?;
+        if let Some(last) = stored
+            .as_ref()
+            .and_then(|stored| text(&stored.doc, "last_revision_id"))
         {
-            best_effort("confirming the previous revision", confirm(docs, last)).await;
+            confirm(docs, last)
+                .await
+                .context("Failed to confirm the previous flow revision")
+                .map_err(FlowUpdateError::Store)?;
         }
 
         // Pending until the swap below names it: a lost race or a crash in

@@ -175,7 +175,8 @@ impl FlowCatalogDocuments {
     /// leaves the flow in place and calling this again finishes the job. The
     /// runs are swept once more after the definition is gone: a run inserted
     /// concurrently either lands before that sweep or sees the flow missing
-    /// and removes itself (`insert_flow_run`), so none outlives its flow.
+    /// and removes itself (`insert_flow_run`), so none outlives its flow; the
+    /// revisions are swept again too, for a graph update racing the removal.
     ///
     /// # Errors
     ///
@@ -191,7 +192,11 @@ impl FlowCatalogDocuments {
         if !docs.delete(DEFINITIONS, id, Precondition::None).await? {
             bail!("flow '{id}' not found");
         }
+        // Once more for anything a concurrent run insert or graph update
+        // wrote between the first sweep and the definition going.
         docs.delete_where(RUNS, &Filter::eq("flow_id", id)).await?;
+        docs.delete_where(REVISIONS, &Filter::eq("flow_id", id))
+            .await?;
         tracing::debug!(flow_id = %id, "[flows] removed flow definition");
         Ok(())
     }
