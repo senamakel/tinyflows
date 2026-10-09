@@ -153,6 +153,31 @@ impl FlowCatalogDocuments {
             .context("Failed to record flow revision")
             .map_err(FlowUpdateError::Store)?;
 
+        // Touch the pending revision right before the swap names it. The
+        // write changes its version, so a prune that judged it abandoned
+        // from an older read fails its conditional delete; and it restarts
+        // the revision's age, so a prune reading it afterwards does not judge
+        // it abandoned at all. If a prune already took it (this update
+        // stalled past the abandonment age), write it again.
+        let touched_ns = instant_ns(&next_stamp(None));
+        let touched = compare_and_swap(docs, REVISIONS, &revision_id, |doc| {
+            let mut next = doc.clone();
+            next[TOUCHED] = json!(touched_ns);
+            Some(next)
+        })
+        .await
+        .context("Failed to touch the flow revision")
+        .map_err(FlowUpdateError::Store)?;
+        if touched.is_none() {
+            let mut again = revision.clone();
+            again["pending"] = json!(true);
+            again[TOUCHED] = json!(touched_ns);
+            docs.put(REVISIONS, &revision_id, again, Precondition::None)
+                .await
+                .context("Failed to record flow revision")
+                .map_err(FlowUpdateError::Store)?;
+        }
+
         let observed = current.updated_at.clone();
         let swapped = compare_and_swap(docs, DEFINITIONS, id, |doc| {
             // Same stamp *and* same incarnation: a flow removed and created
@@ -241,13 +266,7 @@ impl FlowCatalogDocuments {
                 continue;
             };
             let cutoff = instant_ns(&next_stamp(None)) - ABANDONED_AFTER_NS;
-            let still_abandoned = flag(&current.doc, "pending")
-                && current
-                    .doc
-                    .get("created_ns")
-                    .and_then(Value::as_i64)
-                    .unwrap_or(0)
-                    < cutoff;
+            let still_abandoned = flag(&current.doc, "pending") && last_activity_ns(&current.doc) < cutoff;
             // An update may have named it since the partition read the
             // definition; a named revision is never abandoned.
             let named = still_abandoned
@@ -355,6 +374,16 @@ impl FlowCatalogDocuments {
 /// How long a pending revision may wait for its update before pruning
 /// treats it as abandoned.
 const ABANDONED_AFTER_NS: i64 = 3_600 * 1_000_000_000;
+
+/// The field an update stamps on its pending revision just before its swap.
+const TOUCHED: &str = "touched_ns";
+
+/// When a pending revision last showed signs of its update: written, or
+/// touched before the swap.
+fn last_activity_ns(doc: &Value) -> i64 {
+    let at = |field: &str| doc.get(field).and_then(Value::as_i64).unwrap_or(0);
+    at("created_ns").max(at(TOUCHED))
+}
 
 /// Whether a revision is visible: confirmed, or the one the flow names.
 fn visible(stored: &Versioned<Value>, latest: Option<&str>) -> bool {

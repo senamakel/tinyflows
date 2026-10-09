@@ -66,7 +66,7 @@ pub(crate) type Interjection = Box<
 #[derive(Debug)]
 pub(crate) struct Interposed {
     inner: Arc<dyn DocumentStore>,
-    /// `("query" | "get", collection)` that triggers the interjection.
+    /// `("query" | "get" | "delete", collection)` that triggers the interjection.
     trigger: (&'static str, &'static str),
     interjection: std::sync::Mutex<Option<InterjectionCell>>,
 }
@@ -145,6 +145,7 @@ impl DocumentStore for Interposed {
         id: &str,
         precondition: tinystoragedrivers_core::Precondition,
     ) -> tinystoragedrivers_core::Result<bool> {
+        self.maybe_interject("delete", collection).await;
         self.inner.delete(collection, id, precondition).await
     }
 
