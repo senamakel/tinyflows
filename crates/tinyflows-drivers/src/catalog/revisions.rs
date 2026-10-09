@@ -134,9 +134,9 @@ impl FlowCatalogDocuments {
         let mut pending = revision.clone();
         pending["pending"] = json!(true);
         docs.put(REVISIONS, &revision_id, pending, Precondition::Absent)
-        .await
-        .context("Failed to record flow revision")
-        .map_err(FlowUpdateError::Store)?;
+            .await
+            .context("Failed to record flow revision")
+            .map_err(FlowUpdateError::Store)?;
 
         let observed = current.updated_at.clone();
         let swapped = compare_and_swap(docs, DEFINITIONS, id, |doc| {
@@ -256,7 +256,8 @@ impl FlowCatalogDocuments {
         let flow = docs.get(DEFINITIONS, flow_id).await?;
         let flow = flow.as_ref().map(|stored| &stored.doc);
         let latest = flow.and_then(|doc| text(doc, "last_revision_id"));
-        let (mut visible_revisions, mut pending, mut orphans) = (Vec::new(), Vec::new(), Vec::new());
+        let (mut visible_revisions, mut pending, mut orphans) =
+            (Vec::new(), Vec::new(), Vec::new());
         for stored in docs.query_all(REVISIONS, &newest_first(flow_id)).await? {
             if !belongs(&stored.doc, flow) {
                 orphans.push(stored);

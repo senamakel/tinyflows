@@ -461,14 +461,26 @@ async fn a_revision_written_during_the_removal_never_shows() {
     .await
     .unwrap();
     assert!(store.list_revisions(&flow.id, 10).await.unwrap().is_empty());
-    assert!(store.revision_by_id(&flow.id, "late").await.unwrap().is_none());
+    assert!(
+        store
+            .revision_by_id(&flow.id, "late")
+            .await
+            .unwrap()
+            .is_none()
+    );
 
     // Not even once a flow with the same id exists again.
     let mut again = flow.clone();
     again.name = "again".into();
     store.upsert_flow(&again).await.unwrap();
     assert!(store.list_revisions(&flow.id, 10).await.unwrap().is_empty());
-    assert!(store.revision_by_id(&flow.id, "late").await.unwrap().is_none());
+    assert!(
+        store
+            .revision_by_id(&flow.id, "late")
+            .await
+            .unwrap()
+            .is_none()
+    );
     // The next update's prune reclaims it.
     store
         .update_flow_graph(
@@ -502,16 +514,24 @@ async fn a_revision_pruned_in_flight_is_restored_after_the_swap() {
         .await
         .unwrap();
     confirm_or_restore(docs, "here", &revision).await.unwrap();
-    assert!(!flag(&docs.get(REVISIONS, "here").await.unwrap().unwrap().doc, "pending"));
+    assert!(!flag(
+        &docs.get(REVISIONS, "here").await.unwrap().unwrap().doc,
+        "pending"
+    ));
 }
 
 #[tokio::test]
 async fn pruning_leaves_a_revision_that_changed_since_it_was_read() {
     let store = catalog();
     let docs = store.docs().await.unwrap();
-    docs.put(REVISIONS, "r", json!({ "pending": true }), Precondition::Absent)
-        .await
-        .unwrap();
+    docs.put(
+        REVISIONS,
+        "r",
+        json!({ "pending": true }),
+        Precondition::Absent,
+    )
+    .await
+    .unwrap();
     let read = docs.get(REVISIONS, "r").await.unwrap().unwrap();
     compare_and_swap(docs, REVISIONS, "r", |_| Some(json!({ "confirmed": true })))
         .await

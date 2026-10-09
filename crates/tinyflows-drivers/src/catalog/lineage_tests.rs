@@ -10,9 +10,18 @@ fn a_dependent_belongs_only_to_its_own_incarnation() {
     let flow = json!({ "incarnation": "a" });
     assert!(belongs(&json!({ "flow_incarnation": "a" }), Some(&flow)));
     assert!(!belongs(&json!({ "flow_incarnation": "b" }), Some(&flow)));
-    assert!(!belongs(&json!({}), Some(&flow)), "a pre-fence run of a new flow");
-    assert!(!belongs(&json!({ "flow_incarnation": "a" }), None), "the flow is gone");
-    assert!(belongs(&json!({}), Some(&json!({}))), "pre-fence documents match");
+    assert!(
+        !belongs(&json!({}), Some(&flow)),
+        "a pre-fence run of a new flow"
+    );
+    assert!(
+        !belongs(&json!({ "flow_incarnation": "a" }), None),
+        "the flow is gone"
+    );
+    assert!(
+        belongs(&json!({}), Some(&json!({}))),
+        "pre-fence documents match"
+    );
 }
 
 /// What an insert that passed its first check, lost the race to

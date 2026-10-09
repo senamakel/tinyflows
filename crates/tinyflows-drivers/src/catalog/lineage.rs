@@ -37,9 +37,8 @@ pub(crate) fn incarnation(definition: &Value) -> Option<&str> {
 /// Whether `dependent` (a run or revision) belongs to `definition`, the
 /// current definition of its flow (`None` when the flow is gone).
 pub(crate) fn belongs(dependent: &Value, definition: Option<&Value>) -> bool {
-    definition.is_some_and(|definition| {
-        text(dependent, FLOW_INCARNATION) == incarnation(definition)
-    })
+    definition
+        .is_some_and(|definition| text(dependent, FLOW_INCARNATION) == incarnation(definition))
 }
 
 /// The incarnation of every existing flow, by id.
