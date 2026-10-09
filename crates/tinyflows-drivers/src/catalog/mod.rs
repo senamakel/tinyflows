@@ -69,9 +69,6 @@ mod suggestions;
 
 pub use state::FlowStateDocuments;
 
-#[allow(unused_imports)]
-use tinyflows_catalog::Flow;
-
 pub(crate) const DEFINITIONS: &str = "flows_definitions";
 pub(crate) const REVISIONS: &str = "flows_revisions";
 pub(crate) const RUNS: &str = "flows_runs";
