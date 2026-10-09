@@ -107,11 +107,30 @@ impl FlowCatalogDocuments {
         // pending; the flow names it, so confirm it before moving past it.
         // If confirming it fails the save stops here: moving `last_revision_id`
         // past an unconfirmed revision would hide that audit snapshot for good.
+        //
+        // `confirm` reports a revision that no longer exists. Its content —
+        // the graph from before the update that named it — is gone and
+        // cannot be rebuilt from the definition, which already holds the
+        // graph after it. Refusing would leave the flow uneditable for good,
+        // so the gap is logged with both ids and the update goes on; the
+        // flow then names this update's revision, and history stays a
+        // consistent sequence with one missing snapshot. Prune never deletes
+        // a revision the flow names (it re-reads the definition first), so
+        // this needs a lost write plus clock trouble or a manual delete.
         if let Some(last) = text(&stored.doc, "last_revision_id") {
-            confirm(docs, last)
+            let exists = confirm(docs, last)
                 .await
                 .context("Failed to confirm the previous flow revision")
                 .map_err(FlowUpdateError::Store)?;
+            if !exists {
+                tracing::warn!(
+                    target: "flows",
+                    flow_id = %id,
+                    revision_id = %last,
+                    "[flows] the revision this flow names is missing; its snapshot is lost and \
+                     the update continues"
+                );
+            }
         }
 
         // Pending until the swap below names it: a lost race or a crash in
@@ -229,7 +248,16 @@ impl FlowCatalogDocuments {
                     .and_then(Value::as_i64)
                     .unwrap_or(0)
                     < cutoff;
-            if still_abandoned {
+            // An update may have named it since the partition read the
+            // definition; a named revision is never abandoned.
+            let named = still_abandoned
+                && docs
+                    .get(DEFINITIONS, flow_id)
+                    .await?
+                    .is_some_and(|flow| {
+                        text(&flow.doc, "last_revision_id") == Some(current.id.as_str())
+                    });
+            if still_abandoned && !named {
                 delete_unchanged(docs, &current).await?;
             }
         }

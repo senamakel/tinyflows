@@ -13,7 +13,8 @@ use tinystoragedrivers_core::{
 use super::lineage::{FLOW_INCARNATION, belongs, belongs_in, incarnation, live_flows, reclaim};
 use super::steps::steps_in;
 use super::{
-    DEFINITIONS, FlowCatalogDocuments, MAX_FLOW_RUNS_PER_FLOW, RUNS, best_effort, compare_and_swap,
+    CAS_ATTEMPTS, DEFINITIONS, FlowCatalogDocuments, MAX_FLOW_RUNS_PER_FLOW, RUNS, best_effort,
+    compare_and_swap,
     instant_before, instant_ns, required, set_optional, text,
 };
 
@@ -368,15 +369,45 @@ impl FlowCatalogDocuments {
     }
 
     /// A flow's most recent runs, newest first (`limit` at least 1).
+    ///
+    /// The runs are judged against the definition read before the query, so
+    /// a flow removed and created again while the query ran would let the
+    /// old incarnation's runs pass as the new flow's history. The definition
+    /// is therefore read again after the query, and the listing repeats until
+    /// both reads name the same incarnation. A flow that is gone has no
+    /// history, and whatever is still filed under it is reclaimed, as
+    /// `list_revisions` does.
     pub async fn list_flow_runs(&self, flow_id: &str, limit: usize) -> Result<Vec<FlowRun>> {
         let docs = self.docs().await?;
-        let Some(flow) = docs.get(DEFINITIONS, flow_id).await? else {
-            return Ok(Vec::new());
-        };
-        self.list_runs(Filter::eq("flow_id", flow_id), limit, |run| {
-            belongs(run, Some(&flow.doc))
-        })
-        .await
+        let mut before = docs.get(DEFINITIONS, flow_id).await?;
+        for _ in 0..CAS_ATTEMPTS {
+            let Some(flow) = before else {
+                let leftovers = docs
+                    .query_all(RUNS, &Query::filter(Filter::eq("flow_id", flow_id)))
+                    .await?;
+                reclaim(docs, RUNS, &leftovers).await;
+                return Ok(Vec::new());
+            };
+            let runs = self
+                .list_runs(Filter::eq("flow_id", flow_id), limit, |run| {
+                    belongs(run, Some(&flow.doc))
+                })
+                .await?;
+            let after = docs.get(DEFINITIONS, flow_id).await?;
+            let same_flow = after
+                .as_ref()
+                .is_some_and(|current| incarnation(&current.doc) == incarnation(&flow.doc));
+            if same_flow {
+                return Ok(runs);
+            }
+            tracing::debug!(
+                target: "flows",
+                %flow_id,
+                "[flows] flow replaced while its runs were listed; listing again"
+            );
+            before = after;
+        }
+        bail!("flow {flow_id} kept being replaced while its runs were listed")
     }
 
     /// The most recent runs across all flows, newest first (`limit` at
