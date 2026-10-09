@@ -1,5 +1,6 @@
 use super::*;
 use serde_json::json;
+use std::collections::HashMap;
 use tinystoragedrivers_core::Precondition;
 
 use crate::catalog::test_support::{catalog, trigger_graph};
@@ -11,8 +12,13 @@ fn a_dependent_belongs_only_to_its_own_incarnation() {
     assert!(belongs(&json!({ "flow_incarnation": "a" }), Some(&flow)));
     assert!(!belongs(&json!({ "flow_incarnation": "b" }), Some(&flow)));
     assert!(
-        !belongs(&json!({}), Some(&flow)),
-        "a pre-fence run of a new flow"
+        belongs(&json!({}), Some(&flow)),
+        "an unfenced writer's run is never hidden (rolling upgrade)"
+    );
+    assert!(!belongs(&json!({}), None), "the flow is gone");
+    assert!(
+        !belongs(&json!({ "flow_incarnation": "a" }), Some(&json!({}))),
+        "a fenced run of a removed incarnation, under a pre-fence definition"
     );
     assert!(
         !belongs(&json!({ "flow_incarnation": "a" }), None),
@@ -115,4 +121,51 @@ async fn a_list_pages_past_orphans_to_fill_its_limit() {
     let runs = store.list_all_flow_runs(1).await.unwrap();
     assert_eq!(runs.len(), 1);
     assert_eq!(runs[0].id, "live-run");
+}
+
+#[test]
+fn the_live_flow_map_follows_the_same_rule() {
+    let mut flows = HashMap::new();
+    flows.insert("f".to_string(), Some("a".to_string()));
+    assert!(belongs_in(
+        &json!({ "flow_id": "f", "flow_incarnation": "a" }),
+        &flows
+    ));
+    assert!(belongs_in(&json!({ "flow_id": "f" }), &flows));
+    assert!(!belongs_in(
+        &json!({ "flow_id": "f", "flow_incarnation": "b" }),
+        &flows
+    ));
+    assert!(!belongs_in(&json!({ "flow_id": "g" }), &flows));
+}
+
+#[tokio::test]
+async fn an_unfenced_writers_run_stays_visible_and_is_never_reclaimed() {
+    let store = catalog();
+    let flow = store
+        .create_flow("f".into(), trigger_graph(), false, true)
+        .await
+        .unwrap();
+    let docs = store.docs().await.unwrap();
+    // An older process during a rolling upgrade writes no flow_incarnation.
+    docs.put(
+        RUNS,
+        "old-writer",
+        json!({
+            "flow_id": flow.id,
+            "thread_id": "t",
+            "status": "running",
+            "started_at": "2020-01-01T00:00:00Z",
+            "started_ns": 1,
+            "steps_json": "[]",
+            "pending_approvals_json": "[]",
+        }),
+        Precondition::Absent,
+    )
+    .await
+    .unwrap();
+    assert_eq!(store.list_flow_runs(&flow.id, 10).await.unwrap().len(), 1);
+    assert_eq!(store.list_all_flow_runs(10).await.unwrap().len(), 1);
+    assert!(store.get_flow_run("old-writer").await.unwrap().is_some());
+    assert!(docs.get(RUNS, "old-writer").await.unwrap().is_some());
 }

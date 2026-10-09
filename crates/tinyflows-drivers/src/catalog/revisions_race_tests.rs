@@ -47,20 +47,44 @@ async fn a_revision_written_during_the_removal_never_shows() {
     )
     .await
     .unwrap();
+    let late = || {
+        json!({
+            "flow_id": flow.id,
+            "flow_incarnation": incarnation,
+            "graph_json": "{}",
+            "name": "late",
+            "created_at": "2026-01-01T00:00:00Z",
+            "created_ns": 1,
+        })
+    };
+    // Hidden, and reclaimed by whichever reader meets it.
     assert!(store.list_revisions(&flow.id, 10).await.unwrap().is_empty());
+    assert!(
+        docs.get(REVISIONS, "late").await.unwrap().is_none(),
+        "the list reclaimed it"
+    );
+    docs.put(REVISIONS, "late", late(), Precondition::Absent)
+        .await
+        .unwrap();
     assert!(
         store
             .revision_by_id(&flow.id, "late")
             .await
             .unwrap()
             .is_none()
+    );
+    assert!(
+        docs.get(REVISIONS, "late").await.unwrap().is_none(),
+        "the lookup reclaimed it"
     );
 
     // Not even once a flow with the same id exists again.
+    docs.put(REVISIONS, "late", late(), Precondition::Absent)
+        .await
+        .unwrap();
     let mut again = flow.clone();
     again.name = "again".into();
     store.upsert_flow(&again).await.unwrap();
-    assert!(store.list_revisions(&flow.id, 10).await.unwrap().is_empty());
     assert!(
         store
             .revision_by_id(&flow.id, "late")
@@ -68,7 +92,7 @@ async fn a_revision_written_during_the_removal_never_shows() {
             .unwrap()
             .is_none()
     );
-    // The next update's prune reclaims it.
+    assert!(store.list_revisions(&flow.id, 10).await.unwrap().is_empty());
     store
         .update_flow_graph(
             &flow.id,
@@ -81,7 +105,6 @@ async fn a_revision_written_during_the_removal_never_shows() {
         )
         .await
         .unwrap();
-    assert!(docs.get(REVISIONS, "late").await.unwrap().is_none());
     assert_eq!(store.list_revisions(&flow.id, 10).await.unwrap().len(), 1);
 }
 
@@ -128,4 +151,24 @@ async fn pruning_leaves_a_revision_that_changed_since_it_was_read() {
     let fresh = docs.get(REVISIONS, "r").await.unwrap().unwrap();
     delete_unchanged(docs, &fresh).await.unwrap();
     assert!(docs.get(REVISIONS, "r").await.unwrap().is_none());
+}
+
+#[tokio::test]
+async fn confirmation_is_decided_by_the_swap() {
+    let store = catalog();
+    let docs = store.docs().await.unwrap();
+    docs.put(
+        REVISIONS,
+        "p",
+        json!({ "pending": true }),
+        Precondition::Absent,
+    )
+    .await
+    .unwrap();
+    assert!(confirm(docs, "p").await.unwrap(), "pending, then confirmed");
+    assert!(
+        confirm(docs, "p").await.unwrap(),
+        "already confirmed still exists"
+    );
+    assert!(!confirm(docs, "missing").await.unwrap(), "gone");
 }

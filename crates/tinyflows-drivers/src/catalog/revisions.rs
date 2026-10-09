@@ -273,7 +273,8 @@ impl FlowCatalogDocuments {
     /// A flow's revisions, newest first, up to `limit`.
     pub async fn list_revisions(&self, flow_id: &str, limit: usize) -> Result<Vec<FlowRevision>> {
         let docs = self.docs().await?;
-        let (visible, _, _) = self.partition(docs, flow_id).await?;
+        let (visible, _, orphans) = self.partition(docs, flow_id).await?;
+        reclaim(docs, REVISIONS, &orphans).await;
         visible.iter().take(limit).map(to_revision).collect()
     }
 
@@ -293,6 +294,7 @@ impl FlowCatalogDocuments {
         let flow = docs.get(DEFINITIONS, flow_id).await?;
         let flow = flow.as_ref().map(|stored| &stored.doc);
         if !belongs(&stored.doc, flow) {
+            reclaim(docs, REVISIONS, std::slice::from_ref(&stored)).await;
             return Ok(None);
         }
         if !visible(&stored, flow.and_then(|doc| text(doc, "last_revision_id"))) {
@@ -312,15 +314,22 @@ fn visible(stored: &Versioned<Value>, latest: Option<&str>) -> bool {
 }
 
 /// Marks revision `id` confirmed; `false` when it no longer exists.
+///
+/// Decided by the swap itself: it declines either because the revision is
+/// gone or because it is already confirmed, and only a read *after* the swap
+/// tells those apart — a read before it could see a revision a prune then
+/// removed.
 async fn confirm(docs: &Arc<dyn DocumentStore>, id: &str) -> Result<bool> {
-    let exists = docs.get(REVISIONS, id).await?.is_some();
-    compare_and_swap(docs, REVISIONS, id, |doc| {
+    let confirmed = compare_and_swap(docs, REVISIONS, id, |doc| {
         let mut next = doc.clone();
         next.as_object_mut()?.remove("pending")?;
         Some(next)
     })
     .await?;
-    Ok(exists)
+    if confirmed.is_some() {
+        return Ok(true);
+    }
+    Ok(docs.get(REVISIONS, id).await?.is_some())
 }
 
 /// Confirms the revision a committed update named, writing it again
