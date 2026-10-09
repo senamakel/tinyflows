@@ -40,7 +40,9 @@ pub(crate) fn run<T>(db_path: &Path, f: impl FnOnce(&Connection) -> Result<T>) -
             if !conn.is_autocommit()
                 && let Err(rollback) = conn.execute_batch("ROLLBACK")
             {
-                tracing::warn!("[sqlite] rollback of a transaction a store call left open failed: {rollback}");
+                tracing::warn!(
+                    "[sqlite] rollback of a transaction a store call left open failed: {rollback}"
+                );
             }
             outcome
         })

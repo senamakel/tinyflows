@@ -172,8 +172,6 @@ where
 
         let mut out = Vec::new();
         while let Some(id) = cursor {
-            // Written as a nested `if` rather than the source's let-chain:
-            // this crate is edition 2021, where let-chains do not parse.
             if let Some(limit) = limit
                 && out.len() >= limit
             {
