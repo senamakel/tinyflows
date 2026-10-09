@@ -1,5 +1,5 @@
-use super::super::test_support::{daily, store};
 use super::*;
+use super::super::test_support::{daily, store};
 use chrono::Duration;
 use tinyflows_schedule::{MAX_CRON_OUTPUT_BYTES, TRUNCATED_OUTPUT_MARKER};
 
@@ -84,7 +84,7 @@ async fn delivery_status_is_stored_and_read_back() {
 async fn an_unknown_delivery_status_reads_as_none() {
     let store = store();
     let job = store.add_job("0 9 * * *", "x").await.unwrap();
-    let mut doc = run_to_doc(1, &job.id, Utc::now(), Utc::now(), "ok", None, 1, None);
+    let mut doc = run_to_doc(1, &job.id, None, Utc::now(), Utc::now(), "ok", None, 1, None);
     doc["delivery_status"] = json!("teleported");
     store.ensure().await.unwrap();
     store

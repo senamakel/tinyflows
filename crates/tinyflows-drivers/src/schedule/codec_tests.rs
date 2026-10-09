@@ -68,7 +68,7 @@ fn malformed_fields_are_errors() {
     let mut doc = job_to_doc(&job()).unwrap();
     doc["next_run"] = json!("yesterday");
     assert!(doc_to_job(&stored(doc)).is_err());
-    let run = run_to_doc(1, "j", Utc::now(), Utc::now(), "ok", None, 1, None);
+    let run = run_to_doc(1, "j", None, Utc::now(), Utc::now(), "ok", None, 1, None);
     let mut broken = run.clone();
     broken.as_object_mut().unwrap().remove("seq");
     assert!(doc_to_run(&stored(broken)).is_err());
