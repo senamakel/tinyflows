@@ -19,6 +19,7 @@ use uuid::Uuid;
 use super::codec::{
     INCARNATION, created_at, doc_to_job, incarnation, job_to_doc, set_next_run, text,
 };
+use super::patch::apply_patch;
 use super::{CAS_ATTEMPTS, CronDocuments, JOBS, RUNS, job_not_found, storage_error};
 
 /// The document id of `flow_id`'s schedule job. Deterministic, so writing it
@@ -279,25 +280,36 @@ impl CronDocuments {
     /// none.
     pub async fn remove_job(&self, id: &str) -> Result<()> {
         self.ensure().await?;
-        let removed = self
-            .docs
-            .delete(JOBS, id, Precondition::None)
-            .await
-            .map_err(storage_error)
-            .context("Failed to delete cron job")?;
-        if !removed {
-            return Err(job_not_found(id));
+        for _ in 0..CAS_ATTEMPTS {
+            let stored = self
+                .docs
+                .get(JOBS, id)
+                .await
+                .map_err(storage_error)?
+                .ok_or_else(|| job_not_found(id))?;
+            if self.remove_stored(&stored).await? {
+                return Ok(());
+            }
         }
-        self.remove_runs_of(id).await
+        anyhow::bail!("cron store: job {id} kept changing under {CAS_ATTEMPTS} attempts")
     }
 
-    /// Deletes every run of `job_id`.
-    async fn remove_runs_of(&self, job_id: &str) -> Result<()> {
+    /// Deletes `stored` if it is unchanged, then the runs of that
+    /// incarnation only, so a job re-created under the same id meanwhile (a
+    /// flow's schedule job) keeps its own runs. `false` when the job changed
+    /// or was already removed.
+    async fn remove_stored(&self, stored: &Versioned<Value>) -> Result<bool> {
+        match self.docs.delete(JOBS, &stored.id, stored.unchanged()).await {
+            Ok(true) => {}
+            Ok(false) => return Ok(false),
+            Err(error) if error.kind() == ErrorKind::Conflict => return Ok(false),
+            Err(error) => return Err(storage_error(error)).context("Failed to delete cron job"),
+        }
         self.docs
-            .delete_where(RUNS, &Filter::eq("job_id", job_id))
+            .delete_where(RUNS, &runs_of(&stored.id, &stored.doc))
             .await
-            .map_err(storage_error)
-            .map(|_| ())
+            .map_err(storage_error)?;
+        Ok(true)
     }
 
     /// Deletes every job (and every run). Returns the number of jobs removed.
@@ -346,19 +358,13 @@ impl CronDocuments {
                     .await
                     .map_err(storage_error)?;
                 let created = created_at(&stored.doc).unwrap_or(DateTime::<Utc>::MAX_UTC);
-                ranked.push((std::cmp::Reverse(runs), created, stored.id.clone()));
+                ranked.push((std::cmp::Reverse(runs), created, stored.id.clone(), stored));
             }
-            ranked.sort();
+            ranked.sort_by(|a, b| (&a.0, &a.1, &a.2).cmp(&(&b.0, &b.1, &b.2)));
             let keep = ranked[0].2.clone();
             let mut deleted = 0usize;
-            for (_, _, id) in ranked.into_iter().skip(1) {
-                if self
-                    .docs
-                    .delete(JOBS, &id, Precondition::None)
-                    .await
-                    .map_err(storage_error)?
-                {
-                    self.remove_runs_of(&id).await?;
+            for (_, _, _, stored) in ranked.into_iter().skip(1) {
+                if self.remove_stored(stored).await? {
                     deleted += 1;
                 }
             }
@@ -419,63 +425,6 @@ impl CronDocuments {
         }
         anyhow::bail!("cron store: job {job_id} kept changing under {CAS_ATTEMPTS} attempts")
     }
-}
-
-/// `job` with `patch` applied, exactly as the SQLite store applies it.
-fn apply_patch(mut job: CronJob, patch: CronJobPatch) -> Result<CronJob> {
-    let was_enabled = job.enabled;
-    let mut schedule_changed = false;
-    if let Some(schedule) = patch.schedule {
-        // The agent-only floor applies whenever the schedule is (re)set.
-        match job.job_type {
-            JobType::Agent => validate_agent_schedule(&schedule, Utc::now())?,
-            JobType::Shell | JobType::Flow => validate_schedule(&schedule, Utc::now())?,
-        }
-        job.schedule = schedule;
-        job.expression = schedule_cron_expression(&job.schedule).unwrap_or_default();
-        schedule_changed = true;
-    }
-    if let Some(command) = patch.command {
-        job.command = command;
-    }
-    if let Some(prompt) = patch.prompt {
-        job.prompt = Some(prompt);
-    }
-    if let Some(name) = patch.name {
-        job.name = Some(name);
-    }
-    if let Some(enabled) = patch.enabled {
-        job.enabled = enabled;
-    }
-    if let Some(delivery) = patch.delivery {
-        job.delivery = delivery;
-    }
-    if let Some(model) = patch.model {
-        job.model = Some(model);
-    }
-    if let Some(target) = patch.session_target {
-        job.session_target = target;
-    }
-    if let Some(delete_after_run) = patch.delete_after_run {
-        job.delete_after_run = delete_after_run;
-    }
-    if let Some(agent_id) = patch.agent_id {
-        job.agent_id = agent_id;
-    }
-    if let Some(origin) = patch.origin {
-        job.origin = origin;
-    }
-    if schedule_changed {
-        job.next_run = next_run_for_schedule(&job.schedule, Utc::now())?;
-    } else if job.enabled && !was_enabled {
-        // A job that sat disabled past its next run would fire the instant
-        // it is enabled; move a stale next run to the next occurrence.
-        let now = Utc::now();
-        if job.next_run <= now {
-            job.next_run = next_run_for_schedule(&job.schedule, now)?;
-        }
-    }
-    Ok(job)
 }
 
 /// The filter for the runs of the job stored as `job_id` with `doc`: its

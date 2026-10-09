@@ -19,7 +19,8 @@
 //! backend never meets keys a caller chose. Optional fields are left out
 //! rather than stored as `null`. Instants are kept twice: RFC 3339 text for
 //! reading back, and epoch milliseconds (`next_run_ms`, `created_ms`,
-//! `started_ms`) for ordering and range filters.
+//! `started_ns`, nanoseconds, so runs started within one millisecond still
+//! order by their real start) for ordering and range filters.
 //!
 //! # Concurrency
 //!
@@ -57,6 +58,7 @@ use tinystoragedrivers_core::{
 
 mod codec;
 mod jobs;
+mod patch;
 mod runs;
 #[cfg(test)]
 mod test_support;
@@ -114,7 +116,7 @@ impl CronDocuments {
                 .index(IndexSpec::new("by_name", ["name"]))
                 .index(IndexSpec::new("by_flow", ["job_type", "command"])),
             CollectionSpec::new(RUNS)
-                .index(IndexSpec::new("by_job", ["job_id", "started_ms", "seq"])),
+                .index(IndexSpec::new("by_job", ["job_id", "started_ns", "seq"])),
             CollectionSpec::new(COUNTERS),
         ]
     }

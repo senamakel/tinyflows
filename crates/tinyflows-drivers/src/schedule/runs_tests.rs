@@ -384,3 +384,42 @@ async fn an_edited_schedule_with_the_same_next_run_is_not_advanced() {
         "outcome still recorded"
     );
 }
+
+#[tokio::test]
+async fn runs_started_within_a_millisecond_order_by_their_real_start() {
+    let store = store().with_limits(1, 64);
+    let job = store.add_job("0 9 * * *", "x").await.unwrap();
+    let earlier: DateTime<Utc> = "2026-01-01T00:00:00.000100Z".parse().unwrap();
+    let later: DateTime<Utc> = "2026-01-01T00:00:00.000900Z".parse().unwrap();
+    // The later start is recorded first, as a run finishing sooner would be.
+    store
+        .record_run(&job.id, later, later, "later", None, 1)
+        .await
+        .unwrap();
+    store
+        .record_run(&job.id, earlier, earlier, "earlier", None, 1)
+        .await
+        .unwrap();
+    let runs = store.list_runs(&job.id, 10).await.unwrap();
+    assert_eq!(runs.len(), 1);
+    assert_eq!(runs[0].status, "later", "pruning keeps the latest start");
+}
+
+#[tokio::test]
+async fn removing_a_stale_incarnation_keeps_the_new_jobs_runs() {
+    let store = store();
+    let first = store.add_flow_schedule_job("f", daily()).await.unwrap();
+    let stale = store.docs.get(JOBS, &first.id).await.unwrap().unwrap();
+    store.remove_job(&first.id).await.unwrap();
+    let again = store.add_flow_schedule_job("f", daily()).await.unwrap();
+    let now = Utc::now();
+    store
+        .record_run(&again.id, now, now, "ok", None, 1)
+        .await
+        .unwrap();
+    // A remover still holding the old incarnation cannot take the new job
+    // or its runs with it.
+    assert!(!store.remove_stored(&stale).await.unwrap());
+    assert!(store.get_job(&again.id).await.is_ok());
+    assert_eq!(store.list_runs(&again.id, 10).await.unwrap().len(), 1);
+}

@@ -272,7 +272,7 @@ impl CronDocuments {
 /// The runs `filter` selects, newest first (ties to the later run number).
 fn newest_first(filter: Filter) -> Query {
     Query::filter(filter)
-        .sort(Sort::desc("started_ms"))
+        .sort(Sort::desc("started_ns"))
         .sort(Sort::desc("seq"))
 }
 

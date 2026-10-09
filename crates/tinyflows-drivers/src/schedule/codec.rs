@@ -220,7 +220,12 @@ pub(super) fn run_to_doc(
     doc.insert("seq".into(), json!(seq));
     doc.insert("job_id".into(), json!(job_id));
     doc.insert("started_at".into(), json!(started_at.to_rfc3339()));
-    doc.insert("started_ms".into(), json!(started_at.timestamp_millis()));
+    // Nanoseconds: two runs of one job can start within a millisecond, and
+    // history order (and which run pruning keeps) follows the real start.
+    doc.insert(
+        "started_ns".into(),
+        json!(started_at.timestamp_nanos_opt().unwrap_or(i64::MAX)),
+    );
     doc.insert("finished_at".into(), json!(finished_at.to_rfc3339()));
     doc.insert("status".into(), json!(status));
     doc.insert("duration_ms".into(), json!(duration_ms));
