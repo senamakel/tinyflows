@@ -10,6 +10,7 @@ use tinystoragedrivers_core::{
     DocumentStoreExt, ErrorKind, Filter, Precondition, Query, Sort, Versioned,
 };
 
+use super::lineage::{FLOW_INCARNATION, belongs, belongs_in, incarnation, live_flows, reclaim};
 use super::steps::steps_in;
 use super::{
     DEFINITIONS, FlowCatalogDocuments, MAX_FLOW_RUNS_PER_FLOW, RUNS, best_effort, compare_and_swap,
@@ -83,28 +84,28 @@ impl FlowCatalogDocuments {
         started_at: &str,
     ) -> Result<()> {
         let docs = self.docs().await?;
-        if docs.get(DEFINITIONS, flow_id).await?.is_none() {
+        let Some(flow) = docs.get(DEFINITIONS, flow_id).await? else {
             bail!("Failed to insert flow run: flow '{flow_id}' does not exist");
-        }
-        docs.put(
-            RUNS,
-            id,
-            json!({
-                "flow_id": flow_id,
-                "thread_id": thread_id,
-                "status": "running",
-                "started_at": started_at,
-                "started_ns": instant_ns(started_at),
-                "steps_json": "[]",
-                "pending_approvals_json": "[]",
-            }),
-            Precondition::Absent,
-        )
-        .await
-        .context("Failed to insert flow run")?;
-        // SQLite's foreign key, across processes: a `remove_flow` racing this
-        // insert either sees this run in its final sweep or is seen here.
-        if docs.get(DEFINITIONS, flow_id).await?.is_none() {
+        };
+        let mut run = json!({
+            "flow_id": flow_id,
+            "thread_id": thread_id,
+            "status": "running",
+            "started_at": started_at,
+            "started_ns": instant_ns(started_at),
+            "steps_json": "[]",
+            "pending_approvals_json": "[]",
+        });
+        set_optional(&mut run, FLOW_INCARNATION, incarnation(&flow.doc));
+        docs.put(RUNS, id, run.clone(), Precondition::Absent)
+            .await
+            .context("Failed to insert flow run")?;
+        // SQLite's foreign key, across processes: a `remove_flow` that raced
+        // this insert is caught here and the run undone. If this task stops
+        // before the check, the run names an incarnation that no longer
+        // exists, so no reader shows it either (`lineage`).
+        let current = docs.get(DEFINITIONS, flow_id).await?;
+        if !belongs(&run, current.as_ref().map(|stored| &stored.doc)) {
             docs.delete(RUNS, id, Precondition::None).await?;
             bail!("Failed to insert flow run: flow '{flow_id}' was removed concurrently");
         }
@@ -123,7 +124,13 @@ impl FlowCatalogDocuments {
         let query = Query::filter(Filter::eq("flow_id", flow_id))
             .sort(Sort::desc("started_ns"))
             .sort(Sort::desc("_id"));
-        let runs = docs.query_all(RUNS, &query).await?;
+        let flow = docs.get(DEFINITIONS, flow_id).await?;
+        let (runs, orphans): (Vec<_>, Vec<_>) = docs
+            .query_all(RUNS, &query)
+            .await?
+            .into_iter()
+            .partition(|run| belongs(&run.doc, flow.as_ref().map(|stored| &stored.doc)));
+        reclaim(docs, RUNS, &orphans).await;
         let mut deleted = 0usize;
         for old in runs.iter().skip(keep.max(1)) {
             if LIVE.contains(&status(&old.doc)) {
@@ -201,6 +208,11 @@ impl FlowCatalogDocuments {
                 &Query::filter(Filter::eq("status", "pending_approval")),
             )
             .await?;
+        let flows = live_flows(docs).await?;
+        let (parked, orphans): (Vec<_>, Vec<_>) = parked
+            .into_iter()
+            .partition(|run| belongs_in(&run.doc, &flows));
+        reclaim(docs, RUNS, &orphans).await;
         let mut swept = Vec::new();
         for run in parked {
             if !parked_before(&run.doc, cutoff) {
@@ -251,6 +263,11 @@ impl FlowCatalogDocuments {
                 &Query::filter(Filter::eq("status", "running")).sort(Sort::asc("started_ns")),
             )
             .await?;
+        let flows = live_flows(docs).await?;
+        let (running, orphans): (Vec<_>, Vec<_>) = running
+            .into_iter()
+            .partition(|run| belongs_in(&run.doc, &flows));
+        reclaim(docs, RUNS, &orphans).await;
         Ok(running
             .iter()
             .filter(|run| {
@@ -339,28 +356,69 @@ impl FlowCatalogDocuments {
         let Some(stored) = docs.get(RUNS, id).await? else {
             return Ok(None);
         };
+        let flow = match text(&stored.doc, "flow_id") {
+            Some(flow_id) => docs.get(DEFINITIONS, flow_id).await?,
+            None => None,
+        };
+        if !belongs(&stored.doc, flow.as_ref().map(|flow| &flow.doc)) {
+            reclaim(docs, RUNS, std::slice::from_ref(&stored)).await;
+            return Ok(None);
+        }
         to_run(&stored).map(Some)
     }
 
     /// A flow's most recent runs, newest first (`limit` at least 1).
     pub async fn list_flow_runs(&self, flow_id: &str, limit: usize) -> Result<Vec<FlowRun>> {
-        self.list_runs(Filter::eq("flow_id", flow_id), limit).await
+        let docs = self.docs().await?;
+        let Some(flow) = docs.get(DEFINITIONS, flow_id).await? else {
+            return Ok(Vec::new());
+        };
+        self.list_runs(Filter::eq("flow_id", flow_id), limit, |run| {
+            belongs(run, Some(&flow.doc))
+        })
+        .await
     }
 
     /// The most recent runs across all flows, newest first (`limit` at
     /// least 1).
     pub async fn list_all_flow_runs(&self, limit: usize) -> Result<Vec<FlowRun>> {
-        self.list_runs(Filter::All, limit).await
+        let flows = live_flows(self.docs().await?).await?;
+        self.list_runs(Filter::All, limit, |run| belongs_in(run, &flows))
+            .await
     }
 
-    async fn list_runs(&self, filter: Filter, limit: usize) -> Result<Vec<FlowRun>> {
+    /// The newest `limit` runs matching `filter` that `live` keeps, paging
+    /// past the orphans it drops (and reclaiming them).
+    async fn list_runs(
+        &self,
+        filter: Filter,
+        limit: usize,
+        live: impl Fn(&Value) -> bool,
+    ) -> Result<Vec<FlowRun>> {
         let docs = self.docs().await?;
-        let query = Query::filter(filter)
+        let limit = limit.max(1);
+        let mut query = Query::filter(filter)
             .sort(Sort::desc("started_ns"))
             .sort(Sort::desc("_id"))
-            .limit(limit.max(1));
-        let page = docs.query(RUNS, &query).await?;
-        page.items.iter().map(to_run).collect()
+            .limit(limit);
+        let mut runs = Vec::with_capacity(limit);
+        let mut orphans = Vec::new();
+        loop {
+            let page = docs.query(RUNS, &query).await?;
+            for stored in page.items {
+                if !live(&stored.doc) {
+                    orphans.push(stored);
+                } else if runs.len() < limit {
+                    runs.push(to_run(&stored)?);
+                }
+            }
+            match page.next {
+                Some(cursor) if runs.len() < limit => query = query.after(cursor),
+                _ => break,
+            }
+        }
+        reclaim(docs, RUNS, &orphans).await;
+        Ok(runs)
     }
 }
 
