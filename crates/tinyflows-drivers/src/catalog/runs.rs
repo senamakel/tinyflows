@@ -129,15 +129,13 @@ impl FlowCatalogDocuments {
             if LIVE.contains(&status(&old.doc)) {
                 continue;
             }
-            // Only the version read: a run that changed since is left alone.
-            if docs
-                .delete(RUNS, &old.id, old.unchanged())
-                .await
-                .unwrap_or(false)
-            {
-                docs.delete_where(STEPS, &Filter::eq("run_id", old.id.as_str()))
-                    .await?;
-                deleted += 1;
+            // Only the version read: a run that changed since (a conflict) is
+            // left alone; any other failure is the caller's to see.
+            match docs.delete(RUNS, &old.id, old.unchanged()).await {
+                Ok(true) => deleted += 1,
+                Ok(false) => {}
+                Err(error) if error.kind() == ErrorKind::Conflict => {}
+                Err(error) => return Err(error).context("Failed to prune flow runs"),
             }
         }
         if deleted > 0 {
