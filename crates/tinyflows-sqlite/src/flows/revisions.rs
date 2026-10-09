@@ -90,10 +90,10 @@ pub fn update_flow_graph(
 
     // Optimistic-concurrency check: refuse if the flow moved on since the
     // caller observed `expected_updated_at`.
-    if let Some(expected) = expected_updated_at {
-        if current.updated_at != expected {
-            return Err(FlowUpdateError::Conflict(Box::new(current)));
-        }
+    if let Some(expected) = expected_updated_at
+        && current.updated_at != expected
+    {
+        return Err(FlowUpdateError::Conflict(Box::new(current)));
     }
 
     // R-m2: `was_auto` MUST come from `current` (just re-read above, right

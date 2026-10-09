@@ -174,10 +174,10 @@ where
         while let Some(id) = cursor {
             // Written as a nested `if` rather than the source's let-chain:
             // this crate is edition 2021, where let-chains do not parse.
-            if let Some(limit) = limit {
-                if out.len() >= limit {
-                    break;
-                }
+            if let Some(limit) = limit
+                && out.len() >= limit
+            {
+                break;
             }
             // `remove` doubles as the cycle guard: each id is visited once.
             let Some(checkpoint) = by_id.remove(&id) else {
