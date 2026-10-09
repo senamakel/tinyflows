@@ -12,8 +12,10 @@
 //! is therefore never visible — not even when a flow with the same id is
 //! created again later — and readers reclaim the ones they meet.
 //!
-//! Documents written before this field existed have neither side, and match
-//! each other (`None == None`) until the flow is removed.
+//! A run or revision without the field (written by a build without this
+//! fence: older data, or an older process during a rolling upgrade) belongs
+//! to whatever flow exists under its id, so it is never hidden or reclaimed
+//! by mistake; such records keep the pre-fence behaviour until rewritten.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -36,9 +38,17 @@ pub(crate) fn incarnation(definition: &Value) -> Option<&str> {
 
 /// Whether `dependent` (a run or revision) belongs to `definition`, the
 /// current definition of its flow (`None` when the flow is gone).
+///
+/// A dependent with no `flow_incarnation` belongs to whatever definition
+/// exists under its flow id: it was written by a build without this fence
+/// (an older process during a rolling upgrade, or data from before it), and
+/// hiding or reclaiming it would lose a live run. Only a dependent that names
+/// an incarnation can be judged an orphan.
 pub(crate) fn belongs(dependent: &Value, definition: Option<&Value>) -> bool {
-    definition
-        .is_some_and(|definition| text(dependent, FLOW_INCARNATION) == incarnation(definition))
+    definition.is_some_and(|definition| match text(dependent, FLOW_INCARNATION) {
+        Some(written_under) => incarnation(definition) == Some(written_under),
+        None => true,
+    })
 }
 
 /// The incarnation of every existing flow, by id.
@@ -60,7 +70,10 @@ pub(crate) async fn live_flows(
 pub(crate) fn belongs_in(dependent: &Value, flows: &HashMap<String, Option<String>>) -> bool {
     text(dependent, "flow_id")
         .and_then(|flow_id| flows.get(flow_id))
-        .is_some_and(|live| text(dependent, FLOW_INCARNATION) == live.as_deref())
+        .is_some_and(|live| match text(dependent, FLOW_INCARNATION) {
+            Some(written_under) => live.as_deref() == Some(written_under),
+            None => true,
+        })
 }
 
 /// Deletes orphans a reader met, each only at the version read. Best effort:
