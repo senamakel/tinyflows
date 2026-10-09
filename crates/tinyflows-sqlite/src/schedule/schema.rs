@@ -138,10 +138,16 @@ fn add_column_if_missing(conn: &Connection, table: &str, name: &str, sql_type: &
 
 /// Opens the cron store and runs `f` against it.
 ///
-/// Creates the database's parent directory if needed, opens the SQLite file,
-/// and creates or migrates the schema idempotently (missing columns are added
+/// Creates the database's parent directory if needed, opens the SQLite file
+/// through the driver's native mode (see `crate::native`), and creates or
+/// migrates the schema idempotently (missing columns are added
 /// and the flow-command index is created) before handing over the connection,
 /// so a database written by an older build opens unchanged.
+///
+/// `f` runs while the driver's per-file lock is held, and that lock is not
+/// reentrant: do the work on the `Connection` passed in. Calling another
+/// store API for the same database from inside `f` (which opens the same
+/// shared handle) would wait on the lock forever.
 pub fn with_connection<T>(
     opts: &CronStoreOptions,
     f: impl FnOnce(&Connection) -> Result<T>,
@@ -152,11 +158,9 @@ pub fn with_connection<T>(
             .with_context(|| format!("Failed to create cron directory: {}", parent.display()))?;
     }
 
-    let conn = Connection::open(db_path)
-        .with_context(|| format!("Failed to open cron DB: {}", db_path.display()))?;
-
-    conn.execute_batch(
-        "PRAGMA foreign_keys = ON;
+    crate::native::run(db_path, |conn| {
+        conn.execute_batch(
+            "PRAGMA foreign_keys = ON;
          CREATE TABLE IF NOT EXISTS cron_jobs (
             id               TEXT PRIMARY KEY,
             expression       TEXT NOT NULL,
@@ -191,39 +195,40 @@ pub fn with_connection<T>(
         CREATE INDEX IF NOT EXISTS idx_cron_runs_job_id ON cron_runs(job_id);
         CREATE INDEX IF NOT EXISTS idx_cron_runs_started_at ON cron_runs(started_at);
         CREATE INDEX IF NOT EXISTS idx_cron_runs_job_started ON cron_runs(job_id, started_at);",
-    )
-    .context("Failed to initialize cron schema")?;
+        )
+        .context("Failed to initialize cron schema")?;
 
-    add_column_if_missing(&conn, "cron_jobs", "schedule", "TEXT")?;
-    add_column_if_missing(
-        &conn,
-        "cron_jobs",
-        "job_type",
-        "TEXT NOT NULL DEFAULT 'shell'",
-    )?;
-    add_column_if_missing(&conn, "cron_jobs", "prompt", "TEXT")?;
-    add_column_if_missing(&conn, "cron_jobs", "name", "TEXT")?;
-    add_column_if_missing(
-        &conn,
-        "cron_jobs",
-        "session_target",
-        "TEXT NOT NULL DEFAULT 'isolated'",
-    )?;
-    add_column_if_missing(&conn, "cron_jobs", "model", "TEXT")?;
-    add_column_if_missing(&conn, "cron_jobs", "enabled", "INTEGER NOT NULL DEFAULT 1")?;
-    add_column_if_missing(&conn, "cron_jobs", "delivery", "TEXT")?;
-    add_column_if_missing(
-        &conn,
-        "cron_jobs",
-        "delete_after_run",
-        "INTEGER NOT NULL DEFAULT 0",
-    )?;
-    add_column_if_missing(&conn, "cron_jobs", "agent_id", "TEXT")?;
-    add_column_if_missing(&conn, "cron_jobs", "origin", "TEXT")?;
-    add_column_if_missing(&conn, "cron_runs", "delivery_status", "TEXT")?;
-    ensure_flow_command_index(&conn)?;
+        add_column_if_missing(conn, "cron_jobs", "schedule", "TEXT")?;
+        add_column_if_missing(
+            conn,
+            "cron_jobs",
+            "job_type",
+            "TEXT NOT NULL DEFAULT 'shell'",
+        )?;
+        add_column_if_missing(conn, "cron_jobs", "prompt", "TEXT")?;
+        add_column_if_missing(conn, "cron_jobs", "name", "TEXT")?;
+        add_column_if_missing(
+            conn,
+            "cron_jobs",
+            "session_target",
+            "TEXT NOT NULL DEFAULT 'isolated'",
+        )?;
+        add_column_if_missing(conn, "cron_jobs", "model", "TEXT")?;
+        add_column_if_missing(conn, "cron_jobs", "enabled", "INTEGER NOT NULL DEFAULT 1")?;
+        add_column_if_missing(conn, "cron_jobs", "delivery", "TEXT")?;
+        add_column_if_missing(
+            conn,
+            "cron_jobs",
+            "delete_after_run",
+            "INTEGER NOT NULL DEFAULT 0",
+        )?;
+        add_column_if_missing(conn, "cron_jobs", "agent_id", "TEXT")?;
+        add_column_if_missing(conn, "cron_jobs", "origin", "TEXT")?;
+        add_column_if_missing(conn, "cron_runs", "delivery_status", "TEXT")?;
+        ensure_flow_command_index(conn)?;
 
-    f(&conn)
+        f(conn)
+    })
 }
 
 /// Creates the `idx_cron_jobs_flow_command` partial unique index, first
