@@ -24,7 +24,7 @@
 //! backend.
 //!
 //! [`StateStore`]: https://docs.rs/tinyflows/latest/tinyflows/caps/trait.StateStore.html
-//! [`Checkpointer`]: https://docs.rs/tinyflows/latest/tinyflows/graph/trait.Checkpointer.html
+//! [`Checkpointer`]: https://docs.rs/tinyflows/latest/tinyflows/graph/checkpoint/trait.Checkpointer.html
 
 #[cfg(feature = "engine")]
 mod checkpoint;
