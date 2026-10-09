@@ -72,8 +72,19 @@ let state = Arc::new(FlowStateDocuments::new(catalog.clone(), flow.id.clone()));
   revision for an update that did not happen; `updated_at` advances strictly
   on every write, so it is a sound concurrency token and a total order.
 - Removing a flow removes its runs and revisions first and the definition
-  last (a failure part-way is finished by calling it again); a run inserted
-  concurrently is swept or removes itself.
+  last (a failure part-way is finished by calling it again). A run or
+  revision written concurrently can still land after the last sweep, or its
+  writer be cancelled before undoing it, so each definition carries an
+  `incarnation` id and every run and revision records the one it was written
+  under: readers show only dependents of a flow that still exists with that
+  incarnation, never an orphan (not even after a flow with the same id is
+  created again), and reclaim the orphans they meet. A run or revision with
+  no recorded incarnation (older data, or an older process during a rolling
+  upgrade) belongs to whatever flow exists under its id, so it is never
+  hidden or reclaimed by mistake.
+- Pruning deletes a revision only at the version it read, re-checking an
+  abandoned one's age and pending state first; an update whose in-flight
+  revision was pruned anyway writes it again after its swap.
 - Graphs, steps, drafts and state values are JSON strings, optional fields
   are omitted rather than `null`, and ordering uses epoch-nanosecond fields.
 

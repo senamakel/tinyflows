@@ -9,6 +9,7 @@ use tinyflows_catalog::Flow;
 use tinystoragedrivers_core::{DocumentStoreExt, Filter, Precondition, Query, Sort, Versioned};
 use uuid::Uuid;
 
+use super::lineage::{INCARNATION, incarnation};
 use super::{
     DEFINITIONS, FlowCatalogDocuments, REVISIONS, RUNS, compare_and_swap, flag, instant_ns,
     next_stamp, required, set_optional, text, upsert,
@@ -36,6 +37,14 @@ fn to_doc(flow: &Flow, existing: Option<&Value>) -> Result<Value> {
         "last_revision_id",
         existing.and_then(|doc| text(doc, "last_revision_id")),
     );
+    // Minted once, when the document is first created, and kept by every
+    // later upsert: what ties runs and revisions to this flow and not to a
+    // removed one with the same id (`lineage`).
+    let incarnation = match existing {
+        Some(existing) => incarnation(existing).map(str::to_string),
+        None => Some(Uuid::new_v4().to_string()),
+    };
+    set_optional(&mut doc, INCARNATION, incarnation.as_deref());
     set_optional(&mut doc, "last_run_at", flow.last_run_at.as_deref());
     set_optional(&mut doc, "last_status", flow.last_status.as_deref());
     Ok(doc)
@@ -172,11 +181,12 @@ impl FlowCatalogDocuments {
     /// Deletes a flow and its runs (with their steps) and revisions.
     ///
     /// Dependents go first and the definition last, so a failure part-way
-    /// leaves the flow in place and calling this again finishes the job. The
-    /// runs are swept once more after the definition is gone: a run inserted
-    /// concurrently either lands before that sweep or sees the flow missing
-    /// and removes itself (`insert_flow_run`), so none outlives its flow; the
-    /// revisions are swept again too, for a graph update racing the removal.
+    /// leaves the flow in place and calling this again finishes the job. Both
+    /// are swept once more after the definition is gone. A run insert or
+    /// graph update racing the removal can still land a document after that
+    /// sweep; it names this flow's incarnation, which no longer exists, so no
+    /// reader ever shows it and the next one to meet it deletes it
+    /// (`lineage`) — even if a flow with the same id is created again.
     ///
     /// # Errors
     ///
