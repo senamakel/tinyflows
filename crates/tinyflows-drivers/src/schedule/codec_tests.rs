@@ -113,3 +113,45 @@ fn creation_time_keeps_sub_millisecond_precision() {
     assert_eq!(early_doc["created_ms"], late_doc["created_ms"]);
     assert!(created_at(&early_doc) < created_at(&late_doc));
 }
+
+#[test]
+fn wrong_typed_run_fields_are_errors() {
+    let good = json!({
+        "seq": 1, "job_id": "j", "started_at": "2026-01-01T00:00:00Z",
+        "finished_at": "2026-01-01T00:00:01Z", "status": "ok",
+    });
+    assert!(doc_to_run(&stored(good.clone())).is_ok());
+    for (field, bad) in [
+        ("output", json!(7)),
+        ("duration_ms", json!("12")),
+        ("delivery_status", json!(true)),
+        ("seq", json!("1")),
+    ] {
+        let mut doc = good.clone();
+        doc[field] = bad;
+        let error = doc_to_run(&stored(doc)).unwrap_err().to_string();
+        assert!(error.contains(field), "{field}: {error}");
+    }
+    let mut unknown = good;
+    unknown["delivery_status"] = json!("teleported");
+    assert!(
+        doc_to_run(&stored(unknown))
+            .unwrap()
+            .delivery_status
+            .is_none()
+    );
+}
+
+#[test]
+fn next_run_is_written_at_both_precisions() {
+    let mut doc = serde_json::Map::new();
+    let at = DateTime::parse_from_rfc3339("2026-01-01T00:00:00.000000123Z")
+        .unwrap()
+        .with_timezone(&Utc);
+    set_next_run(&mut doc, at);
+    assert_eq!(doc["next_run_ms"], json!(at.timestamp_millis()));
+    assert_eq!(
+        doc["next_run_ns"],
+        json!(at.timestamp_millis() * 1_000_000 + 123)
+    );
+}

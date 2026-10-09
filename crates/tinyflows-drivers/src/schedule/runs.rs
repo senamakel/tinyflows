@@ -339,3 +339,7 @@ fn newest_first(filter: Filter) -> Query {
 #[cfg(test)]
 #[path = "runs_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "runs_sweep_tests.rs"]
+mod sweep_tests;
