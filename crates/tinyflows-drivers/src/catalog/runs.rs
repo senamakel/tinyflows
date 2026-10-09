@@ -6,11 +6,13 @@
 use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
 use tinyflows_catalog::{FlowRun, FlowRunStep};
-use tinystoragedrivers_core::{DocumentStoreExt, Filter, Precondition, Query, Sort, Versioned};
+use tinystoragedrivers_core::{
+    DocumentStoreExt, ErrorKind, Filter, Precondition, Query, Sort, Versioned,
+};
 
-use super::steps::{replace_steps, steps_of};
+use super::steps::{steps_in, with_steps};
 use super::{
-    DEFINITIONS, FlowCatalogDocuments, MAX_FLOW_RUNS_PER_FLOW, RUNS, STEPS, best_effort,
+    DEFINITIONS, FlowCatalogDocuments, MAX_FLOW_RUNS_PER_FLOW, RUNS, best_effort, is_conflict,
     compare_and_swap, instant_before, instant_ns, required, set_optional, text,
 };
 
@@ -22,8 +24,9 @@ fn status(doc: &Value) -> &str {
     text(doc, "status").unwrap_or_default()
 }
 
-fn to_run(stored: &Versioned<Value>, steps: Vec<FlowRunStep>) -> Result<FlowRun> {
+fn to_run(stored: &Versioned<Value>) -> Result<FlowRun> {
     let doc = &stored.doc;
+    let steps = steps_in(doc).with_context(|| format!("run {} steps are corrupt", stored.id))?;
     let pending_approvals: Vec<String> =
         serde_json::from_str(text(doc, "pending_approvals_json").unwrap_or("[]"))
             .with_context(|| format!("run {} pending approvals are corrupt", stored.id))?;
@@ -39,6 +42,15 @@ fn to_run(stored: &Versioned<Value>, steps: Vec<FlowRunStep>) -> Result<FlowRun>
         error: text(doc, "error").map(str::to_string),
         graph_hash: text(doc, "graph_hash").map(str::to_string),
     })
+}
+
+/// Whether run `doc` was parked (its `finished_at`, else `started_at`)
+/// strictly before `cutoff`.
+fn parked_before(doc: &Value, cutoff: &str) -> bool {
+    let since = text(doc, "finished_at")
+        .or_else(|| text(doc, "started_at"))
+        .unwrap_or_default();
+    instant_before(since, cutoff)
 }
 
 /// Stamps `finished_at` (and its sort key) on `doc`, or clears both.
@@ -83,12 +95,19 @@ impl FlowCatalogDocuments {
                 "status": "running",
                 "started_at": started_at,
                 "started_ns": instant_ns(started_at),
+                "steps_json": "[]",
                 "pending_approvals_json": "[]",
             }),
             Precondition::Absent,
         )
         .await
         .context("Failed to insert flow run")?;
+        // SQLite's foreign key, across processes: a `remove_flow` racing this
+        // insert either sees this run in its final sweep or is seen here.
+        if docs.get(DEFINITIONS, flow_id).await?.is_none() {
+            docs.delete(RUNS, id, Precondition::None).await?;
+            bail!("Failed to insert flow run: flow '{flow_id}' was removed concurrently");
+        }
         best_effort(
             "insert_flow_run: retention prune",
             self.prune_flow_runs(flow_id, MAX_FLOW_RUNS_PER_FLOW),
@@ -144,7 +163,11 @@ impl FlowCatalogDocuments {
     ) -> Result<bool> {
         let pending_json = serde_json::to_string(pending_approvals)
             .context("Failed to serialize flow run pending approvals")?;
+        let steps_json =
+            serde_json::to_string(steps).context("Failed to serialize flow run steps")?;
         let docs = self.docs().await?;
+        // Status and steps in one swap: a run is never terminal with a stale
+        // step list, and a failed write leaves it live and retryable.
         let settled = compare_and_swap(docs, RUNS, id, |doc| {
             if !LIVE.contains(&super::runs::status(doc)) {
                 return None;
@@ -152,6 +175,7 @@ impl FlowCatalogDocuments {
             let mut next = doc.clone();
             next["status"] = json!(status);
             set_finished(&mut next, Some(finished_at));
+            next["steps_json"] = json!(steps_json);
             next["pending_approvals_json"] = json!(pending_json);
             set_optional(&mut next, "error", error);
             set_optional(&mut next, "graph_hash", graph_hash);
@@ -159,13 +183,7 @@ impl FlowCatalogDocuments {
         })
         .await
         .context("Failed to finish flow run")?;
-        if settled.is_none() {
-            return Ok(false);
-        }
-        replace_steps(docs, id, steps)
-            .await
-            .context("Failed to persist settled flow run steps")?;
-        Ok(true)
+        Ok(settled.is_some())
     }
 
     /// Cancels every parked `pending_approval` run parked (its `finished_at`,
@@ -187,14 +205,13 @@ impl FlowCatalogDocuments {
             .await?;
         let mut swept = Vec::new();
         for run in parked {
-            let since = text(&run.doc, "finished_at")
-                .or_else(|| text(&run.doc, "started_at"))
-                .unwrap_or_default();
-            if !instant_before(since, cutoff) {
+            if !parked_before(&run.doc, cutoff) {
                 continue;
             }
             let flipped = compare_and_swap(docs, RUNS, &run.id, |doc| {
-                if status(doc) != "pending_approval" {
+                // Re-checked on the current document: a run resumed and
+                // parked again since the query has a newer parking time.
+                if status(doc) != "pending_approval" || !parked_before(doc, cutoff) {
                     return None;
                 }
                 let mut next = doc.clone();
@@ -324,8 +341,7 @@ impl FlowCatalogDocuments {
         let Some(stored) = docs.get(RUNS, id).await? else {
             return Ok(None);
         };
-        let mut steps = steps_of(docs, std::slice::from_ref(&stored.id)).await?;
-        to_run(&stored, steps.remove(&stored.id).unwrap_or_default()).map(Some)
+        to_run(&stored).map(Some)
     }
 
     /// A flow's most recent runs, newest first (`limit` at least 1).
@@ -346,12 +362,7 @@ impl FlowCatalogDocuments {
             .sort(Sort::desc("_id"))
             .limit(limit.max(1));
         let page = docs.query(RUNS, &query).await?;
-        let ids: Vec<String> = page.items.iter().map(|run| run.id.clone()).collect();
-        let mut steps = steps_of(docs, &ids).await?;
-        page.items
-            .iter()
-            .map(|run| to_run(run, steps.remove(&run.id).unwrap_or_default()))
-            .collect()
+        page.items.iter().map(to_run).collect()
     }
 }
 
