@@ -25,12 +25,12 @@
 use std::marker::PhantomData;
 use std::sync::Arc;
 
+use crate::graph::error::{GraphError, Result};
+use crate::graph::ids::CheckpointId;
 use async_trait::async_trait;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
-use crate::graph::error::{GraphError, Result};
-use crate::graph::ids::CheckpointId;
 use tinystoragedrivers_core::{
     CollectionSpec, DocumentStore, DocumentStoreExt, ErrorKind, Filter, IndexSpec, Precondition,
     Query, Sort, StorageError, Versioned,
@@ -38,7 +38,9 @@ use tinystoragedrivers_core::{
 use tokio::sync::OnceCell;
 
 use super::{
-    require_checkpoint_id,Checkpoint, CheckpointConfig, CheckpointMetadata, Checkpointer, PendingWrite, merge_writes};
+    Checkpoint, CheckpointConfig, CheckpointMetadata, Checkpointer, PendingWrite, merge_writes,
+    require_checkpoint_id,
+};
 
 /// How many times a compare-and-swap loop retries before giving up.
 const CAS_ATTEMPTS: usize = 64;
@@ -209,7 +211,9 @@ where
     fn decode(stored: Versioned<Value>) -> Result<Checkpoint<State>> {
         let record = stored.doc.get("record").cloned().unwrap_or(Value::Null);
         serde_json::from_value(record).map_err(|error| {
-            GraphError::Checkpoint(format!("storage driver checkpointer: decode record: {error}"))
+            GraphError::Checkpoint(format!(
+                "storage driver checkpointer: decode record: {error}"
+            ))
         })
     }
 }

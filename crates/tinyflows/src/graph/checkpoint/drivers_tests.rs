@@ -3,9 +3,9 @@
 //! a driver document store, plus the isolation and key-encoding guarantees
 //! the driver layout adds.
 
-use serde_json::json;
 use super::*;
 use crate::graph::ids::NodeId;
+use serde_json::json;
 use tinystoragedrivers_core::{MemoryStorage, Scope, StorageBackend};
 
 fn docs(storage: &MemoryStorage, scope: &str) -> Arc<dyn DocumentStore> {
@@ -302,9 +302,17 @@ async fn scoped_reads_stay_in_their_namespace_when_ids_repeat() {
     let mut nested = checkpoint("t", "same", None, 2, json!(2));
     nested.namespace = child.clone();
     saver.put(nested).await.unwrap();
-    let root = saver.get_scoped("t", Some("same"), &[]).await.unwrap().unwrap();
+    let root = saver
+        .get_scoped("t", Some("same"), &[])
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(root.state, json!(1));
-    let sub = saver.get_scoped("t", Some("same"), &child).await.unwrap().unwrap();
+    let sub = saver
+        .get_scoped("t", Some("same"), &child)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(sub.state, json!(2));
     assert!(
         saver
@@ -329,10 +337,7 @@ async fn pending_writes_never_merge_across_lookalike_namespaces() {
     };
     let split = config(vec!["a".to_string(), "b".to_string()]);
     let joined = config(vec!["a\u{1f}b".to_string()]);
-    let write: PendingWrite = serde_json::from_value(json!({
-        "task_id": "task", "idx": 0, "channel": "out", "value": "split"
-    }))
-    .unwrap_or_else(|_| PendingWrite::new("task", 0, "out", json!("split")));
+    let write = PendingWrite::data("n", "task", 0, "out", json!("split"));
     saver.put_writes(&split, &[write]).await.unwrap();
     assert!(saver.get_writes(&joined).await.unwrap().is_empty());
     assert_eq!(saver.get_writes(&split).await.unwrap().len(), 1);
@@ -345,7 +350,10 @@ fn keys_are_unambiguous_and_long_ones_hashed() {
     assert!(hashed.starts_with("h:") && hashed.len() == 66, "{hashed}");
     assert_ne!(hashed, key(&[&"u".repeat(500)]));
     let ns = |parts: &[&str]| parts.iter().map(|p| (*p).to_string()).collect::<Vec<_>>();
-    assert_ne!(namespace_key(&ns(&["a", "b"])), namespace_key(&ns(&["a/b"])));
+    assert_ne!(
+        namespace_key(&ns(&["a", "b"])),
+        namespace_key(&ns(&["a/b"]))
+    );
     assert_ne!(namespace_key(&ns(&["ab"])), namespace_key(&ns(&["a", "b"])));
 }
 
@@ -370,5 +378,9 @@ async fn a_corrupt_record_is_a_checkpoint_error() {
         .unwrap();
     let error = saver.get("t", None).await.unwrap_err();
     assert!(matches!(error, GraphError::Checkpoint(_)), "{error:?}");
-    assert!(map_error(StorageError::unavailable("busy")).to_string().contains("busy"));
+    assert!(
+        map_error(StorageError::unavailable("busy"))
+            .to_string()
+            .contains("busy")
+    );
 }

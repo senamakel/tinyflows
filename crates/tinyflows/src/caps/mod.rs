@@ -6,9 +6,9 @@
 //! curated Composio tools, `HttpRequestTool`, and sandboxed code runtimes.
 
 pub mod agent;
+pub mod approval;
 #[cfg(feature = "storage-drivers")]
 mod drivers;
-pub mod approval;
 #[cfg(any(test, feature = "host-caps"))]
 pub mod host;
 #[cfg(any(test, feature = "mock"))]
