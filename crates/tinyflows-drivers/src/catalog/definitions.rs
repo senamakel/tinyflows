@@ -10,8 +10,8 @@ use tinystoragedrivers_core::{DocumentStoreExt, Filter, Precondition, Query, Sor
 use uuid::Uuid;
 
 use super::{
-    DEFINITIONS, FlowCatalogDocuments, REVISIONS, RUNS, compare_and_swap, flag, instant_ns, next_stamp,
-    required, set_optional, text, upsert,
+    DEFINITIONS, FlowCatalogDocuments, REVISIONS, RUNS, compare_and_swap, flag, instant_ns,
+    next_stamp, required, set_optional, text, upsert,
 };
 
 /// `flow` as a document, keeping `created_at` from `existing` when there is
@@ -30,6 +30,12 @@ fn to_doc(flow: &Flow, existing: Option<&Value>) -> Result<Value> {
         "updated_at": flow.updated_at,
         "require_approval": flow.require_approval,
     });
+    // The revision bookkeeping is the store's, not the caller's: keep it.
+    set_optional(
+        &mut doc,
+        "last_revision_id",
+        existing.and_then(|doc| text(doc, "last_revision_id")),
+    );
     set_optional(&mut doc, "last_run_at", flow.last_run_at.as_deref());
     set_optional(&mut doc, "last_status", flow.last_status.as_deref());
     Ok(doc)

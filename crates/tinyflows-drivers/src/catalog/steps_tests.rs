@@ -85,7 +85,7 @@ async fn concurrent_steps_of_parallel_branches_are_all_kept() {
 }
 
 #[tokio::test]
-async fn finishing_rewrites_the_list_without_emptying_it() {
+async fn finishing_replaces_the_list_in_the_given_order() {
     let store = with_run().await;
     store
         .upsert_flow_run_step("r", &step("gone", "ok"))
@@ -115,16 +115,70 @@ async fn finishing_rewrites_the_list_without_emptying_it() {
 }
 
 #[tokio::test]
-async fn a_corrupt_step_is_an_error() {
+async fn corrupt_steps_are_an_error_not_a_reset() {
     let store = with_run().await;
     let docs = store.docs().await.unwrap();
-    docs.put(
-        STEPS,
-        &step_id("r", "bad"),
-        json!({ "run_id": "r", "node_id": "bad", "order": 0, "step_json": "{" }),
-        Precondition::None,
-    )
+    compare_and_swap(docs, RUNS, "r", |doc| {
+        let mut next = doc.clone();
+        next["steps_json"] = json!("{");
+        Some(next)
+    })
     .await
     .unwrap();
     assert!(store.get_flow_run("r").await.is_err());
+    assert!(
+        store
+            .upsert_flow_run_step("r", &step("a", "ok"))
+            .await
+            .is_err(),
+        "a corrupt list is never overwritten with a fresh one"
+    );
+}
+
+#[tokio::test]
+async fn a_step_written_after_settling_lands_on_the_settled_list() {
+    let store = with_run().await;
+    store
+        .finish_flow_run(
+            "r",
+            "completed",
+            "2026-01-01T00:00:01Z",
+            &[step("a", "ok")],
+            &[],
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+    store
+        .upsert_flow_run_step("r", &step("late", "ok"))
+        .await
+        .unwrap();
+    let steps = store.get_flow_run("r").await.unwrap().unwrap().steps;
+    assert_eq!(
+        steps.iter().map(|s| s.node_id.as_str()).collect::<Vec<_>>(),
+        ["a", "late"]
+    );
+}
+
+#[tokio::test]
+async fn finishing_keeps_the_steps_as_given_including_repeats() {
+    let store = with_run().await;
+    let steps = [step("a", "error"), step("a", "ok")];
+    store
+        .finish_flow_run(
+            "r",
+            "completed",
+            "2026-01-01T00:00:01Z",
+            &steps,
+            &[],
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        store.get_flow_run("r").await.unwrap().unwrap().steps.len(),
+        2
+    );
 }

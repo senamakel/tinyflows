@@ -155,3 +155,21 @@ async fn scopes_keep_drafts_apart() {
     assert!(bob.get_draft(&draft.id).await.unwrap().is_none());
     assert!(bob.list_drafts().await.unwrap().is_empty());
 }
+
+#[tokio::test]
+async fn every_update_stamps_a_later_time() {
+    let store = catalog();
+    let draft = store
+        .create_draft(None, "d".into(), graph(), DraftOrigin::Chat)
+        .await
+        .unwrap();
+    let mut last = draft.updated_at.clone();
+    for i in 0..10 {
+        let updated = store
+            .update_draft(&draft.id, Some(format!("n{i}")), None, None)
+            .await
+            .unwrap();
+        assert!(crate::catalog::instant_before(&last, &updated.updated_at));
+        last = updated.updated_at;
+    }
+}

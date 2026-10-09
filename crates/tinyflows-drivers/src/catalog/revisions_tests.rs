@@ -263,3 +263,150 @@ async fn a_corrupt_revision_is_an_error() {
     .unwrap();
     assert!(store.list_revisions(&flow.id, 1).await.is_err());
 }
+
+#[tokio::test]
+async fn rapid_updates_always_advance_updated_at() {
+    let store = catalog();
+    let flow = store
+        .create_flow("v".into(), trigger_graph(), false, true)
+        .await
+        .unwrap();
+    let mut seen = flow.updated_at.clone();
+    for i in 0..20 {
+        let updated = store
+            .update_flow_graph(
+                &flow.id,
+                format!("v{i}"),
+                trigger_graph(),
+                false,
+                None,
+                false,
+                Some(&seen),
+            )
+            .await
+            .unwrap();
+        assert!(crate::catalog::instant_before(&seen, &updated.updated_at));
+        seen = updated.updated_at;
+    }
+    let toggled = store.set_enabled(&flow.id, false).await.unwrap();
+    assert!(crate::catalog::instant_before(&seen, &toggled.updated_at));
+    let names: Vec<String> = store
+        .list_revisions(&flow.id, 3)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|r| r.name)
+        .collect();
+    assert_eq!(names, ["v18", "v17", "v16"], "revision order is total");
+}
+
+#[tokio::test]
+async fn a_pending_revision_shows_only_once_its_update_lands() {
+    let store = catalog();
+    let flow = store
+        .create_flow("v1".into(), trigger_graph(), false, true)
+        .await
+        .unwrap();
+    let docs = store.docs().await.unwrap();
+    // A revision written by an update that never swapped (crash or lost race).
+    docs.put(
+        REVISIONS,
+        "orphan",
+        json!({ "flow_id": flow.id, "graph_json": "{}", "name": "ghost",
+                "require_approval": false, "created_at": "2026-01-01T00:00:00Z",
+                "created_ns": 1, "pending": true }),
+        Precondition::Absent,
+    )
+    .await
+    .unwrap();
+    assert!(store.list_revisions(&flow.id, 10).await.unwrap().is_empty());
+    assert!(
+        store
+            .revision_by_id(&flow.id, "orphan")
+            .await
+            .unwrap()
+            .is_none()
+    );
+
+    store
+        .update_flow_graph(
+            &flow.id,
+            "v2".into(),
+            trigger_graph(),
+            false,
+            None,
+            false,
+            None,
+        )
+        .await
+        .unwrap();
+    let listed = store.list_revisions(&flow.id, 10).await.unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].name, "v1");
+    assert!(
+        docs.get(REVISIONS, "orphan").await.unwrap().is_none(),
+        "an abandoned pending revision is pruned"
+    );
+}
+
+#[tokio::test]
+async fn a_swapped_but_unconfirmed_revision_is_visible_and_then_confirmed() {
+    let store = catalog();
+    let flow = store
+        .create_flow("v1".into(), trigger_graph(), false, true)
+        .await
+        .unwrap();
+    store
+        .update_flow_graph(
+            &flow.id,
+            "v2".into(),
+            trigger_graph(),
+            false,
+            None,
+            false,
+            None,
+        )
+        .await
+        .unwrap();
+    let first = store.list_revisions(&flow.id, 1).await.unwrap().remove(0);
+    // Simulate a crash between the swap and the confirmation.
+    let docs = store.docs().await.unwrap();
+    compare_and_swap(docs, REVISIONS, &first.id, |doc| {
+        let mut next = doc.clone();
+        next["pending"] = json!(true);
+        Some(next)
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        store.list_revisions(&flow.id, 10).await.unwrap().len(),
+        1,
+        "the flow names it"
+    );
+    store
+        .upsert_flow(&store.get_flow(&flow.id).await.unwrap().unwrap())
+        .await
+        .unwrap();
+    assert_eq!(
+        store.list_revisions(&flow.id, 10).await.unwrap().len(),
+        1,
+        "an upsert keeps the bookkeeping"
+    );
+    store
+        .update_flow_graph(
+            &flow.id,
+            "v3".into(),
+            trigger_graph(),
+            false,
+            None,
+            false,
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        store.list_revisions(&flow.id, 10).await.unwrap().len(),
+        2,
+        "the next update confirms it"
+    );
+}

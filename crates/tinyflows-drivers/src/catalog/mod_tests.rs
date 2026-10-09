@@ -31,5 +31,5 @@ async fn ensure_declares_every_collection_once() {
     let catalog = test_support::catalog();
     catalog.ensure().await.unwrap();
     catalog.ensure().await.unwrap();
-    assert_eq!(FlowCatalogDocuments::collections().len(), 7);
+    assert_eq!(FlowCatalogDocuments::collections().len(), 6);
 }

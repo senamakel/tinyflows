@@ -14,7 +14,7 @@ use tinyflows_catalog::{DraftOrigin, FlowDraft};
 use tinystoragedrivers_core::{DocumentStoreExt, Precondition, Query, Sort, Versioned};
 use uuid::Uuid;
 
-use super::{DRAFTS, FlowCatalogDocuments, compare_and_swap, instant_ns, required};
+use super::{DRAFTS, FlowCatalogDocuments, compare_and_swap, instant_ns, next_stamp, required};
 
 /// The same id rule as the file store, so an id valid on one backend is
 /// valid on the other.
@@ -98,7 +98,6 @@ impl FlowCatalogDocuments {
         if let Some(stored) = docs.get(DRAFTS, id).await? {
             to_draft(&stored)?;
         }
-        let updated_at = Utc::now().to_rfc3339();
         let stored = compare_and_swap(docs, DRAFTS, id, |doc| {
             let mut draft: FlowDraft =
                 serde_json::from_str(doc.get("draft_json")?.as_str()?).ok()?;
@@ -111,7 +110,9 @@ impl FlowCatalogDocuments {
             if let Some(flow_id) = &flow_id {
                 draft.flow_id = flow_id.clone();
             }
-            draft.updated_at = updated_at.clone();
+            // Stamped per attempt, strictly after the version being replaced,
+            // so a retried update never lands with an older time.
+            draft.updated_at = next_stamp(Some(&draft.updated_at));
             to_doc(&draft).ok()
         })
         .await?

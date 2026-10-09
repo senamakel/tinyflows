@@ -2,16 +2,19 @@
 //! capture, and reading revisions back.
 
 use anyhow::{Context, Result};
-use chrono::Utc;
 use serde_json::{Value, json};
+use std::sync::Arc;
 use tinyflows::model::WorkflowGraph;
 use tinyflows_catalog::{Flow, FlowRevision};
-use tinystoragedrivers_core::{DocumentStoreExt, Filter, Precondition, Query, Sort, Versioned};
+
+use tinystoragedrivers_core::{
+    DocumentStore, DocumentStoreExt, Filter, Precondition, Query, Sort, Versioned,
+};
 use uuid::Uuid;
 
 use super::{
     DEFINITIONS, FlowCatalogDocuments, FlowUpdateError, MAX_REVISIONS_PER_FLOW, REVISIONS,
-    best_effort, compare_and_swap, flag, instant_ns, required, text,
+    best_effort, compare_and_swap, flag, instant_ns, next_stamp, required, text,
 };
 
 fn to_revision(stored: &Versioned<Value>) -> Result<FlowRevision> {
@@ -88,9 +91,21 @@ impl FlowCatalogDocuments {
         let prior_graph_json = serde_json::to_string(&current.graph)
             .context("Failed to serialize prior graph for revision capture")
             .map_err(FlowUpdateError::Store)?;
-        let now = Utc::now().to_rfc3339();
+        // Strictly after the current stamp: `updated_at` is the concurrency
+        // token and the revision order, so it must never repeat.
+        let now = next_stamp(Some(&current.updated_at));
         let docs = self.docs().await.map_err(FlowUpdateError::Store)?;
 
+        // A previous update that crashed after its swap left its revision
+        // pending; the flow names it, so confirm it before moving past it.
+        if let Ok(Some(stored)) = docs.get(DEFINITIONS, id).await
+            && let Some(last) = text(&stored.doc, "last_revision_id")
+        {
+            best_effort("confirming the previous revision", confirm(docs, last)).await;
+        }
+
+        // Pending until the swap below names it: a lost race or a crash in
+        // between never shows a revision for an update that did not happen.
         let revision_id = Uuid::new_v4().to_string();
         docs.put(
             REVISIONS,
@@ -102,6 +117,7 @@ impl FlowCatalogDocuments {
                 "require_approval": current.require_approval,
                 "created_at": now,
                 "created_ns": instant_ns(&now),
+                "pending": true,
             }),
             Precondition::Absent,
         )
@@ -120,6 +136,7 @@ impl FlowCatalogDocuments {
             next["updated_at"] = json!(now);
             next["require_approval"] = json!(require_approval);
             next["enabled"] = json!(new_enabled);
+            next["last_revision_id"] = json!(revision_id);
             Some(next)
         })
         .await;
@@ -152,6 +169,7 @@ impl FlowCatalogDocuments {
             };
         }
 
+        best_effort("confirming the revision", confirm(docs, &revision_id)).await;
         best_effort("pruning flow revisions", self.prune_revisions(id)).await;
         self.get_flow(id)
             .await
@@ -159,26 +177,54 @@ impl FlowCatalogDocuments {
             .ok_or(FlowUpdateError::NotFound)
     }
 
-    /// Keeps the newest [`MAX_REVISIONS_PER_FLOW`] revisions of `flow_id`.
+    /// Keeps the newest [`MAX_REVISIONS_PER_FLOW`] visible revisions of
+    /// `flow_id`, and drops pending ones abandoned for over an hour (a
+    /// younger one may still belong to an update in flight).
     async fn prune_revisions(&self, flow_id: &str) -> Result<()> {
         let docs = self.docs().await?;
-        let all = docs.query_all(REVISIONS, &newest_first(flow_id)).await?;
-        for old in all.iter().skip(MAX_REVISIONS_PER_FLOW) {
+        let (visible, abandoned) = self.partition(docs, flow_id).await?;
+        let cutoff = instant_ns(&next_stamp(None)) - ABANDONED_AFTER_NS;
+        for old in visible.iter().skip(MAX_REVISIONS_PER_FLOW) {
             docs.delete(REVISIONS, &old.id, Precondition::None).await?;
+        }
+        for orphan in abandoned.iter().filter(|stored| {
+            stored
+                .doc
+                .get("created_ns")
+                .and_then(Value::as_i64)
+                .unwrap_or(0)
+                < cutoff
+        }) {
+            docs.delete(REVISIONS, &orphan.id, Precondition::None)
+                .await?;
         }
         Ok(())
     }
 
+    /// `flow_id`'s revisions newest first, split into the visible ones
+    /// (confirmed, or named by the flow as its latest) and pending ones no
+    /// committed update names.
+    async fn partition(
+        &self,
+        docs: &Arc<dyn DocumentStore>,
+        flow_id: &str,
+    ) -> Result<(Vec<Versioned<Value>>, Vec<Versioned<Value>>)> {
+        let latest = docs
+            .get(DEFINITIONS, flow_id)
+            .await?
+            .and_then(|stored| text(&stored.doc, "last_revision_id").map(str::to_string));
+        Ok(docs
+            .query_all(REVISIONS, &newest_first(flow_id))
+            .await?
+            .into_iter()
+            .partition(|stored| visible(stored, latest.as_deref())))
+    }
+
     /// A flow's revisions, newest first, up to `limit`.
     pub async fn list_revisions(&self, flow_id: &str, limit: usize) -> Result<Vec<FlowRevision>> {
-        if limit == 0 {
-            return Ok(Vec::new());
-        }
         let docs = self.docs().await?;
-        let page = docs
-            .query(REVISIONS, &newest_first(flow_id).limit(limit))
-            .await?;
-        page.items.iter().map(to_revision).collect()
+        let (visible, _) = self.partition(docs, flow_id).await?;
+        visible.iter().take(limit).map(to_revision).collect()
     }
 
     /// One revision of `flow_id` by id, or `None`.
@@ -188,13 +234,41 @@ impl FlowCatalogDocuments {
         revision_id: &str,
     ) -> Result<Option<FlowRevision>> {
         let docs = self.docs().await?;
-        match docs.get(REVISIONS, revision_id).await? {
-            Some(stored) if text(&stored.doc, "flow_id") == Some(flow_id) => {
-                to_revision(&stored).map(Some)
-            }
-            _ => Ok(None),
+        let Some(stored) = docs.get(REVISIONS, revision_id).await? else {
+            return Ok(None);
+        };
+        if text(&stored.doc, "flow_id") != Some(flow_id) {
+            return Ok(None);
         }
+        let latest = docs
+            .get(DEFINITIONS, flow_id)
+            .await?
+            .and_then(|flow| text(&flow.doc, "last_revision_id").map(str::to_string));
+        if !visible(&stored, latest.as_deref()) {
+            return Ok(None);
+        }
+        to_revision(&stored).map(Some)
     }
+}
+
+/// How long a pending revision may wait for its update before pruning
+/// treats it as abandoned.
+const ABANDONED_AFTER_NS: i64 = 3_600 * 1_000_000_000;
+
+/// Whether a revision is visible: confirmed, or the one the flow names.
+fn visible(stored: &Versioned<Value>, latest: Option<&str>) -> bool {
+    !flag(&stored.doc, "pending") || latest == Some(stored.id.as_str())
+}
+
+/// Marks revision `id` confirmed.
+async fn confirm(docs: &Arc<dyn DocumentStore>, id: &str) -> Result<()> {
+    compare_and_swap(docs, REVISIONS, id, |doc| {
+        let mut next = doc.clone();
+        next.as_object_mut()?.remove("pending")?;
+        Some(next)
+    })
+    .await
+    .map(|_| ())
 }
 
 fn newest_first(flow_id: &str) -> Query {
