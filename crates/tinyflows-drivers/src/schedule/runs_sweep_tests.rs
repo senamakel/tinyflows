@@ -76,3 +76,39 @@ async fn a_malformed_run_counter_is_an_error() {
         .unwrap_err();
     assert!(error.to_string().contains("next"), "{error}");
 }
+
+#[tokio::test]
+async fn removing_a_legacy_job_spares_a_replacements_runs() {
+    let store = store();
+    let job = store.add_job("0 9 * * *", "x").await.unwrap();
+    // The job as a document written before incarnations existed.
+    let legacy = store.docs.get(JOBS, &job.id).await.unwrap().unwrap();
+    let mut doc = legacy.doc.clone();
+    doc.as_object_mut()
+        .unwrap()
+        .remove(super::super::codec::INCARNATION);
+    let version = store
+        .docs
+        .put(JOBS, &job.id, doc.clone(), legacy.unchanged())
+        .await
+        .unwrap();
+    let legacy = tinystoragedrivers_core::Versioned {
+        id: job.id.clone(),
+        version,
+        doc,
+    };
+    orphan(&store, 9_101, &job.id, None).await;
+    // A replacement's run, recorded under the same id with an incarnation.
+    orphan(&store, 9_102, &job.id, Some("replacement")).await;
+
+    assert!(store.remove_stored(&legacy).await.unwrap());
+    let left: Vec<String> = store
+        .docs
+        .query_all(RUNS, &Query::all())
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|run| run.id)
+        .collect();
+    assert_eq!(left, [run_id(9_102)]);
+}

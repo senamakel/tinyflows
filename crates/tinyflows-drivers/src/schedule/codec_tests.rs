@@ -155,3 +155,16 @@ fn next_run_is_written_at_both_precisions() {
         json!(at.timestamp_millis() * 1_000_000 + 123)
     );
 }
+
+#[test]
+fn nanoseconds_saturate_toward_the_side_they_overflow() {
+    let early = DateTime::parse_from_rfc3339("1600-01-01T00:00:00Z")
+        .unwrap()
+        .with_timezone(&Utc);
+    let late = DateTime::parse_from_rfc3339("2300-01-01T00:00:00Z")
+        .unwrap()
+        .with_timezone(&Utc);
+    assert_eq!(nanos(early), i64::MIN);
+    assert_eq!(nanos(late), i64::MAX);
+    assert!(nanos(early) < nanos(Utc::now()));
+}
