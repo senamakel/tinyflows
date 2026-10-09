@@ -63,10 +63,9 @@ impl Ledger for DriverLedger {
             "helped": lesson.helped,
             "record": encode(lesson)?,
         });
-        self.docs
-            .put(LESSONS, &id, doc, Precondition::Absent)
-            .await
-            .map_err(backend)?;
+        // Citation edges first, the lesson last: edges without a lesson are
+        // invisible, so a failure part-way never publishes a lesson with
+        // incomplete evidence (a retry mints a fresh id).
         for row_id in cites {
             self.insert_once(
                 EVIDENCE,
@@ -75,6 +74,10 @@ impl Ledger for DriverLedger {
             )
             .await?;
         }
+        self.docs
+            .put(LESSONS, &id, doc, Precondition::Absent)
+            .await
+            .map_err(backend)?;
         Ok(id)
     }
 
@@ -286,27 +289,33 @@ impl Ledger for DriverLedger {
         // One document per step, as the Mongo ledger writes them: a looped
         // graph can produce more step output than one document may hold.
         let mine = Filter::eq("scope_key", self.bucket()).and(Filter::eq("row_id", row_id));
-        self.docs
-            .delete_where(STEPS, &mine)
-            .await
-            .map_err(backend)?;
+        // Encode everything before touching storage, so a failure here leaves
+        // the old steps intact.
+        let mut docs = Vec::with_capacity(steps.len());
         for (seq, step) in steps.iter().enumerate() {
-            let doc = json!({
-                "scope_key": self.bucket(),
-                "row_id": row_id,
-                "seq": seq,
-                "record": encode(step)?,
-            });
+            docs.push((
+                key(&[self.bucket(), row_id, &format!("{seq:08}")]),
+                json!({
+                    "scope_key": self.bucket(),
+                    "row_id": row_id,
+                    "seq": seq,
+                    "record": encode(step)?,
+                }),
+            ));
+        }
+        // Overwrite in place, then drop the surplus tail: the set is never
+        // empty mid-replace, and a failed write leaves old or new steps rather
+        // than none. The port has no multi-document transaction.
+        for (id, doc) in docs {
             self.docs
-                .put(
-                    STEPS,
-                    &key(&[self.bucket(), row_id, &format!("{seq:08}")]),
-                    doc,
-                    Precondition::None,
-                )
+                .put(STEPS, &id, doc, Precondition::None)
                 .await
                 .map_err(backend)?;
         }
+        self.docs
+            .delete_where(STEPS, &mine.and(Filter::gte("seq", steps.len() as u64)))
+            .await
+            .map_err(backend)?;
         Ok(())
     }
 
