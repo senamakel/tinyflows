@@ -72,7 +72,10 @@ let state = Arc::new(FlowStateDocuments::new(catalog.clone(), flow.id.clone()));
   `incarnation` id and every run and revision records the one it was written
   under: readers show only dependents of a flow that still exists with that
   incarnation, never an orphan (not even after a flow with the same id is
-  created again), and reclaim the orphans they meet.
+  created again), and reclaim the orphans they meet. A run or revision with
+  no recorded incarnation (older data, or an older process during a rolling
+  upgrade) belongs to whatever flow exists under its id, so it is never
+  hidden or reclaimed by mistake.
 - Pruning deletes a revision only at the version it read, re-checking an
   abandoned one's age and pending state first; an update whose in-flight
   revision was pruned anyway writes it again after its swap.
