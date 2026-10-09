@@ -18,14 +18,30 @@ readme = "README.md"
 publish = false
 
 [features]
-# `engine` is the run-state store and graph checkpointer, which need the
-# `tinyflows` engine. `schedule` (the cron job/run store) needs only
+# `engine`: the engine's own capabilities (`DriverStateStore`,
+# `DriverCheckpointer`), which need `tinyflows`.
+default = ["engine"]
+engine = ["dep:tinyflows", "dep:async-trait", "dep:sha2", "dep:tokio"]
+# `catalog`: the flow catalog and drafts (`FlowCatalogDocuments`) and the
+# namespaced flow state (`FlowStateDocuments`). Its synchronous `DedupKv`
+# side runs on the storage crates' `Blocking` bridge.
+catalog = [
+    "engine",
+    "dep:tinyflows-catalog",
+    "dep:anyhow",
+    "dep:chrono",
+    "dep:uuid",
+    "tinystoragedrivers-core/blocking",
+]
+# `schedule`: the cron job/run store (`schedule::CronDocuments`). It needs only
 # `tinyflows-schedule`, so a host that runs scheduled jobs but no flows can
 # build with `default-features = false, features = ["schedule"]` and pull
 # neither the engine nor its expression stack.
-default = ["engine"]
-engine = ["dep:tinyflows", "dep:async-trait", "dep:sha2", "dep:tokio"]
 schedule = ["dep:tinyflows-schedule", "dep:anyhow", "dep:chrono", "dep:uuid"]
+# The fixture-only writers (`force_run_status_for_test`,
+# `force_corrupt_graph_json_for_test`), mirroring tinyflows-sqlite's feature
+# of the same name.
+test-fixtures = ["catalog"]
 
 [dependencies]
 tinystoragedrivers-core = { git = "https://github.com/tinyhumansai/tinystoragedrivers", tag = "v0.4.0" }
@@ -36,6 +52,9 @@ tinyflows = { workspace = true, optional = true }
 async-trait = { workspace = true, optional = true }
 sha2 = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
+# `catalog` only: the flow catalog model, and what a catalog store reports.
+tinyflows-catalog = { version = "0.1.0", path = "../tinyflows-catalog", optional = true }
+# `schedule` only: the job model and next-run logic.
 tinyflows-schedule = { version = "0.1.0", path = "../tinyflows-schedule", optional = true }
 anyhow = { version = "1.0", optional = true }
 chrono = { workspace = true, optional = true }

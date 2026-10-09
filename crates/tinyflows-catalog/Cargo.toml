@@ -23,6 +23,9 @@ readme = "../../README.md"
 
 [dependencies]
 tinyflows = { workspace = true }
+# `store::FlowUpdateError` only: the store-failure variant carries the
+# backend's error.
+anyhow = "1.0"
 serde = { workspace = true }
 serde_json = { workspace = true }
 # `run_registry` / `build_registry` only: the cancellation token a live run or

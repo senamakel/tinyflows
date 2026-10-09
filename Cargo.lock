@@ -2674,6 +2674,7 @@ dependencies = [
 name = "tinyflows-catalog"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "hex",
  "serde",
  "serde_json",
@@ -2702,6 +2703,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "tinyflows",
+ "tinyflows-catalog",
  "tinyflows-schedule",
  "tinystoragedrivers-core",
  "tokio",
@@ -2751,6 +2753,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+ "tokio",
 ]
 
 [[package]]
