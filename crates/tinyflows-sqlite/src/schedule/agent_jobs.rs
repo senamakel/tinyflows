@@ -8,48 +8,12 @@ use anyhow::{Context, Result};
 use chrono::Utc;
 use rusqlite::params;
 use tinyflows_schedule::{
-    CronJob, DeliveryConfig, JobOrigin, Schedule, SessionTarget, next_run_for_schedule,
+    CronJob, JobOrigin, next_run_for_schedule,
     schedule_cron_expression, validate_agent_schedule,
 };
 use uuid::Uuid;
 
-/// Everything an agent job is created with. [`AgentJobSpec::new`] gives an
-/// enabled, isolated job with no name, model, definition or origin.
-#[derive(Debug, Clone)]
-pub struct AgentJobSpec {
-    pub name: Option<String>,
-    pub schedule: Schedule,
-    pub prompt: String,
-    pub session_target: SessionTarget,
-    pub model: Option<String>,
-    /// `None` stores [`DeliveryConfig::default`].
-    pub delivery: Option<DeliveryConfig>,
-    pub delete_after_run: bool,
-    /// Built-in agent definition to run with (see [`add_agent_job_with_definition`]).
-    pub agent_id: Option<String>,
-    /// Inserted in this state in one statement, so an opt-in job is never
-    /// briefly enabled.
-    pub enabled: bool,
-    /// The conversation the job was created from.
-    pub origin: Option<JobOrigin>,
-}
-
-impl AgentJobSpec {
-    pub fn new(schedule: Schedule, prompt: impl Into<String>) -> Self {
-        Self {
-            name: None,
-            schedule,
-            prompt: prompt.into(),
-            session_target: SessionTarget::default(),
-            model: None,
-            delivery: None,
-            delete_after_run: false,
-            agent_id: None,
-            enabled: true,
-            origin: None,
-        }
-    }
-}
+pub use tinyflows_schedule::AgentJobSpec;
 
 /// Adds an agent job described by `spec`, including its origin conversation
 /// and session target.

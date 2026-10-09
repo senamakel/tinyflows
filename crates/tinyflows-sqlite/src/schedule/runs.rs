@@ -8,11 +8,8 @@ use chrono::{DateTime, Utc};
 use rusqlite::params;
 use tinyflows_schedule::{CronJob, CronRun, DeliveryStatus, Schedule, next_run_for_schedule};
 
-/// Largest job output, in bytes, stored in `last_output` or a run row; longer
-/// output is cut at a char boundary and ends with [`TRUNCATED_OUTPUT_MARKER`].
-pub const MAX_CRON_OUTPUT_BYTES: usize = 16 * 1024;
-/// Suffix appended to output cut to [`MAX_CRON_OUTPUT_BYTES`].
-pub const TRUNCATED_OUTPUT_MARKER: &str = "\n...[truncated]";
+pub use tinyflows_schedule::{MAX_CRON_OUTPUT_BYTES, TRUNCATED_OUTPUT_MARKER};
+use tinyflows_schedule::truncate_cron_output;
 
 /// Records a run's outcome on the job row (`last_run`, `last_status`,
 /// bounded `last_output`) without touching `next_run` or `enabled`.
@@ -182,25 +179,6 @@ fn decode_delivery_status(raw: Option<String>) -> Option<DeliveryStatus> {
         tracing::debug!(target: "cron", raw, "[cron] list_runs: unknown delivery_status, reading as none");
     }
     parsed
-}
-
-fn truncate_cron_output(output: &str) -> String {
-    if output.len() <= MAX_CRON_OUTPUT_BYTES {
-        return output.to_string();
-    }
-
-    if MAX_CRON_OUTPUT_BYTES <= TRUNCATED_OUTPUT_MARKER.len() {
-        return TRUNCATED_OUTPUT_MARKER.to_string();
-    }
-
-    let mut cutoff = MAX_CRON_OUTPUT_BYTES - TRUNCATED_OUTPUT_MARKER.len();
-    while cutoff > 0 && !output.is_char_boundary(cutoff) {
-        cutoff -= 1;
-    }
-
-    let mut truncated = output[..cutoff].to_string();
-    truncated.push_str(TRUNCATED_OUTPUT_MARKER);
-    truncated
 }
 
 /// Returns the job's newest runs, most recent first, at most `limit` (min 1).
