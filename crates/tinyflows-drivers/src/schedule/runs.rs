@@ -276,23 +276,17 @@ impl CronDocuments {
             .query_all(RUNS, &Query::all())
             .await
             .map_err(storage_error)?;
-        let mut owners: std::collections::HashMap<String, Option<String>> =
-            std::collections::HashMap::new();
         let mut swept = 0usize;
         for run in &runs {
-            let job_id = codec::text(&run.doc, "job_id")
-                .unwrap_or_default()
-                .to_string();
-            if !owners.contains_key(&job_id) {
-                let job = self.docs.get(JOBS, &job_id).await.map_err(storage_error)?;
-                owners.insert(
-                    job_id.clone(),
-                    job.map(|stored| incarnation(&stored.doc).unwrap_or_default().to_string()),
-                );
-            }
-            let owner = owners.get(&job_id).and_then(Option::as_deref);
-            let run_incarnation = incarnation(&run.doc).unwrap_or_default();
-            if owner == Some(run_incarnation) {
+            let job_id = codec::text(&run.doc, "job_id").unwrap_or_default();
+            // Read the owner right before deciding, not once per job: a job
+            // re-created after an earlier read owns runs a stale answer
+            // would delete.
+            let owner = self.docs.get(JOBS, job_id).await.map_err(storage_error)?;
+            let owns = owner
+                .as_ref()
+                .is_some_and(|job| incarnation(&job.doc) == incarnation(&run.doc));
+            if owns {
                 continue;
             }
             // A run that changed or vanished meanwhile is skipped; any other
