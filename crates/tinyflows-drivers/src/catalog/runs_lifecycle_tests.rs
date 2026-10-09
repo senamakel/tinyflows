@@ -19,7 +19,6 @@ fn step(node: &str) -> FlowRunStep {
 async fn two_handles_on_one_backend_agree_on_a_run_lifecycle() {
     use crate::catalog::FlowStateDocuments;
     use tinyflows::caps::StateStore;
-    use tinyflows::nodes::control_flow::dedup_settle::DedupKv;
     use tinystoragedrivers_core::MemoryStorage;
 
     let storage = MemoryStorage::new();

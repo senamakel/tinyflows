@@ -368,3 +368,7 @@ fn newest_first(flow_id: &str) -> Query {
 #[cfg(test)]
 #[path = "revisions_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "revisions_race_tests.rs"]
+mod race_tests;
