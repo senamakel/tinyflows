@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`tinyflows-adaptive` on a `tinystoragedrivers` document port
+  (`storage-drivers` feature).** `Storage::from_documents` puts the ledger
+  (`drivers::DriverLedger`) and the vault (`drivers::DriverVault`) on the
+  host's storage backend (SQLite, MongoDB, memory), scoped with the same
+  `for_tenant` as every other backend. It is a port of the Mongo backend:
+  tenancy is a `scope_key` field (writes to the handle's bucket, reads
+  include global); counters and first-write-wins edges are compare-and-swap
+  and insert-only writes, so concurrent loops never lose an increment. It
+  passes the ledger and vault conformance and tenancy suites on the memory
+  and SQLite drivers. Off by default; needs Rust 1.88.
+
 - **Node postconditions (`tinyflows::postcondition`).** A node may declare
   `config.postcondition = { "require": ..., "field": ... }` — `non_empty`,
   `field_present` or `non_empty_list` — and the engine checks it against every

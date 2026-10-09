@@ -23,6 +23,7 @@
 //! the feature named — a config error at boot, not a missing symbol at the
 //! first write.
 
+#[cfg(feature = "sqlite")]
 use std::path::PathBuf;
 
 use async_trait::async_trait;
