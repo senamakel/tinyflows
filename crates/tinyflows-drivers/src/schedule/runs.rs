@@ -278,7 +278,12 @@ impl CronDocuments {
             .map_err(storage_error)?;
         let mut swept = 0usize;
         for run in &runs {
-            let job_id = codec::text(&run.doc, "job_id").unwrap_or_default();
+            // A run without a string `job_id` is corrupt, not provably an
+            // orphan: report it and keep it.
+            let Some(job_id) = codec::text(&run.doc, "job_id") else {
+                tracing::warn!(target: "cron", run_id = %run.id, "[cron] sweep: run has no job_id — skipped");
+                continue;
+            };
             // Read the owner right before deciding, not once per job: a job
             // re-created after an earlier read owns runs a stale answer
             // would delete.

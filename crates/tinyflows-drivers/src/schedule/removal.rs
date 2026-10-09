@@ -59,11 +59,49 @@ impl CronDocuments {
         if !removed {
             return Ok(false);
         }
+        self.delete_runs_of(stored).await?;
+        Ok(true)
+    }
+
+    /// Deletes the job `stored` holds only if it is still exactly that
+    /// document: same incarnation and same version, so a duplicate edited
+    /// since (renamed, re-enabled) is kept. Then its incarnation's runs.
+    /// `false` when it changed or is gone.
+    ///
+    /// The incarnation check guards the one case a version cannot: a job
+    /// removed and re-created under the same id starts again at the first
+    /// version.
+    pub(super) async fn remove_unchanged(&self, stored: &Versioned<Value>) -> Result<bool> {
+        let Some(current) = self
+            .docs
+            .get(JOBS, &stored.id)
+            .await
+            .map_err(storage_error)?
+        else {
+            return Ok(false);
+        };
+        if current.version != stored.version
+            || incarnation(&current.doc) != incarnation(&stored.doc)
+        {
+            return Ok(false);
+        }
+        match self.docs.delete(JOBS, &stored.id, stored.unchanged()).await {
+            Ok(true) => {}
+            Ok(false) => return Ok(false),
+            Err(error) if error.kind() == ErrorKind::Conflict => return Ok(false),
+            Err(error) => return Err(storage_error(error)).context("Failed to delete cron job"),
+        }
+        self.delete_runs_of(stored).await?;
+        Ok(true)
+    }
+
+    /// Deletes the runs of the job incarnation `stored` holds.
+    async fn delete_runs_of(&self, stored: &Versioned<Value>) -> Result<()> {
         self.docs
             .delete_where(RUNS, &runs_of(&stored.id, &stored.doc))
             .await
             .map_err(storage_error)?;
-        Ok(true)
+        Ok(())
     }
 
     /// Deletes every job and the runs of the jobs it deleted, then sweeps

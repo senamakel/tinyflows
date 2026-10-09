@@ -112,3 +112,28 @@ async fn removing_a_legacy_job_spares_a_replacements_runs() {
         .collect();
     assert_eq!(left, [run_id(9_102)]);
 }
+
+#[tokio::test]
+async fn the_sweep_keeps_a_run_with_no_job_id() {
+    let store = store();
+    store.ensure().await.unwrap();
+    store
+        .docs
+        .put(
+            RUNS,
+            &run_id(9_201),
+            json!({ "seq": 9_201, "status": "ok" }),
+            Precondition::Absent,
+        )
+        .await
+        .unwrap();
+    assert_eq!(store.sweep_orphan_runs().await.unwrap(), 0);
+    assert!(
+        store
+            .docs
+            .get(RUNS, &run_id(9_201))
+            .await
+            .unwrap()
+            .is_some()
+    );
+}

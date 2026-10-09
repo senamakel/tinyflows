@@ -312,7 +312,9 @@ impl CronDocuments {
             let keep = ranked[0].2.clone();
             let mut deleted = 0usize;
             for (_, _, _, stored) in ranked.into_iter().skip(1) {
-                if self.remove_stored(stored).await? {
+                // Only a duplicate unchanged since the snapshot: one renamed
+                // or edited meanwhile may no longer be a duplicate.
+                if self.remove_unchanged(stored).await? {
                     deleted += 1;
                 }
             }
@@ -329,10 +331,14 @@ impl CronDocuments {
     /// size. A read: see the module docs on two schedulers sharing a database.
     pub async fn due_jobs(&self, now: DateTime<Utc>) -> Result<Vec<CronJob>> {
         self.ensure().await?;
-        // Due at nanosecond precision; a document written before
-        // `next_run_ns` existed falls back to its millisecond field.
-        let due = Filter::lte("next_run_ns", nanos(now)).or(Filter::exists("next_run_ns", false)
-            .and(Filter::lte("next_run_ms", now.timestamp_millis())));
+        // Due by milliseconds; nanoseconds only order jobs due within the
+        // current millisecond, so a nanosecond value saturated outside
+        // 1677–2262 never decides on its own. A document written before
+        // `next_run_ns` existed is due by its milliseconds alone.
+        let now_ms = now.timestamp_millis();
+        let same_ms = Filter::eq("next_run_ms", now_ms);
+        let due = Filter::lt("next_run_ms", now_ms).or(same_ms
+            .and(Filter::lte("next_run_ns", nanos(now)).or(Filter::exists("next_run_ns", false))));
         let query = Query::filter(Filter::eq("enabled", true).and(due))
             .sort(Sort::asc("next_run_ms"))
             .sort(Sort::asc("next_run_ns"))

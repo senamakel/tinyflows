@@ -492,3 +492,33 @@ async fn clearing_spares_a_job_registered_again_after_the_snapshot() {
     assert!(!store.remove_current(&snapshot).await.unwrap());
     assert!(store.find_flow_schedule_job("f").await.unwrap().is_some());
 }
+
+#[tokio::test]
+async fn dedup_keeps_a_duplicate_edited_after_the_snapshot() {
+    let store = store();
+    let job = store.add_job("0 9 * * *", "x").await.unwrap();
+    let snapshot = store.docs.get(JOBS, &job.id).await.unwrap().unwrap();
+    let rename = CronJobPatch {
+        name: Some("renamed".into()),
+        ..CronJobPatch::default()
+    };
+    store.update_job(&job.id, rename).await.unwrap();
+    assert!(!store.remove_unchanged(&snapshot).await.unwrap());
+    assert!(store.get_job(&job.id).await.is_ok());
+    let current = store.docs.get(JOBS, &job.id).await.unwrap().unwrap();
+    assert!(store.remove_unchanged(&current).await.unwrap());
+}
+
+#[tokio::test]
+async fn a_far_future_job_is_not_due_past_the_nanosecond_range() {
+    let store = store();
+    let job = store.add_job("0 9 * * *", "far").await.unwrap();
+    let year = |y: &str| {
+        DateTime::parse_from_rfc3339(&format!("{y}-01-01T00:00:00Z"))
+            .unwrap()
+            .with_timezone(&Utc)
+    };
+    set_due_at(&store, &job.id, year("2300")).await;
+    assert!(store.due_jobs(year("2263")).await.unwrap().is_empty());
+    assert_eq!(store.due_jobs(year("2301")).await.unwrap().len(), 1);
+}
