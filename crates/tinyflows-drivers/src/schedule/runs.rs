@@ -295,13 +295,13 @@ impl CronDocuments {
             if owner == Some(run_incarnation) {
                 continue;
             }
-            if self
-                .docs
-                .delete(RUNS, &run.id, run.unchanged())
-                .await
-                .is_ok_and(|deleted| deleted)
-            {
-                swept += 1;
+            // A run that changed or vanished meanwhile is skipped; any other
+            // storage failure fails the sweep rather than report it clean.
+            match self.docs.delete(RUNS, &run.id, run.unchanged()).await {
+                Ok(true) => swept += 1,
+                Ok(false) => {}
+                Err(error) if error.kind() == ErrorKind::Conflict => {}
+                Err(error) => return Err(storage_error(error)),
             }
         }
         if swept > 0 {

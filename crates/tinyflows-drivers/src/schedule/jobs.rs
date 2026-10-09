@@ -295,16 +295,37 @@ impl CronDocuments {
         anyhow::bail!("cron store: job {id} kept changing under {CAS_ATTEMPTS} attempts")
     }
 
-    /// Deletes `stored` if it is unchanged, then the runs of that
-    /// incarnation only, so a job re-created under the same id meanwhile (a
-    /// flow's schedule job) keeps its own runs. `false` when the job changed
-    /// or was already removed.
+    /// Deletes the job `stored` holds, then the runs of that incarnation
+    /// only, so a job re-created under the same id meanwhile (a flow's
+    /// schedule job) keeps its own runs. `false` when that incarnation is
+    /// already gone.
+    ///
+    /// The delete is conditioned on the incarnation, not the document
+    /// version: a re-created document starts again at the first version, so
+    /// a version check could match it and delete the new job. A document
+    /// written before incarnations existed falls back to the version check.
     pub(super) async fn remove_stored(&self, stored: &Versioned<Value>) -> Result<bool> {
-        match self.docs.delete(JOBS, &stored.id, stored.unchanged()).await {
-            Ok(true) => {}
-            Ok(false) => return Ok(false),
-            Err(error) if error.kind() == ErrorKind::Conflict => return Ok(false),
-            Err(error) => return Err(storage_error(error)).context("Failed to delete cron job"),
+        let removed = match incarnation(&stored.doc) {
+            Some(meant) => {
+                let this =
+                    Filter::eq("_id", stored.id.as_str()).and(Filter::eq(INCARNATION, meant));
+                self.docs
+                    .delete_where(JOBS, &this)
+                    .await
+                    .map_err(storage_error)
+                    .context("Failed to delete cron job")?
+                    > 0
+            }
+            None => match self.docs.delete(JOBS, &stored.id, stored.unchanged()).await {
+                Ok(deleted) => deleted,
+                Err(error) if error.kind() == ErrorKind::Conflict => false,
+                Err(error) => {
+                    return Err(storage_error(error)).context("Failed to delete cron job");
+                }
+            },
+        };
+        if !removed {
+            return Ok(false);
         }
         self.docs
             .delete_where(RUNS, &runs_of(&stored.id, &stored.doc))
