@@ -10,9 +10,9 @@ use tinystoragedrivers_core::{
     DocumentStoreExt, ErrorKind, Filter, Precondition, Query, Sort, Versioned,
 };
 
-use super::steps::{steps_in, with_steps};
+use super::steps::steps_in;
 use super::{
-    DEFINITIONS, FlowCatalogDocuments, MAX_FLOW_RUNS_PER_FLOW, RUNS, best_effort, is_conflict,
+    DEFINITIONS, FlowCatalogDocuments, MAX_FLOW_RUNS_PER_FLOW, RUNS, best_effort,
     compare_and_swap, instant_before, instant_ns, required, set_optional, text,
 };
 
