@@ -20,6 +20,64 @@ let state = Arc::new(DriverStateStore::new(Arc::clone(&docs)));
 let checkpointer = DriverCheckpointer::<serde_json::Value>::new(docs);
 ```
 
+## Features
+
+| Feature | Default | Brings |
+| --- | --- | --- |
+| `engine` | yes | `DriverStateStore`, `DriverCheckpointer` (needs `tinyflows`) |
+| `catalog` | no | `catalog::FlowCatalogDocuments`, `catalog::FlowStateDocuments` |
+| `test-fixtures` | no | the catalog's two fixture-only writers |
+
+## The flow catalog (`catalog`)
+
+`FlowCatalogDocuments` is the document-port counterpart of
+`tinyflows-sqlite`'s `flows` and `drafts`: one `async fn` per public function
+there, same name, same arguments minus the catalog directory, same results
+(`update_flow_graph` reports the shared `tinyflows_catalog::store::FlowUpdateError`).
+
+```rust
+use std::sync::Arc;
+use tinyflows_drivers::catalog::{FlowCatalogDocuments, FlowStateDocuments};
+
+let catalog = FlowCatalogDocuments::new(Arc::clone(scoped_storage.documents()));
+let flow = catalog.create_flow("Digest".into(), graph, true, false).await?;
+let state = Arc::new(FlowStateDocuments::new(catalog.clone(), flow.id.clone()));
+```
+
+| Collection | One document per |
+| --- | --- |
+| `flows_definitions` | flow |
+| `flows_revisions` | superseded graph (newest 20 kept) |
+| `flows_runs` | run, with its steps |
+| `flows_kv` | `(namespace, key)` of flow state |
+| `flows_suggestions` | discovery suggestion |
+| `flows_drafts` | authoring draft |
+
+- Every guarded SQL `UPDATE … WHERE status = …` (finish, resume, interrupt,
+  TTL expiry) is a compare-and-swap on the run, so a transition happens at
+  most once across processes sharing one database.
+- A run's steps live on the run document (`steps_json`, as in SQLite), so a
+  run settles with its step list in one compare-and-swap, and a step written
+  by a parallel branch retries on the winner's list rather than losing to it
+  (what SQLite's `BEGIN IMMEDIATE`, R-m1, protected).
+- `update_flow_graph` writes the prior graph's revision *pending*, swaps the
+  graph naming it (`last_revision_id`), then confirms it. A revision shows
+  only once confirmed or named, so a lost race or a crash never surfaces a
+  revision for an update that did not happen; `updated_at` advances strictly
+  on every write, so it is a sound concurrency token and a total order.
+- Removing a flow removes its runs and revisions first and the definition
+  last (a failure part-way is finished by calling it again); a run inserted
+  concurrently is swept or removes itself.
+- Graphs, steps, drafts and state values are JSON strings, optional fields
+  are omitted rather than `null`, and ordering uses epoch-nanosecond fields.
+
+`FlowStateDocuments` is one flow's namespaced state over the same `flows_kv`
+documents as `kv_get` / `kv_set` / `kv_delete`. It is the engine's
+`StateStore` and the host's synchronous `DedupKv`; the latter runs on the
+storage crates' `Blocking` bridge (one per process, or the host's own via
+`with_bridge`), so it is safe inside any runtime. `DriverStateStore` is
+unchanged: un-namespaced, for a host that gives each run its own collection.
+
 ## Checkpointer guarantees
 
 - One document per checkpoint with a per-thread `seq` advanced by
