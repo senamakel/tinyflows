@@ -114,8 +114,7 @@ impl DriverLedger {
                     )),
                     CollectionSpec::new(LESSONS)
                         .index(IndexSpec::new("by_scope", ["scope_key", "seq"])),
-                    CollectionSpec::new(EVIDENCE)
-                        .index(IndexSpec::new("by_lesson", ["lesson_id"])),
+                    CollectionSpec::new(EVIDENCE).index(IndexSpec::new("by_lesson", ["lesson_id"])),
                     CollectionSpec::new(SCORES),
                     CollectionSpec::new(VARIANTS)
                         .index(IndexSpec::new("by_parent", ["scope_key", "parent"])),
@@ -198,7 +197,11 @@ impl DriverLedger {
 
     /// Writes `doc` at `id` only if nothing is there yet.
     async fn insert_once(&self, collection: &str, id: &str, doc: Value) -> Result<()> {
-        match self.docs.put(collection, id, doc, Precondition::Absent).await {
+        match self
+            .docs
+            .put(collection, id, doc, Precondition::Absent)
+            .await
+        {
             Ok(_) => Ok(()),
             Err(error) if is_race(&error) => Ok(()),
             Err(error) => Err(backend(error)),
@@ -206,7 +209,10 @@ impl DriverLedger {
     }
 
     async fn all(&self, collection: &str, query: Query) -> Result<Vec<Versioned<Value>>> {
-        self.docs.query_all(collection, &query).await.map_err(backend)
+        self.docs
+            .query_all(collection, &query)
+            .await
+            .map_err(backend)
     }
 
     fn lesson_from(stored: &Versioned<Value>) -> Result<Lesson> {
@@ -351,7 +357,10 @@ impl Ledger for DriverLedger {
         // another tenant's score by naming its id.
         let bucket = self.bucket().to_string();
         self.bump(LESSONS, lesson_id, helped, None, move |doc| {
-            let scope = doc.get("scope_key").and_then(Value::as_str).unwrap_or_default();
+            let scope = doc
+                .get("scope_key")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
             scope.is_empty() || scope == bucket
         })
         .await
@@ -418,10 +427,9 @@ impl Ledger for DriverLedger {
 
     async fn children_of(&self, id: &str) -> Result<Vec<String>> {
         self.declared().await?;
-        let query = Query::filter(
-            Filter::eq("scope_key", self.bucket()).and(Filter::eq("parent", id)),
-        )
-        .sort(Sort::asc("variant"));
+        let query =
+            Query::filter(Filter::eq("scope_key", self.bucket()).and(Filter::eq("parent", id)))
+                .sort(Sort::asc("variant"));
         Ok(self
             .all(VARIANTS, query)
             .await?
@@ -512,7 +520,12 @@ impl Ledger for DriverLedger {
             "record": encode(&steps)?,
         });
         self.docs
-            .put(STEPS, &key(&[self.bucket(), row_id]), doc, Precondition::None)
+            .put(
+                STEPS,
+                &key(&[self.bucket(), row_id]),
+                doc,
+                Precondition::None,
+            )
             .await
             .map(|_| ())
             .map_err(backend)
