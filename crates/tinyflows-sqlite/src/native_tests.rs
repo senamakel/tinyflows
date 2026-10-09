@@ -69,3 +69,37 @@ fn an_unopenable_path_is_an_error() {
         "{error}"
     );
 }
+
+#[test]
+fn a_transaction_left_open_never_reaches_the_next_call() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("own.db");
+    let held = SqliteNative::open(&path).unwrap();
+    held.run_blocking(|conn| conn.execute_batch("CREATE TABLE t (n INTEGER)"))
+        .unwrap()
+        .unwrap();
+    // An error mid-transaction, and a success that forgot to commit.
+    let failed = run(&path, |conn| -> Result<()> {
+        conn.execute_batch("BEGIN; INSERT INTO t (n) VALUES (1);")
+            .context("insert")?;
+        anyhow::bail!("store said no")
+    });
+    assert!(failed.is_err());
+    run(&path, |conn| {
+        conn.execute_batch("BEGIN; INSERT INTO t (n) VALUES (2);")
+            .context("insert")?;
+        Ok(())
+    })
+    .unwrap();
+    // The next call starts its own transaction and sees neither write.
+    let count: i64 = run(&path, |conn| {
+        conn.execute_batch("BEGIN IMMEDIATE").context("begin")?;
+        let count = conn
+            .query_row("SELECT COUNT(*) FROM t", [], |row| row.get(0))
+            .context("count")?;
+        conn.execute_batch("COMMIT").context("commit")?;
+        Ok(count)
+    })
+    .unwrap();
+    assert_eq!(count, 0);
+}

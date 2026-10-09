@@ -22,21 +22,25 @@ use tinystoragedrivers_sqlite::SqliteNative;
 
 /// Runs `f` on the driver's connection for the database file at `db_path`.
 ///
-/// A panic in `f` is caught while the driver's lock is still held, any
-/// transaction it left open is rolled back, and the panic is resumed only
-/// after the lock is released, so one store's bug never poisons the shared
-/// connection for every other caller in the process.
+/// A transaction `f` leaves open — by returning an error, by panicking, or by
+/// forgetting to commit — is rolled back before the lock is released, as
+/// dropping a per-call connection always did. A panic is caught while the
+/// lock is held and resumed after it is released, so one store's bug never
+/// poisons the shared connection for every other caller in the process.
 pub(crate) fn run<T>(db_path: &Path, f: impl FnOnce(&Connection) -> Result<T>) -> Result<T> {
     let native = SqliteNative::open(db_path)
         .with_context(|| format!("Failed to open SQLite DB: {}", db_path.display()))?;
     let outcome = native
         .run_blocking(|conn| {
             let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(conn)));
-            if outcome.is_err()
-                && !conn.is_autocommit()
+            // However `f` ended — a panic, an error, even success — a
+            // transaction it left open must not outlive the call: the
+            // connection may be shared, and the next caller would inherit it.
+            // A fresh connection per call used to drop it implicitly.
+            if !conn.is_autocommit()
                 && let Err(rollback) = conn.execute_batch("ROLLBACK")
             {
-                tracing::warn!("[sqlite] rollback after a panicking store call failed: {rollback}");
+                tracing::warn!("[sqlite] rollback of a transaction a store call left open failed: {rollback}");
             }
             outcome
         })
