@@ -43,7 +43,7 @@
 //!   only once the swap has named it (`last_revision_id`) or a later update
 //!   has confirmed it, so a lost race or a crash never shows a revision for
 //!   an update that did not happen.
-//! - `updated_at` advances strictly on every write ([`next_stamp`]), so it is
+//! - `updated_at` advances strictly on every write, so it is
 //!   a sound optimistic-concurrency token and revision order is total.
 //! - Removing a flow removes its runs and revisions first and the definition
 //!   last, so a failure part-way is retried by calling it again; a run

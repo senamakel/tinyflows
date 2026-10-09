@@ -48,8 +48,7 @@ let state = Arc::new(FlowStateDocuments::new(catalog.clone(), flow.id.clone()));
 | --- | --- |
 | `flows_definitions` | flow |
 | `flows_revisions` | superseded graph (newest 20 kept) |
-| `flows_runs` | run (steps apart) |
-| `flows_run_steps` | step of a run |
+| `flows_runs` | run, with its steps |
 | `flows_kv` | `(namespace, key)` of flow state |
 | `flows_suggestions` | discovery suggestion |
 | `flows_drafts` | authoring draft |
@@ -57,13 +56,18 @@ let state = Arc::new(FlowStateDocuments::new(catalog.clone(), flow.id.clone()));
 - Every guarded SQL `UPDATE … WHERE status = …` (finish, resume, interrupt,
   TTL expiry) is a compare-and-swap on the run, so a transition happens at
   most once across processes sharing one database.
-- Steps are documents of their own: parallel branches of one run persist
-  their steps without contending, which is what SQLite's `BEGIN IMMEDIATE`
-  (R-m1) was protecting.
-- `update_flow_graph` writes the revision before swapping the graph and drops
-  it again when the swap loses, so no save is ever recorded without its prior
-  graph.
-- Removing a flow removes its revisions, runs and steps.
+- A run's steps live on the run document (`steps_json`, as in SQLite), so a
+  run settles with its step list in one compare-and-swap, and a step written
+  by a parallel branch retries on the winner's list rather than losing to it
+  (what SQLite's `BEGIN IMMEDIATE`, R-m1, protected).
+- `update_flow_graph` writes the prior graph's revision *pending*, swaps the
+  graph naming it (`last_revision_id`), then confirms it. A revision shows
+  only once confirmed or named, so a lost race or a crash never surfaces a
+  revision for an update that did not happen; `updated_at` advances strictly
+  on every write, so it is a sound concurrency token and a total order.
+- Removing a flow removes its runs and revisions first and the definition
+  last (a failure part-way is finished by calling it again); a run inserted
+  concurrently is swept or removes itself.
 - Graphs, steps, drafts and state values are JSON strings, optional fields
   are omitted rather than `null`, and ordering uses epoch-nanosecond fields.
 
