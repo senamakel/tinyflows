@@ -14,8 +14,7 @@ use super::lineage::{FLOW_INCARNATION, belongs, belongs_in, incarnation, live_fl
 use super::steps::steps_in;
 use super::{
     CAS_ATTEMPTS, DEFINITIONS, FlowCatalogDocuments, MAX_FLOW_RUNS_PER_FLOW, RUNS, best_effort,
-    compare_and_swap,
-    instant_before, instant_ns, required, set_optional, text,
+    compare_and_swap, instant_before, instant_ns, required, set_optional, text,
 };
 
 /// Statuses a run is still live in; never pruned, and the only ones
@@ -460,3 +459,7 @@ mod tests;
 #[cfg(test)]
 #[path = "runs_lifecycle_tests.rs"]
 mod lifecycle_tests;
+
+#[cfg(test)]
+#[path = "runs_replace_tests.rs"]
+mod replace_tests;

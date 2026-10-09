@@ -54,7 +54,9 @@ pub(crate) fn automatic_schedule_graph() -> WorkflowGraph {
 
 /// What [`Interposed`] runs, once, against the store it wraps.
 pub(crate) type Interjection = Box<
-    dyn FnOnce(Arc<dyn DocumentStore>) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
+    dyn FnOnce(
+            Arc<dyn DocumentStore>,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
         + Send,
 >;
 
@@ -120,8 +122,9 @@ impl DocumentStore for Interposed {
         &self,
         collection: &str,
         id: &str,
-    ) -> tinystoragedrivers_core::Result<Option<tinystoragedrivers_core::Versioned<serde_json::Value>>>
-    {
+    ) -> tinystoragedrivers_core::Result<
+        Option<tinystoragedrivers_core::Versioned<serde_json::Value>>,
+    > {
         self.maybe_interject("get", collection).await;
         self.inner.get(collection, id).await
     }
@@ -178,8 +181,9 @@ impl DocumentStore for Interposed {
         filter: &tinystoragedrivers_core::Filter,
         sort: &[tinystoragedrivers_core::Sort],
         patch: &serde_json::Value,
-    ) -> tinystoragedrivers_core::Result<Option<tinystoragedrivers_core::Versioned<serde_json::Value>>>
-    {
+    ) -> tinystoragedrivers_core::Result<
+        Option<tinystoragedrivers_core::Versioned<serde_json::Value>>,
+    > {
         self.inner.claim(collection, filter, sort, patch).await
     }
 

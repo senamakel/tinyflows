@@ -251,12 +251,9 @@ impl FlowCatalogDocuments {
             // An update may have named it since the partition read the
             // definition; a named revision is never abandoned.
             let named = still_abandoned
-                && docs
-                    .get(DEFINITIONS, flow_id)
-                    .await?
-                    .is_some_and(|flow| {
-                        text(&flow.doc, "last_revision_id") == Some(current.id.as_str())
-                    });
+                && docs.get(DEFINITIONS, flow_id).await?.is_some_and(|flow| {
+                    text(&flow.doc, "last_revision_id") == Some(current.id.as_str())
+                });
             if still_abandoned && !named {
                 delete_unchanged(docs, &current).await?;
             }
@@ -421,3 +418,7 @@ mod tests;
 #[cfg(test)]
 #[path = "revisions_race_tests.rs"]
 mod race_tests;
+
+#[cfg(test)]
+#[path = "revisions_gap_tests.rs"]
+mod gap_tests;
