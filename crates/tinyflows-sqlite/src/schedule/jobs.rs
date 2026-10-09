@@ -368,6 +368,7 @@ pub fn due_jobs(opts: &CronStoreOptions, now: DateTime<Utc>) -> Result<Vec<CronJ
 /// Applies `patch` to the job with `job_id` and returns the updated row.
 pub fn update_job(opts: &CronStoreOptions, job_id: &str, patch: CronJobPatch) -> Result<CronJob> {
     let mut job = get_job(opts, job_id)?;
+    tinyflows_schedule::check_patch(&job, &patch)?;
     let was_enabled = job.enabled;
     let mut schedule_changed = false;
 

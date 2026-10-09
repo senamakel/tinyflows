@@ -20,7 +20,8 @@ pub use schedule::{
     runs_closer_than, schedule_cron_expression, validate_agent_schedule, validate_schedule,
 };
 pub use store::{
-    AgentJobSpec, MAX_CRON_OUTPUT_BYTES, TRUNCATED_OUTPUT_MARKER, truncate_cron_output,
+    AgentJobSpec, MAX_CRON_OUTPUT_BYTES, TRUNCATED_OUTPUT_MARKER, check_patch,
+    truncate_cron_output,
 };
 pub use types::{
     ActiveHours, CronJob, CronJobPatch, CronRun, DeliveryConfig, DeliveryStatus, JobOrigin,

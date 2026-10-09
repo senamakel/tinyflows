@@ -8,7 +8,7 @@
 //! [`CronJob`]: crate::CronJob
 //! [`CronRun`]: crate::CronRun
 
-use crate::{DeliveryConfig, JobOrigin, Schedule, SessionTarget};
+use crate::{CronJob, CronJobPatch, DeliveryConfig, JobOrigin, JobType, Schedule, SessionTarget};
 
 /// Largest job output, in bytes, a store keeps in `last_output` or a run;
 /// longer output is cut at a char boundary and ends with
@@ -53,6 +53,36 @@ impl AgentJobSpec {
             origin: None,
         }
     }
+}
+
+/// Refuses a patch no store may apply to `job`.
+///
+/// A flow-schedule job's `command` is the id of the flow it fires, and each
+/// flow has at most one such job: the SQLite store keeps them unique by
+/// `command`, the document store keys them `flow:<flow_id>`. Re-targeting
+/// one by patching `command` would leave the job filed under its old flow,
+/// so a later registration for the new flow would add a second job for it.
+/// Remove the job and register one for the other flow instead. Setting
+/// `command` to its current value is allowed.
+///
+/// # Errors
+///
+/// When `patch` changes a flow-schedule job's `command`.
+pub fn check_patch(job: &CronJob, patch: &CronJobPatch) -> anyhow::Result<()> {
+    if job.job_type == JobType::Flow
+        && patch
+            .command
+            .as_ref()
+            .is_some_and(|command| *command != job.command)
+    {
+        anyhow::bail!(
+            "Cron job '{}' fires flow '{}'; its command cannot be changed. Remove it and \
+             register a schedule job for the other flow instead",
+            job.id,
+            job.command
+        );
+    }
+    Ok(())
 }
 
 /// `output` bounded to [`MAX_CRON_OUTPUT_BYTES`]: unchanged when it fits,
