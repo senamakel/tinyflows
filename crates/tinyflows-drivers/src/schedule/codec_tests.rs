@@ -80,3 +80,35 @@ fn run_ids_sort_as_numbers() {
     assert!(run_id(9) < run_id(10));
     assert_eq!(run_id(1).len(), 20);
 }
+
+#[test]
+fn wrong_types_and_unknown_job_types_are_errors() {
+    for (field, value) in [
+        ("job_type", json!("bogus")),
+        ("delivery", json!({})),
+        ("origin", json!(7)),
+        ("name", json!(1)),
+        ("enabled", json!("yes")),
+    ] {
+        let mut doc = job_to_doc(&job()).unwrap();
+        doc[field] = value;
+        assert!(doc_to_job(&stored(doc)).is_err(), "{field}");
+    }
+    for field in ["expression", "command"] {
+        let mut doc = job_to_doc(&job()).unwrap();
+        doc.as_object_mut().unwrap().remove(field);
+        assert!(doc_to_job(&stored(doc)).is_err(), "{field}");
+    }
+}
+
+#[test]
+fn creation_time_keeps_sub_millisecond_precision() {
+    let mut early = job();
+    early.created_at = "2026-01-01T00:00:00.000100Z".parse().unwrap();
+    let mut late = job();
+    late.created_at = "2026-01-01T00:00:00.000900Z".parse().unwrap();
+    let early_doc = job_to_doc(&early).unwrap();
+    let late_doc = job_to_doc(&late).unwrap();
+    assert_eq!(early_doc["created_ms"], late_doc["created_ms"]);
+    assert!(created_at(&early_doc) < created_at(&late_doc));
+}

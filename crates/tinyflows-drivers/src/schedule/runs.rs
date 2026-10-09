@@ -12,7 +12,8 @@ use tinystoragedrivers_core::{DocumentStoreExt, ErrorKind, Filter, Precondition,
 use super::codec::{doc_to_run, incarnation, run_id, run_to_doc, set_last_run};
 use super::jobs::{reschedule, runs_of};
 use super::{
-    CAS_ATTEMPTS, COUNTERS, CronDocuments, JOBS, RUNS, compare_and_swap, job_not_found, storage_error,
+    CAS_ATTEMPTS, COUNTERS, CronDocuments, JOBS, RUNS, compare_and_swap, job_not_found,
+    storage_error,
 };
 
 /// The counter document run numbers are drawn from.
@@ -136,12 +137,12 @@ impl CronDocuments {
         // A run belongs to a job that exists, as the SQLite foreign key
         // enforces, and to that job's incarnation.
         let job = self.job_doc(job_id).await?;
-        let incarnation = incarnation(&job).map(str::to_string);
+        let fired = incarnation(&job).map(str::to_string);
         let seq = self.next_run_number().await?;
         let doc = run_to_doc(
             seq,
             job_id,
-            incarnation.as_deref(),
+            fired.as_deref(),
             started_at,
             finished_at,
             status,
@@ -157,12 +158,8 @@ impl CronDocuments {
         // The job may have been removed between the read and the insert (a
         // run finishing while its flow is disabled). Take the run back rather
         // than leave it for a later job that reuses the id.
-        let current = self
-            .docs
-            .get(JOBS, job_id)
-            .await
-            .map_err(storage_error)?;
-        if current.as_ref().map(|stored| incarnation(&stored.doc)) != Some(incarnation.as_deref()) {
+        let current = self.docs.get(JOBS, job_id).await.map_err(storage_error)?;
+        if current.as_ref().map(|stored| incarnation(&stored.doc)) != Some(fired.as_deref()) {
             self.docs
                 .delete(RUNS, &run_id(seq), Precondition::None)
                 .await
@@ -262,7 +259,10 @@ impl CronDocuments {
         };
         let page = self
             .docs
-            .query(RUNS, &newest_first(runs_of(job_id, &job.doc)).limit(limit.max(1)))
+            .query(
+                RUNS,
+                &newest_first(runs_of(job_id, &job.doc)).limit(limit.max(1)),
+            )
             .await
             .map_err(storage_error)?;
         page.items.iter().map(doc_to_run).collect()

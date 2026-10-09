@@ -1,5 +1,6 @@
-use super::*;
+use super::super::codec::incarnation;
 use super::super::test_support::{daily, store};
+use super::*;
 use chrono::Duration;
 use tinyflows_schedule::{MAX_CRON_OUTPUT_BYTES, TRUNCATED_OUTPUT_MARKER};
 
@@ -84,7 +85,18 @@ async fn delivery_status_is_stored_and_read_back() {
 async fn an_unknown_delivery_status_reads_as_none() {
     let store = store();
     let job = store.add_job("0 9 * * *", "x").await.unwrap();
-    let mut doc = run_to_doc(1, &job.id, None, Utc::now(), Utc::now(), "ok", None, 1, None);
+    let stored = store.docs.get(JOBS, &job.id).await.unwrap().unwrap();
+    let mut doc = run_to_doc(
+        1,
+        &job.id,
+        incarnation(&stored.doc),
+        Utc::now(),
+        Utc::now(),
+        "ok",
+        None,
+        1,
+        None,
+    );
     doc["delivery_status"] = json!("teleported");
     store.ensure().await.unwrap();
     store
@@ -288,4 +300,87 @@ async fn dedup_ties_go_to_the_earliest_created() {
     let left = store.list_jobs().await.unwrap();
     assert_eq!(left.len(), 1);
     assert_eq!(left[0].id, first.id);
+}
+
+#[tokio::test]
+async fn a_run_for_a_missing_job_is_refused() {
+    let store = store();
+    let now = Utc::now();
+    let error = store
+        .record_run("gone", now, now, "ok", None, 1)
+        .await
+        .unwrap_err();
+    assert_eq!(error.to_string(), "Cron job 'gone' not found");
+    assert!(store.list_runs("gone", 10).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn a_reused_flow_job_id_does_not_inherit_old_runs() {
+    let store = store();
+    let first = store.add_flow_schedule_job("f", daily()).await.unwrap();
+    let now = Utc::now();
+    store
+        .record_run(&first.id, now, now, "ok", None, 1)
+        .await
+        .unwrap();
+    // A run written for the first incarnation that lands after the job was
+    // removed and re-created, as a late write would.
+    let old = store.docs.get(JOBS, &first.id).await.unwrap().unwrap();
+    store.remove_job(&first.id).await.unwrap();
+    let again = store.add_flow_schedule_job("f", daily()).await.unwrap();
+    assert_eq!(again.id, first.id, "the flow's job id is reused");
+    store
+        .docs
+        .put(
+            RUNS,
+            &run_id(999),
+            run_to_doc(
+                999,
+                &first.id,
+                incarnation(&old.doc),
+                now,
+                now,
+                "late",
+                None,
+                1,
+                None,
+            ),
+            Precondition::Absent,
+        )
+        .await
+        .unwrap();
+    assert!(store.list_runs(&again.id, 10).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn an_edited_schedule_with_the_same_next_run_is_not_advanced() {
+    let store = store();
+    let job = store.add_job("0 9 * * *", "x").await.unwrap();
+    // Same next occurrence, different schedule.
+    let edited = store
+        .update_job(
+            &job.id,
+            tinyflows_schedule::CronJobPatch {
+                schedule: Some(Schedule::Cron {
+                    expr: "0 9 * * *".into(),
+                    tz: Some("UTC".into()),
+                    active_hours: None,
+                }),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(edited.next_run, job.next_run);
+    store.reschedule_after_run(&job, true, "").await.unwrap();
+    let read = store.get_job(&job.id).await.unwrap();
+    assert_eq!(
+        read.next_run, edited.next_run,
+        "not advanced from the stale schedule"
+    );
+    assert_eq!(
+        read.last_status.as_deref(),
+        Some("ok"),
+        "outcome still recorded"
+    );
 }

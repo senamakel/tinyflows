@@ -16,7 +16,9 @@ use tinystoragedrivers_core::{
 };
 use uuid::Uuid;
 
-use super::codec::{INCARNATION, created_at, doc_to_job, incarnation, job_to_doc, set_next_run, text};
+use super::codec::{
+    INCARNATION, created_at, doc_to_job, incarnation, job_to_doc, set_next_run, text,
+};
 use super::{CAS_ATTEMPTS, CronDocuments, JOBS, RUNS, job_not_found, storage_error};
 
 /// The document id of `flow_id`'s schedule job. Deterministic, so writing it

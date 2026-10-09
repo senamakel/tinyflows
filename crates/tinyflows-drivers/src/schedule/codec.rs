@@ -175,7 +175,9 @@ pub(super) fn doc_to_job(stored: &Versioned<Value>) -> Result<CronJob> {
         prompt: owned("prompt")?,
         name: owned("name")?,
         job_type: job_type(required(doc, "job_type")?)?,
-        session_target: SessionTarget::parse(optional(doc, "session_target")?.unwrap_or("isolated")),
+        session_target: SessionTarget::parse(
+            optional(doc, "session_target")?.unwrap_or("isolated"),
+        ),
         model: owned("model")?,
         agent_id: owned("agent_id")?,
         enabled: flag("enabled")?,
