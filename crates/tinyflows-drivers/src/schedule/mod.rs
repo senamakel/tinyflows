@@ -47,7 +47,15 @@
 //! - Recording a run and pruning the job's history are separate writes. A
 //!   crash in between leaves a few extra runs, removed by the next record.
 //! - Removing a job and then its runs are separate writes; a crash in between
-//!   leaves orphan runs that no job lists.
+//!   leaves orphan runs that no job lists. [`CronDocuments::sweep_orphan_runs`]
+//!   collects them; [`CronDocuments::clear_all_jobs`] runs it.
+//! - A run recorded after its job was removed and re-created under the same
+//!   id (a flow's schedule job) is checked against the job's current
+//!   incarnation when it is recorded, but dispatch does not carry the
+//!   incarnation it fired, so a run that started under the old job and
+//!   finished after the new one exists attaches to the new one. Closing that
+//!   needs the incarnation passed from dispatch to `record_run`, a change to
+//!   both stores' API.
 
 use std::sync::Arc;
 
