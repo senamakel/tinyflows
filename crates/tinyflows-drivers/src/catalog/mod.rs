@@ -10,7 +10,7 @@
 //!
 //! | Collection | Document id | Holds |
 //! | --- | --- | --- |
-//! | `flows_definitions` | flow id | one saved [`Flow`] |
+//! | `flows_definitions` | flow id | one saved [`Flow`](tinyflows_catalog::Flow) |
 //! | `flows_revisions` | revision id | one superseded graph |
 //! | `flows_runs` | run id | one run, without its steps |
 //! | `flows_run_steps` | `(run_id, node_id)` | one step of one run |
