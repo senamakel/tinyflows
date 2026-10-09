@@ -37,9 +37,9 @@ use tinystoragedrivers_core::{
 };
 use tokio::sync::OnceCell;
 
+use tinyflows::graph::checkpoint::merge_writes;
 use tinyflows::graph::{
     Checkpoint, CheckpointConfig, CheckpointMetadata, CheckpointTuple, Checkpointer, PendingWrite,
-    merge_writes,
 };
 
 /// How many times a compare-and-swap loop retries before giving up.
