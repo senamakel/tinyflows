@@ -393,9 +393,16 @@ impl FlowCatalogDocuments {
                 })
                 .await?;
             let after = docs.get(DEFINITIONS, flow_id).await?;
+            // A fenced definition is the same flow while its incarnation is.
+            // A pre-fence one carries none, so a replacement by an older
+            // process could not be told apart by it: hold that one to the
+            // exact document version instead.
             let same_flow = after
                 .as_ref()
-                .is_some_and(|current| incarnation(&current.doc) == incarnation(&flow.doc));
+                .is_some_and(|current| match incarnation(&flow.doc) {
+                    Some(read) => incarnation(&current.doc) == Some(read),
+                    None => incarnation(&current.doc).is_none() && current.version == flow.version,
+                });
             if same_flow {
                 return Ok(runs);
             }
