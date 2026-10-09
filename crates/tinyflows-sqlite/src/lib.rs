@@ -31,6 +31,7 @@ pub mod checkpoint;
 pub mod drafts;
 #[cfg(feature = "catalog")]
 pub mod flows;
+mod native;
 #[cfg(feature = "schedule")]
 pub mod schedule;
 

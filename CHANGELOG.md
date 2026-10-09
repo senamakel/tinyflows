@@ -22,6 +22,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dependency; the engine is unchanged and keeps its MSRV, this crate needs
   Rust 1.88.
 
+- **`tinyflows-sqlite` opens `flows.db` and `jobs.db` through the
+  tinystoragedrivers SQLite driver's native mode.** The tables, SQL,
+  `user_version` gate and column migrations are unchanged, and existing
+  databases open as they are. The driver owns the connection, so a host that
+  holds the same file open through it shares one connection and lock instead
+  of contending for SQLite's file lock. With nothing else holding the file,
+  each call still opens it fresh, so a database deleted under a live process
+  still comes back. A panicking store call is caught and its open
+  transaction rolled back, so it cannot poison the shared connection. The
+  driver runs WAL with `synchronous = NORMAL`: commits survive a process
+  crash, but an OS crash or power loss can roll back the most recent ones.
+  `tinyflows-sqlite` now needs Rust 1.88.
+
 - **Node postconditions (`tinyflows::postcondition`).** A node may declare
   `config.postcondition = { "require": ..., "field": ... }` — `non_empty`,
   `field_present` or `non_empty_list` — and the engine checks it against every

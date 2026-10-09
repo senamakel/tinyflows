@@ -277,24 +277,22 @@ fn with_connection<T>(dir: &Path, f: impl FnOnce(&Connection) -> Result<T>) -> R
             .with_context(|| format!("Failed to create flows directory: {}", parent.display()))?;
     }
 
-    let conn = Connection::open(&db_path)
-        .with_context(|| format!("Failed to open flows DB: {}", db_path.display()))?;
+    crate::native::run(&db_path, |conn| {
+        // Per-connection pragmas, reapplied on every call: the connection may
+        // be the driver's shared one, opened by someone else. `busy_timeout`
+        // retries (rather than immediately erroring `SQLITE_BUSY`) when a
+        // concurrent writer holds the lock — including this store's own
+        // `BEGIN IMMEDIATE` step upsert (R-m1); `foreign_keys` is required for
+        // the `ON DELETE CASCADE` FKs to be enforced.
+        conn.execute_batch("PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON;")
+            .context("Failed to set flows DB connection pragmas")?;
 
-    // Per-connection pragmas: NOT persisted in the database file, so these
-    // must be reapplied on every open regardless of the schema-init cache
-    // below. `busy_timeout` retries (rather than immediately erroring
-    // `SQLITE_BUSY`) when a concurrent writer holds the lock — including this
-    // store's own `BEGIN IMMEDIATE` step upsert (R-m1); `foreign_keys` is
-    // required on every connection for the `ON DELETE CASCADE` FKs to be
-    // enforced.
-    conn.execute_batch("PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON;")
-        .context("Failed to set flows DB connection pragmas")?;
+        ensure_schema_initialized(conn, &db_path)?;
 
-    ensure_schema_initialized(&conn, &db_path)?;
+        tracing::debug!(db = %db_path.display(), "[flows] store opened");
 
-    tracing::debug!(db = %db_path.display(), "[flows] store opened");
-
-    f(&conn)
+        f(conn)
+    })
 }
 
 /// Adds `name` to `table` if it isn't already present, tolerating the race
