@@ -362,7 +362,7 @@ async fn an_edited_schedule_with_the_same_next_run_is_not_advanced() {
             &job.id,
             tinyflows_schedule::CronJobPatch {
                 schedule: Some(Schedule::Cron {
-                    expr: "0 9 * * 0-6".into(),
+                    expr: "0 9 */1 * *".into(),
                     tz: None,
                     active_hours: None,
                 }),
