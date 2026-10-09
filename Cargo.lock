@@ -2716,9 +2716,32 @@ dependencies = [
  "tinyflows",
  "tinyflows-catalog",
  "tinyflows-schedule",
+ "tinystoragedrivers-sqlite",
  "tokio",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "tinystoragedrivers-core"
+version = "0.4.0"
+source = "git+https://github.com/tinyhumansai/tinystoragedrivers?tag=v0.4.0#f7d603878985966581f90a474eb36bfa1e1ba0f3"
+dependencies = [
+ "async-trait",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "tinystoragedrivers-sqlite"
+version = "0.4.0"
+source = "git+https://github.com/tinyhumansai/tinystoragedrivers?tag=v0.4.0#f7d603878985966581f90a474eb36bfa1e1ba0f3"
+dependencies = [
+ "rusqlite",
+ "serde_json",
+ "tinystoragedrivers-core",
+ "tokio",
 ]
 
 [[package]]
