@@ -66,7 +66,7 @@ impl FlowCatalogDocuments {
         // is the one the swap below is keyed on.
         let now_auto = tinyflows_catalog::graph_policy::trigger_is_automatic(&graph);
         let was_auto = tinyflows_catalog::graph_policy::trigger_is_automatic(&current.graph);
-        let auto_disarm = (now_auto && !was_auto) || (force_disarm_if_automatic && now_auto);
+        let auto_disarm = now_auto && (!was_auto || force_disarm_if_automatic);
         if auto_disarm {
             tracing::debug!(
                 target: "flows",
