@@ -68,6 +68,7 @@ use tinystoragedrivers_core::{
 mod codec;
 mod jobs;
 mod patch;
+mod removal;
 mod runs;
 #[cfg(test)]
 mod test_support;
