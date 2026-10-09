@@ -20,6 +20,60 @@ let state = Arc::new(DriverStateStore::new(Arc::clone(&docs)));
 let checkpointer = DriverCheckpointer::<serde_json::Value>::new(docs);
 ```
 
+## Features
+
+| Feature | Default | Brings |
+| --- | --- | --- |
+| `engine` | yes | `DriverStateStore`, `DriverCheckpointer` (needs `tinyflows`) |
+| `catalog` | no | `catalog::FlowCatalogDocuments`, `catalog::FlowStateDocuments` |
+| `test-fixtures` | no | the catalog's two fixture-only writers |
+
+## The flow catalog (`catalog`)
+
+`FlowCatalogDocuments` is the document-port counterpart of
+`tinyflows-sqlite`'s `flows` and `drafts`: one `async fn` per public function
+there, same name, same arguments minus the catalog directory, same results
+(`update_flow_graph` reports the shared `tinyflows_catalog::store::FlowUpdateError`).
+
+```rust
+use std::sync::Arc;
+use tinyflows_drivers::catalog::{FlowCatalogDocuments, FlowStateDocuments};
+
+let catalog = FlowCatalogDocuments::new(Arc::clone(scoped_storage.documents()));
+let flow = catalog.create_flow("Digest".into(), graph, true, false).await?;
+let state = Arc::new(FlowStateDocuments::new(catalog.clone(), flow.id.clone()));
+```
+
+| Collection | One document per |
+| --- | --- |
+| `flows_definitions` | flow |
+| `flows_revisions` | superseded graph (newest 20 kept) |
+| `flows_runs` | run (steps apart) |
+| `flows_run_steps` | step of a run |
+| `flows_kv` | `(namespace, key)` of flow state |
+| `flows_suggestions` | discovery suggestion |
+| `flows_drafts` | authoring draft |
+
+- Every guarded SQL `UPDATE … WHERE status = …` (finish, resume, interrupt,
+  TTL expiry) is a compare-and-swap on the run, so a transition happens at
+  most once across processes sharing one database.
+- Steps are documents of their own: parallel branches of one run persist
+  their steps without contending, which is what SQLite's `BEGIN IMMEDIATE`
+  (R-m1) was protecting.
+- `update_flow_graph` writes the revision before swapping the graph and drops
+  it again when the swap loses, so no save is ever recorded without its prior
+  graph.
+- Removing a flow removes its revisions, runs and steps.
+- Graphs, steps, drafts and state values are JSON strings, optional fields
+  are omitted rather than `null`, and ordering uses epoch-nanosecond fields.
+
+`FlowStateDocuments` is one flow's namespaced state over the same `flows_kv`
+documents as `kv_get` / `kv_set` / `kv_delete`. It is the engine's
+`StateStore` and the host's synchronous `DedupKv`; the latter runs on the
+storage crates' `Blocking` bridge (one per process, or the host's own via
+`with_bridge`), so it is safe inside any runtime. `DriverStateStore` is
+unchanged: un-namespaced, for a host that gives each run its own collection.
+
 ## Checkpointer guarantees
 
 - One document per checkpoint with a per-thread `seq` advanced by
