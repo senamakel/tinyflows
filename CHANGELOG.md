@@ -22,6 +22,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   limit. It passes the ledger and vault conformance and tenancy suites. Off by
   default; needs Rust 1.88.
 
+- **`tinyflows-drivers` (new, unpublished crate).** `DriverStateStore`
+  implements the engine's `StateStore` and `DriverCheckpointer` the graph
+  `Checkpointer` over a `tinystoragedrivers` document port (git dependency at
+  `v0.4.0`, so a host that vendors the storage crates once can `[patch]` it).
+  The checkpointer stores one document per checkpoint with a per-thread
+  compare-and-swap sequence, merges pending writes under compare-and-swap,
+  pushes namespace-scoped reads down to one indexed query, reads a whole
+  `state_history` in two queries, length-prefixes every key component and
+  hashes over-long ids with SHA-256. A separate crate rather than an engine
+  feature because the published `tinyflows` package cannot carry a git
+  dependency; the engine is unchanged and keeps its MSRV, this crate needs
+  Rust 1.88.
+
 - **`tinyflows-sqlite` opens `flows.db` and `jobs.db` through the
   tinystoragedrivers SQLite driver's native mode.** The tables, SQL,
   `user_version` gate and column migrations are unchanged, and existing

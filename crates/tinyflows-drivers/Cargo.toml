@@ -1,0 +1,31 @@
+# `tinyflows` capabilities and checkpoints on `tinystoragedrivers` ports.
+#
+# A crate of its own rather than a feature of the engine: the storage crates
+# are git dependencies (OpenHuman vendors them once and `[patch]`es the URL),
+# and the published `tinyflows` package cannot carry a git dependency, even an
+# optional one. It also keeps the engine's MSRV where it is; this crate needs
+# the storage crates' 1.88.
+[package]
+name = "tinyflows-drivers"
+version = "0.1.0"
+description = "tinyflows StateStore and graph Checkpointer over tinystoragedrivers document ports"
+edition.workspace = true
+rust-version = "1.88"
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
+publish = false
+
+[dependencies]
+tinyflows = { workspace = true }
+tinystoragedrivers-core = { git = "https://github.com/tinyhumansai/tinystoragedrivers", tag = "v0.4.0" }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
