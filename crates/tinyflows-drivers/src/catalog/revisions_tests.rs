@@ -410,3 +410,34 @@ async fn a_swapped_but_unconfirmed_revision_is_visible_and_then_confirmed() {
         "the next update confirms it"
     );
 }
+
+#[tokio::test]
+async fn removing_a_flow_sweeps_a_revision_written_during_the_removal() {
+    let store = catalog();
+    let flow = store
+        .create_flow("v1".into(), trigger_graph(), false, true)
+        .await
+        .unwrap();
+    store
+        .update_flow_graph(
+            &flow.id,
+            "v2".into(),
+            trigger_graph(),
+            false,
+            None,
+            false,
+            None,
+        )
+        .await
+        .unwrap();
+    store.remove_flow(&flow.id).await.unwrap();
+    let docs = store.docs().await.unwrap();
+    let left = docs
+        .query_all(
+            REVISIONS,
+            &Query::filter(Filter::eq("flow_id", flow.id.as_str())),
+        )
+        .await
+        .unwrap();
+    assert!(left.is_empty());
+}

@@ -367,3 +367,7 @@ impl FlowCatalogDocuments {
 #[cfg(test)]
 #[path = "runs_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "runs_lifecycle_tests.rs"]
+mod lifecycle_tests;
