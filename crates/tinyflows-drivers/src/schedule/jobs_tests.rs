@@ -478,3 +478,17 @@ async fn set_due_at(store: &CronDocuments, id: &str, at: DateTime<Utc>) {
         .await
         .unwrap();
 }
+
+#[tokio::test]
+async fn clearing_spares_a_job_registered_again_after_the_snapshot() {
+    let store = store();
+    let first = store.add_flow_schedule_job("f", daily()).await.unwrap();
+    let snapshot = store.docs.get(JOBS, &first.id).await.unwrap().unwrap();
+    // The flow is disabled and re-enabled before the clear reaches it.
+    store.remove_job(&first.id).await.unwrap();
+    let again = store.add_flow_schedule_job("f", daily()).await.unwrap();
+    assert_eq!(again.id, first.id, "the same deterministic id");
+
+    assert!(!store.remove_current(&snapshot).await.unwrap());
+    assert!(store.find_flow_schedule_job("f").await.unwrap().is_some());
+}
