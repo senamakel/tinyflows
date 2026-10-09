@@ -384,7 +384,10 @@ pub(super) fn runs_of(job_id: &str, doc: &Value) -> Filter {
     let of_job = Filter::eq("job_id", job_id);
     match incarnation(doc) {
         Some(incarnation) => of_job.and(Filter::eq(INCARNATION, incarnation)),
-        None => of_job,
+        // A job written before incarnations owns only runs without one; a
+        // job re-created under its id since has an incarnation, and so do
+        // its runs, which this never matches.
+        None => of_job.and(Filter::exists(INCARNATION, false)),
     }
 }
 

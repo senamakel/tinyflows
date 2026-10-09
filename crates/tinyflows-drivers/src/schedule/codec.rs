@@ -137,9 +137,11 @@ pub(super) fn set_next_run(doc: &mut Map<String, Value>, next_run: DateTime<Utc>
     doc.insert("next_run_ns".into(), json!(nanos(next_run)));
 }
 
-/// `at` in epoch nanoseconds, saturating past the year 2262.
+/// `at` in epoch nanoseconds, saturating outside 1677–2262: to `i64::MIN`
+/// before that range and `i64::MAX` after it, so order is kept at both ends.
 pub(super) fn nanos(at: DateTime<Utc>) -> i64 {
-    at.timestamp_nanos_opt().unwrap_or(i64::MAX)
+    at.timestamp_nanos_opt()
+        .unwrap_or(if at.timestamp() < 0 { i64::MIN } else { i64::MAX })
 }
 
 /// Records a run's outcome on a job document.
@@ -233,7 +235,7 @@ pub(super) fn run_to_doc(
     // history order (and which run pruning keeps) follows the real start.
     doc.insert(
         "started_ns".into(),
-        json!(started_at.timestamp_nanos_opt().unwrap_or(i64::MAX)),
+        json!(nanos(started_at)),
     );
     doc.insert("finished_at".into(), json!(finished_at.to_rfc3339()));
     doc.insert("status".into(), json!(status));
