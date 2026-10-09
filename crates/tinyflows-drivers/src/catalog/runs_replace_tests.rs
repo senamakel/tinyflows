@@ -24,7 +24,7 @@ async fn a_replaced_flow_does_not_list_the_old_incarnations_runs() {
     // Remove-and-recreate lands right before the run query, before any sweep
     // of the old incarnation's runs.
     let replaced = flow.clone();
-    let store = FlowCatalogDocuments::new(Interposed::new(
+    let store = FlowCatalogDocuments::new(Interposed::wrap(
         Arc::clone(&inner),
         ("query", RUNS),
         Box::new(move |docs: Arc<dyn DocumentStore>| {

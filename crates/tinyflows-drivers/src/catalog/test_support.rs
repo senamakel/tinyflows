@@ -82,7 +82,7 @@ impl std::fmt::Debug for InterjectionCell {
 
 impl Interposed {
     /// Wraps `inner`; `interjection` runs before the first `trigger` read.
-    pub(crate) fn new(
+    pub(crate) fn wrap(
         inner: Arc<dyn DocumentStore>,
         trigger: (&'static str, &'static str),
         interjection: Interjection,

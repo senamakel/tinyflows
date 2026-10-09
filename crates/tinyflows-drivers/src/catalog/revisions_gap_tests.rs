@@ -79,7 +79,7 @@ async fn prune_spares_a_revision_named_after_it_partitioned() {
 
     // The flow names it between prune's partition and its delete.
     let flow_id = flow.id.clone();
-    let store = FlowCatalogDocuments::new(Interposed::new(
+    let store = FlowCatalogDocuments::new(Interposed::wrap(
         Arc::clone(&inner),
         ("get", REVISIONS),
         Box::new(move |docs: Arc<dyn DocumentStore>| {
