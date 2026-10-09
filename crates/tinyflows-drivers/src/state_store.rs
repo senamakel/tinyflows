@@ -13,8 +13,8 @@ use serde_json::{Value, json};
 use tinystoragedrivers_core::{CollectionSpec, DocumentStore, Precondition, StorageError};
 use tokio::sync::OnceCell;
 
-use super::StateStore;
-use crate::error::{EngineError, Result};
+use tinyflows::caps::StateStore;
+use tinyflows::error::{EngineError, Result};
 
 /// A [`StateStore`] keeping each key in a driver [`DocumentStore`].
 #[derive(Debug, Clone)]
@@ -92,5 +92,5 @@ impl StateStore for DriverStateStore {
 }
 
 #[cfg(test)]
-#[path = "drivers_tests.rs"]
+#[path = "state_store_tests.rs"]
 mod tests;

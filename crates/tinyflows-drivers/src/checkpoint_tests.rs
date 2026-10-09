@@ -4,7 +4,7 @@
 //! the driver layout adds.
 
 use super::*;
-use crate::graph::ids::NodeId;
+use tinyflows::graph::ids::NodeId;
 use serde_json::json;
 use tinystoragedrivers_core::{MemoryStorage, Scope, StorageBackend};
 
@@ -195,7 +195,7 @@ async fn data_writes_are_append_once_and_control_plane_writes_upsert() {
         PendingWrite::data(
             "n1",
             "task-a",
-            crate::graph::checkpoint::WRITES_IDX_RESUME,
+            tinyflows::graph::checkpoint::WRITES_IDX_RESUME,
             "__resume__",
             payload,
         )

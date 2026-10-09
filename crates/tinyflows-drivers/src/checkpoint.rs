@@ -25,8 +25,8 @@
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-use crate::graph::error::{GraphError, Result};
-use crate::graph::ids::CheckpointId;
+use tinyflows::graph::error::{GraphError, Result};
+use tinyflows::graph::ids::CheckpointId;
 use async_trait::async_trait;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -37,9 +37,9 @@ use tinystoragedrivers_core::{
 };
 use tokio::sync::OnceCell;
 
-use super::{
-    Checkpoint, CheckpointConfig, CheckpointMetadata, Checkpointer, PendingWrite, merge_writes,
-    require_checkpoint_id,
+use tinyflows::graph::{
+    Checkpoint, CheckpointConfig, CheckpointMetadata, CheckpointTuple, Checkpointer,
+    PendingWrite, merge_writes,
 };
 
 /// How many times a compare-and-swap loop retries before giving up.
@@ -82,6 +82,17 @@ fn namespace_key(namespace: &[String]) -> String {
 
 /// The collection prefix [`DriverCheckpointer::new`] uses.
 pub const DEFAULT_PREFIX: &str = "flows_graph";
+
+/// The checkpoint id a write must name; a write against "the latest
+/// checkpoint" has no meaning, so it is refused.
+fn require_checkpoint_id(config: &CheckpointConfig) -> Result<String> {
+    config.checkpoint_id.clone().ok_or_else(|| {
+        GraphError::Checkpoint(format!(
+            "put_writes requires an explicit checkpoint_id (thread `{}`)",
+            config.thread_id
+        ))
+    })
+}
 
 /// A [`Checkpointer`] that stores everything in a driver [`DocumentStore`].
 pub struct DriverCheckpointer<State> {
@@ -412,5 +423,5 @@ where
 }
 
 #[cfg(test)]
-#[path = "drivers_tests.rs"]
+#[path = "checkpoint_tests.rs"]
 mod tests;
