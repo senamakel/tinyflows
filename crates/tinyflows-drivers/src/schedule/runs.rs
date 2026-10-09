@@ -9,7 +9,8 @@ use tinyflows_schedule::{
 };
 use tinystoragedrivers_core::{DocumentStoreExt, ErrorKind, Filter, Precondition, Query, Sort};
 
-use super::codec::{doc_to_run, incarnation, run_id, run_to_doc, set_last_run};
+use super::codec;
+use super::codec::{doc_to_run, incarnation, integer, nanos, run_id, run_to_doc, set_last_run};
 use super::jobs::{reschedule, runs_of};
 use super::{
     CAS_ATTEMPTS, COUNTERS, CronDocuments, JOBS, RUNS, compare_and_swap, job_not_found,
@@ -64,13 +65,24 @@ impl CronDocuments {
         let next_run = next_run_for_schedule(&job.schedule, now)?;
         let one_shot = matches!(job.schedule, Schedule::At { .. });
         let fired_ms = job.next_run.timestamp_millis();
+        let fired_ns = nanos(job.next_run);
         let fired_schedule =
             serde_json::to_string(&job.schedule).context("serialize cron schedule")?;
         let output = truncate_cron_output(output);
         compare_and_swap(&self.docs, JOBS, &job.id, |doc| {
             let mut next = doc.as_object().cloned().unwrap_or_default();
             set_last_run(&mut next, now, success, output.clone());
-            let unmoved = doc.get("next_run_ms").and_then(Value::as_i64) == Some(fired_ms)
+            // Milliseconds must match, and nanoseconds too when the document
+            // has them: past 2262 every instant saturates to the same
+            // nanosecond value, so nanoseconds alone could match two
+            // different occurrences. A document written before `next_run_ns`
+            // compares at millisecond precision.
+            let same_ms = doc.get("next_run_ms").and_then(Value::as_i64) == Some(fired_ms);
+            let same_ns = doc
+                .get("next_run_ns")
+                .is_none_or(|stored| stored.as_i64() == Some(fired_ns));
+            let same_occurrence = same_ms && same_ns;
+            let unmoved = same_occurrence
                 && doc.get("schedule").and_then(Value::as_str) == Some(fired_schedule.as_str());
             if unmoved {
                 reschedule(&mut next, next_run, one_shot);
@@ -189,11 +201,14 @@ impl CronDocuments {
                 .get(COUNTERS, RUN_COUNTER)
                 .await
                 .map_err(storage_error)?;
-            let next = stored
-                .as_ref()
-                .and_then(|stored| stored.doc.get("next"))
-                .and_then(Value::as_i64)
-                .unwrap_or(1);
+            // A missing counter starts at 1; a counter document without an
+            // integer `next` is corrupt, and guessing a number could reuse
+            // a run id.
+            let next = match &stored {
+                None => 1,
+                Some(stored) => integer(&stored.doc, "next")?
+                    .ok_or_else(|| anyhow::anyhow!("cron store: the run counter has no `next`"))?,
+            };
             let precondition = stored
                 .as_ref()
                 .map_or(Precondition::Absent, |stored| stored.unchanged());
@@ -250,6 +265,54 @@ impl CronDocuments {
         Ok(usize::try_from(removed).unwrap_or(usize::MAX))
     }
 
+    /// Deletes runs whose job no longer exists, or exists as a later
+    /// incarnation (a removed flow job registered again). Returns how many
+    /// were deleted.
+    ///
+    /// Removing a job deletes its runs in a second write, so a crash in
+    /// between, or a run recorded while its job was being removed, can
+    /// leave runs no job lists. This collects them. A run recorded for a job
+    /// that exists is never touched: its incarnation matches.
+    pub async fn sweep_orphan_runs(&self) -> Result<usize> {
+        self.ensure().await?;
+        let runs = self
+            .docs
+            .query_all(RUNS, &Query::all())
+            .await
+            .map_err(storage_error)?;
+        let mut swept = 0usize;
+        for run in &runs {
+            // A run without a string `job_id` is corrupt, not provably an
+            // orphan: report it and keep it.
+            let Some(job_id) = codec::text(&run.doc, "job_id") else {
+                tracing::warn!(target: "cron", run_id = %run.id, "[cron] sweep: run has no job_id — skipped");
+                continue;
+            };
+            // Read the owner right before deciding, not once per job: a job
+            // re-created after an earlier read owns runs a stale answer
+            // would delete.
+            let owner = self.docs.get(JOBS, job_id).await.map_err(storage_error)?;
+            let owns = owner
+                .as_ref()
+                .is_some_and(|job| incarnation(&job.doc) == incarnation(&run.doc));
+            if owns {
+                continue;
+            }
+            // A run that changed or vanished meanwhile is skipped; any other
+            // storage failure fails the sweep rather than report it clean.
+            match self.docs.delete(RUNS, &run.id, run.unchanged()).await {
+                Ok(true) => swept += 1,
+                Ok(false) => {}
+                Err(error) if error.kind() == ErrorKind::Conflict => {}
+                Err(error) => return Err(storage_error(error)),
+            }
+        }
+        if swept > 0 {
+            tracing::info!(target: "cron", swept, "[cron] swept orphan runs");
+        }
+        Ok(swept)
+    }
+
     /// The job's newest runs, most recent first, at most `limit` (min 1).
     /// Runs of a removed job are not listed.
     pub async fn list_runs(&self, job_id: &str, limit: usize) -> Result<Vec<CronRun>> {
@@ -279,3 +342,7 @@ fn newest_first(filter: Filter) -> Query {
 #[cfg(test)]
 #[path = "runs_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "runs_sweep_tests.rs"]
+mod sweep_tests;

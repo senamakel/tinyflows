@@ -18,9 +18,10 @@
 //! A job's `schedule`, `delivery` and `origin` are JSON strings, so a MongoDB
 //! backend never meets keys a caller chose. Optional fields are left out
 //! rather than stored as `null`. Instants are kept twice: RFC 3339 text for
-//! reading back, and epoch milliseconds (`next_run_ms`, `created_ms`,
-//! `started_ns`, nanoseconds, so runs started within one millisecond still
-//! order by their real start) for ordering and range filters.
+//! reading back, and epoch integers for ordering and range filters:
+//! `created_ms`, `next_run_ms` plus `next_run_ns`, and `started_ns`
+//! (nanoseconds, so jobs due and runs started within one millisecond still
+//! order by their real instant).
 //!
 //! # Concurrency
 //!
@@ -46,7 +47,15 @@
 //! - Recording a run and pruning the job's history are separate writes. A
 //!   crash in between leaves a few extra runs, removed by the next record.
 //! - Removing a job and then its runs are separate writes; a crash in between
-//!   leaves orphan runs that no job lists.
+//!   leaves orphan runs that no job lists. [`CronDocuments::sweep_orphan_runs`]
+//!   collects them; [`CronDocuments::clear_all_jobs`] runs it.
+//! - A run recorded after its job was removed and re-created under the same
+//!   id (a flow's schedule job) is checked against the job's current
+//!   incarnation when it is recorded, but dispatch does not carry the
+//!   incarnation it fired, so a run that started under the old job and
+//!   finished after the new one exists attaches to the new one. Closing that
+//!   needs the incarnation passed from dispatch to `record_run`, a change to
+//!   both stores' API.
 
 use std::sync::Arc;
 
@@ -59,6 +68,7 @@ use tinystoragedrivers_core::{
 mod codec;
 mod jobs;
 mod patch;
+mod removal;
 mod runs;
 #[cfg(test)]
 mod test_support;
@@ -113,6 +123,9 @@ impl CronDocuments {
             CollectionSpec::new(JOBS)
                 .index(IndexSpec::new("by_next_run", ["next_run_ms"]))
                 .index(IndexSpec::new("by_due", ["enabled", "next_run_ms"]))
+                // A new name, not a widened `by_due`: MongoDB refuses to
+                // redefine an existing index's keys under the same name.
+                .index(IndexSpec::new("by_due_ns", ["enabled", "next_run_ns"]))
                 .index(IndexSpec::new("by_name", ["name"]))
                 .index(IndexSpec::new("by_flow", ["job_type", "command"])),
             CollectionSpec::new(RUNS)

@@ -127,10 +127,24 @@ pub(super) fn job_to_doc(job: &CronJob) -> Result<Value> {
     Ok(Value::Object(doc))
 }
 
-/// Writes `next_run` in both its readable and its ordering form.
+/// Writes `next_run` in its readable form and its two ordering forms:
+/// milliseconds (`next_run_ms`, kept so documents written before
+/// `next_run_ns` still order and match) and nanoseconds (`next_run_ns`, so
+/// two jobs due within one millisecond are picked in their real order).
 pub(super) fn set_next_run(doc: &mut Map<String, Value>, next_run: DateTime<Utc>) {
     doc.insert("next_run".into(), json!(next_run.to_rfc3339()));
     doc.insert("next_run_ms".into(), json!(next_run.timestamp_millis()));
+    doc.insert("next_run_ns".into(), json!(nanos(next_run)));
+}
+
+/// `at` in epoch nanoseconds, saturating outside 1677–2262: to `i64::MIN`
+/// before that range and `i64::MAX` after it, so order is kept at both ends.
+pub(super) fn nanos(at: DateTime<Utc>) -> i64 {
+    at.timestamp_nanos_opt().unwrap_or(if at.timestamp() < 0 {
+        i64::MIN
+    } else {
+        i64::MAX
+    })
 }
 
 /// Records a run's outcome on a job document.
@@ -222,10 +236,7 @@ pub(super) fn run_to_doc(
     doc.insert("started_at".into(), json!(started_at.to_rfc3339()));
     // Nanoseconds: two runs of one job can start within a millisecond, and
     // history order (and which run pruning keeps) follows the real start.
-    doc.insert(
-        "started_ns".into(),
-        json!(started_at.timestamp_nanos_opt().unwrap_or(i64::MAX)),
-    );
+    doc.insert("started_ns".into(), json!(nanos(started_at)));
     doc.insert("finished_at".into(), json!(finished_at.to_rfc3339()));
     doc.insert("status".into(), json!(status));
     doc.insert("duration_ms".into(), json!(duration_ms));
@@ -239,23 +250,35 @@ pub(super) fn run_to_doc(
     Value::Object(doc)
 }
 
-/// The run a stored document holds. A delivery status this build does not
-/// know reads as `None`, as it does in the SQLite store.
+/// The run a stored document holds.
+///
+/// A field of the wrong type is an error naming it, never a default. A
+/// delivery status string this build does not know reads as `None`, as it
+/// does in the SQLite store.
 pub(super) fn doc_to_run(stored: &Versioned<Value>) -> Result<CronRun> {
     let doc = &stored.doc;
     Ok(CronRun {
-        id: doc
-            .get("seq")
-            .and_then(Value::as_i64)
-            .ok_or_else(|| anyhow!("cron store: run document has no `seq`"))?,
+        id: integer(doc, "seq")?.ok_or_else(|| anyhow!("cron store: run document has no `seq`"))?,
         job_id: required(doc, "job_id")?.to_string(),
         started_at: instant(required(doc, "started_at")?)?,
         finished_at: instant(required(doc, "finished_at")?)?,
         status: required(doc, "status")?.to_string(),
-        output: text(doc, "output").map(str::to_string),
-        duration_ms: doc.get("duration_ms").and_then(Value::as_i64),
-        delivery_status: text(doc, "delivery_status").and_then(DeliveryStatus::parse),
+        output: optional(doc, "output")?.map(str::to_string),
+        duration_ms: integer(doc, "duration_ms")?,
+        delivery_status: optional(doc, "delivery_status")?.and_then(DeliveryStatus::parse),
     })
+}
+
+/// The integer field `field` of `doc`: `None` when absent, an error when
+/// present with another type.
+pub(super) fn integer(doc: &Value, field: &str) -> Result<Option<i64>> {
+    match doc.get(field) {
+        None => Ok(None),
+        Some(value) => value
+            .as_i64()
+            .map(Some)
+            .ok_or_else(|| anyhow!("cron store: `{field}` is not an integer")),
+    }
 }
 
 #[cfg(test)]

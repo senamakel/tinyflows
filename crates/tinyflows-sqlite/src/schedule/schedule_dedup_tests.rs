@@ -267,3 +267,28 @@ fn reschedule_after_run_disables_a_one_shot_at_job() {
             .is_empty()
     );
 }
+
+#[test]
+fn a_flow_jobs_command_cannot_be_retargeted() {
+    let tmp = TempDir::new().unwrap();
+    let config = test_config(&tmp);
+    let schedule = Schedule::Cron {
+        expr: "0 9 * * *".into(),
+        tz: None,
+        active_hours: None,
+    };
+    let job = add_flow_schedule_job(&config, "flow-a", schedule).unwrap();
+    let retarget = tinyflows_schedule::CronJobPatch {
+        command: Some("flow-b".into()),
+        ..Default::default()
+    };
+    let error = update_job(&config, &job.id, retarget).unwrap_err();
+    assert!(error.to_string().contains("cannot be changed"), "{error}");
+    assert_eq!(get_job(&config, &job.id).unwrap().command, "flow-a");
+    let same = tinyflows_schedule::CronJobPatch {
+        command: Some("flow-a".into()),
+        enabled: Some(false),
+        ..Default::default()
+    };
+    assert!(!update_job(&config, &job.id, same).unwrap().enabled);
+}

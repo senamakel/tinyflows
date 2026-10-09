@@ -17,7 +17,7 @@ use tinystoragedrivers_core::{
 use uuid::Uuid;
 
 use super::codec::{
-    INCARNATION, created_at, doc_to_job, incarnation, job_to_doc, set_next_run, text,
+    INCARNATION, created_at, doc_to_job, incarnation, job_to_doc, nanos, set_next_run, text,
 };
 use super::patch::apply_patch;
 use super::{CAS_ATTEMPTS, CronDocuments, JOBS, RUNS, job_not_found, storage_error};
@@ -254,6 +254,7 @@ impl CronDocuments {
         self.ensure().await?;
         let query = Query::all()
             .sort(Sort::asc("next_run_ms"))
+            .sort(Sort::asc("next_run_ns"))
             .sort(Sort::asc("_id"));
         self.docs
             .query_all(JOBS, &query)
@@ -274,59 +275,6 @@ impl CronDocuments {
             .map_err(storage_error)?
             .ok_or_else(|| job_not_found(job_id))?;
         doc_to_job(&stored)
-    }
-
-    /// Deletes the job with `id` and its run history; errors when there is
-    /// none.
-    pub async fn remove_job(&self, id: &str) -> Result<()> {
-        self.ensure().await?;
-        for _ in 0..CAS_ATTEMPTS {
-            let stored = self
-                .docs
-                .get(JOBS, id)
-                .await
-                .map_err(storage_error)?
-                .ok_or_else(|| job_not_found(id))?;
-            if self.remove_stored(&stored).await? {
-                return Ok(());
-            }
-        }
-        anyhow::bail!("cron store: job {id} kept changing under {CAS_ATTEMPTS} attempts")
-    }
-
-    /// Deletes `stored` if it is unchanged, then the runs of that
-    /// incarnation only, so a job re-created under the same id meanwhile (a
-    /// flow's schedule job) keeps its own runs. `false` when the job changed
-    /// or was already removed.
-    pub(super) async fn remove_stored(&self, stored: &Versioned<Value>) -> Result<bool> {
-        match self.docs.delete(JOBS, &stored.id, stored.unchanged()).await {
-            Ok(true) => {}
-            Ok(false) => return Ok(false),
-            Err(error) if error.kind() == ErrorKind::Conflict => return Ok(false),
-            Err(error) => return Err(storage_error(error)).context("Failed to delete cron job"),
-        }
-        self.docs
-            .delete_where(RUNS, &runs_of(&stored.id, &stored.doc))
-            .await
-            .map_err(storage_error)?;
-        Ok(true)
-    }
-
-    /// Deletes every job (and every run). Returns the number of jobs removed.
-    pub async fn clear_all_jobs(&self) -> Result<usize> {
-        self.ensure().await?;
-        let removed = self
-            .docs
-            .delete_where(JOBS, &Filter::All)
-            .await
-            .map_err(storage_error)
-            .context("Failed to clear cron jobs")?;
-        self.docs
-            .delete_where(RUNS, &Filter::All)
-            .await
-            .map_err(storage_error)?;
-        tracing::info!("[cron] cleared all cron jobs (removed {removed} rows)");
-        Ok(usize::try_from(removed).unwrap_or(usize::MAX))
     }
 
     /// Removes duplicate jobs sharing a `name`: per name, keeps the job with
@@ -364,7 +312,9 @@ impl CronDocuments {
             let keep = ranked[0].2.clone();
             let mut deleted = 0usize;
             for (_, _, _, stored) in ranked.into_iter().skip(1) {
-                if self.remove_stored(stored).await? {
+                // Only a duplicate unchanged since the snapshot: one renamed
+                // or edited meanwhile may no longer be a duplicate.
+                if self.remove_unchanged(stored).await? {
                     deleted += 1;
                 }
             }
@@ -381,12 +331,19 @@ impl CronDocuments {
     /// size. A read: see the module docs on two schedulers sharing a database.
     pub async fn due_jobs(&self, now: DateTime<Utc>) -> Result<Vec<CronJob>> {
         self.ensure().await?;
-        let query = Query::filter(
-            Filter::eq("enabled", true).and(Filter::lte("next_run_ms", now.timestamp_millis())),
-        )
-        .sort(Sort::asc("next_run_ms"))
-        .sort(Sort::asc("_id"))
-        .limit(self.max_tasks);
+        // Due by milliseconds; nanoseconds only order jobs due within the
+        // current millisecond, so a nanosecond value saturated outside
+        // 1677–2262 never decides on its own. A document written before
+        // `next_run_ns` existed is due by its milliseconds alone.
+        let now_ms = now.timestamp_millis();
+        let same_ms = Filter::eq("next_run_ms", now_ms);
+        let due = Filter::lt("next_run_ms", now_ms).or(same_ms
+            .and(Filter::lte("next_run_ns", nanos(now)).or(Filter::exists("next_run_ns", false))));
+        let query = Query::filter(Filter::eq("enabled", true).and(due))
+            .sort(Sort::asc("next_run_ms"))
+            .sort(Sort::asc("next_run_ns"))
+            .sort(Sort::asc("_id"))
+            .limit(self.max_tasks);
         let page = self.docs.query(JOBS, &query).await.map_err(storage_error)?;
         page.items.iter().map(doc_to_job).collect()
     }
@@ -433,7 +390,10 @@ pub(super) fn runs_of(job_id: &str, doc: &Value) -> Filter {
     let of_job = Filter::eq("job_id", job_id);
     match incarnation(doc) {
         Some(incarnation) => of_job.and(Filter::eq(INCARNATION, incarnation)),
-        None => of_job,
+        // A job written before incarnations owns only runs without one; a
+        // job re-created under its id since has an incarnation, and so do
+        // its runs, which this never matches.
+        None => of_job.and(Filter::exists(INCARNATION, false)),
     }
 }
 
@@ -452,3 +412,7 @@ pub(super) fn reschedule(
 #[cfg(test)]
 #[path = "jobs_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "jobs_more_tests.rs"]
+mod more_tests;

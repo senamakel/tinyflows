@@ -9,6 +9,7 @@ use tinyflows_schedule::{
 
 /// `job` with `patch` applied, exactly as the SQLite store applies it.
 pub(super) fn apply_patch(mut job: CronJob, patch: CronJobPatch) -> Result<CronJob> {
+    tinyflows_schedule::check_patch(&job, &patch)?;
     let was_enabled = job.enabled;
     let mut schedule_changed = false;
     if let Some(schedule) = patch.schedule {
