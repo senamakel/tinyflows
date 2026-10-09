@@ -9,7 +9,7 @@ use tinyflows_schedule::{
 };
 use tinystoragedrivers_core::{DocumentStoreExt, ErrorKind, Filter, Precondition, Query, Sort};
 
-use super::codec::{doc_to_run, incarnation, run_id, run_to_doc, set_last_run};
+use super::codec::{doc_to_run, incarnation, nanos, run_id, run_to_doc, set_last_run};
 use super::jobs::{reschedule, runs_of};
 use super::{
     CAS_ATTEMPTS, COUNTERS, CronDocuments, JOBS, RUNS, compare_and_swap, job_not_found,
@@ -64,13 +64,20 @@ impl CronDocuments {
         let next_run = next_run_for_schedule(&job.schedule, now)?;
         let one_shot = matches!(job.schedule, Schedule::At { .. });
         let fired_ms = job.next_run.timestamp_millis();
+        let fired_ns = nanos(job.next_run);
         let fired_schedule =
             serde_json::to_string(&job.schedule).context("serialize cron schedule")?;
         let output = truncate_cron_output(output);
         compare_and_swap(&self.docs, JOBS, &job.id, |doc| {
             let mut next = doc.as_object().cloned().unwrap_or_default();
             set_last_run(&mut next, now, success, output.clone());
-            let unmoved = doc.get("next_run_ms").and_then(Value::as_i64) == Some(fired_ms)
+            // Nanoseconds when the document has them; a document written
+            // before `next_run_ns` compares at millisecond precision.
+            let same_occurrence = match doc.get("next_run_ns") {
+                Some(stored) => stored.as_i64() == Some(fired_ns),
+                None => doc.get("next_run_ms").and_then(Value::as_i64) == Some(fired_ms),
+            };
+            let unmoved = same_occurrence
                 && doc.get("schedule").and_then(Value::as_str) == Some(fired_schedule.as_str());
             if unmoved {
                 reschedule(&mut next, next_run, one_shot);
