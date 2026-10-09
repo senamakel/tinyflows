@@ -9,10 +9,8 @@ use tinyflows_schedule::{
 };
 use tinystoragedrivers_core::{DocumentStoreExt, ErrorKind, Filter, Precondition, Query, Sort};
 
-use super::codec::{
-    doc_to_run, incarnation, integer, nanos, run_id, run_to_doc, set_last_run,
-};
 use super::codec;
+use super::codec::{doc_to_run, incarnation, integer, nanos, run_id, run_to_doc, set_last_run};
 use super::jobs::{reschedule, runs_of};
 use super::{
     CAS_ATTEMPTS, COUNTERS, CronDocuments, JOBS, RUNS, compare_and_swap, job_not_found,
@@ -204,9 +202,8 @@ impl CronDocuments {
             // a run id.
             let next = match &stored {
                 None => 1,
-                Some(stored) => integer(&stored.doc, "next")?.ok_or_else(|| {
-                    anyhow::anyhow!("cron store: the run counter has no `next`")
-                })?,
+                Some(stored) => integer(&stored.doc, "next")?
+                    .ok_or_else(|| anyhow::anyhow!("cron store: the run counter has no `next`"))?,
             };
             let precondition = stored
                 .as_ref()
@@ -283,7 +280,9 @@ impl CronDocuments {
             std::collections::HashMap::new();
         let mut swept = 0usize;
         for run in &runs {
-            let job_id = codec::text(&run.doc, "job_id").unwrap_or_default().to_string();
+            let job_id = codec::text(&run.doc, "job_id")
+                .unwrap_or_default()
+                .to_string();
             if !owners.contains_key(&job_id) {
                 let job = self.docs.get(JOBS, &job_id).await.map_err(storage_error)?;
                 owners.insert(

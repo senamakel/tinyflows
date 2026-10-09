@@ -1,5 +1,6 @@
-use super::super::test_support::{channel_origin, daily, store};
 use super::*;
+
+use super::super::test_support::{channel_origin, daily, store};
 use chrono::Duration;
 use tinyflows_schedule::{ActiveHours, JobOrigin};
 

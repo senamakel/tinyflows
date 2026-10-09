@@ -1,6 +1,7 @@
+use super::*;
+
 use super::super::codec::incarnation;
 use super::super::test_support::{daily, store};
-use super::*;
 use chrono::Duration;
 use tinyflows_schedule::{MAX_CRON_OUTPUT_BYTES, TRUNCATED_OUTPUT_MARKER};
 

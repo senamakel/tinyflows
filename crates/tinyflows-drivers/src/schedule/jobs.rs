@@ -345,7 +345,11 @@ impl CronDocuments {
             return Ok(true);
         }
         for _ in 0..CAS_ATTEMPTS {
-            let Some(current) = self.docs.get(JOBS, &stored.id).await.map_err(storage_error)?
+            let Some(current) = self
+                .docs
+                .get(JOBS, &stored.id)
+                .await
+                .map_err(storage_error)?
             else {
                 return Ok(false);
             };

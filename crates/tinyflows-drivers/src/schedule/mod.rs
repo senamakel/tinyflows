@@ -121,7 +121,10 @@ impl CronDocuments {
         vec![
             CollectionSpec::new(JOBS)
                 .index(IndexSpec::new("by_next_run", ["next_run_ms"]))
-                .index(IndexSpec::new("by_due", ["enabled", "next_run_ms", "next_run_ns"]))
+                .index(IndexSpec::new(
+                    "by_due",
+                    ["enabled", "next_run_ms", "next_run_ns"],
+                ))
                 .index(IndexSpec::new("by_name", ["name"]))
                 .index(IndexSpec::new("by_flow", ["job_type", "command"])),
             CollectionSpec::new(RUNS)
