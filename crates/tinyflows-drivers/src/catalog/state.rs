@@ -117,9 +117,9 @@ impl DedupKv for FlowStateDocuments {
 
     fn kv_set(&self, key: &str, value: &Value) -> std::result::Result<(), String> {
         let (key, value) = (key.to_string(), value.clone());
-        self.blocking(|catalog, namespace| async move {
-            catalog.kv_set(&namespace, &key, &value).await
-        })
+        self.blocking(
+            |catalog, namespace| async move { catalog.kv_set(&namespace, &key, &value).await },
+        )
     }
 
     fn kv_delete(&self, key: &str) -> std::result::Result<(), String> {

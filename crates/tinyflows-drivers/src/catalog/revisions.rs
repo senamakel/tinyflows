@@ -132,7 +132,9 @@ impl FlowCatalogDocuments {
                         .map_err(Into::into)
                 })
                 .await;
-                return Err(FlowUpdateError::Store(error.context("Failed to update flow")));
+                return Err(FlowUpdateError::Store(
+                    error.context("Failed to update flow"),
+                ));
             }
         };
         if swapped.is_none() {

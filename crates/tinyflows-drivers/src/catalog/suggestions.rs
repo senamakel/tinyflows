@@ -78,7 +78,10 @@ impl FlowCatalogDocuments {
             .await
             .context("Failed to upsert flow suggestion")?;
         }
-        tracing::debug!(count = suggestions.len(), "[flows] upserted flow suggestions");
+        tracing::debug!(
+            count = suggestions.len(),
+            "[flows] upserted flow suggestions"
+        );
         Ok(suggestions.len())
     }
 

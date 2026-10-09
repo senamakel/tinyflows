@@ -10,8 +10,8 @@ use tinystoragedrivers_core::{DocumentStoreExt, Filter, Precondition, Query, Sor
 use uuid::Uuid;
 
 use super::{
-    DEFINITIONS, FlowCatalogDocuments, REVISIONS, RUNS, STEPS, compare_and_swap, flag,
-    instant_ns, required, set_optional, text, upsert,
+    DEFINITIONS, FlowCatalogDocuments, REVISIONS, RUNS, STEPS, compare_and_swap, flag, instant_ns,
+    required, set_optional, text, upsert,
 };
 
 /// `flow` as a document, keeping `created_at` from `existing` when there is
@@ -63,9 +63,11 @@ impl FlowCatalogDocuments {
     /// existing one is kept).
     pub async fn upsert_flow(&self, flow: &Flow) -> Result<()> {
         let docs = self.docs().await?;
-        upsert(docs, DEFINITIONS, &flow.id, |existing| to_doc(flow, existing))
-            .await
-            .context("Failed to upsert flow definition")?;
+        upsert(docs, DEFINITIONS, &flow.id, |existing| {
+            to_doc(flow, existing)
+        })
+        .await
+        .context("Failed to upsert flow definition")?;
         tracing::debug!(flow_id = %flow.id, "[flows] upserted flow definition");
         Ok(())
     }

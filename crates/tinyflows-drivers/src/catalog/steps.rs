@@ -66,8 +66,13 @@ pub(crate) async fn replace_steps(
     for (index, step) in steps.iter().enumerate() {
         let id = step_id(run_id, &step.node_id);
         let order = i64::try_from(index).unwrap_or(i64::MAX);
-        docs.put(STEPS, &id, step_doc(run_id, step, order)?, Precondition::None)
-            .await?;
+        docs.put(
+            STEPS,
+            &id,
+            step_doc(run_id, step, order)?,
+            Precondition::None,
+        )
+        .await?;
         kept.insert(id);
     }
     let existing = docs

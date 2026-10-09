@@ -111,7 +111,11 @@ impl FlowCatalogDocuments {
                 continue;
             }
             // Only the version read: a run that changed since is left alone.
-            if docs.delete(RUNS, &old.id, old.unchanged()).await.unwrap_or(false) {
+            if docs
+                .delete(RUNS, &old.id, old.unchanged())
+                .await
+                .unwrap_or(false)
+            {
                 docs.delete_where(STEPS, &Filter::eq("run_id", old.id.as_str()))
                     .await?;
                 deleted += 1;
@@ -221,7 +225,10 @@ impl FlowCatalogDocuments {
 
     /// The `(id, flow_id)` of every `running` run started strictly before
     /// `started_before`, for the boot orphan sweep (B42).
-    pub async fn list_running_run_ids(&self, started_before: &str) -> Result<Vec<(String, String)>> {
+    pub async fn list_running_run_ids(
+        &self,
+        started_before: &str,
+    ) -> Result<Vec<(String, String)>> {
         let docs = self.docs().await?;
         let running = docs
             .query_all(
