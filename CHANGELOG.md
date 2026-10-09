@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Storage-driver backends (`storage-drivers` feature).**
+  `caps::DriverStateStore` implements `StateStore` and
+  `graph::checkpoint::DriverCheckpointer` implements the graph `Checkpointer`
+  over a `tinystoragedrivers` document port (git dependency at `v0.4.0`, so a
+  host that vendors the storage crates once can `[patch]` it). The
+  checkpointer stores one document per checkpoint with a per-thread
+  compare-and-swap sequence, merges pending writes under compare-and-swap,
+  pushes namespace-scoped reads down to one indexed query, length-prefixes
+  every key component and hashes over-long ids with SHA-256. Off by default;
+  the feature needs Rust 1.88.
+
 - **Node postconditions (`tinyflows::postcondition`).** A node may declare
   `config.postcondition = { "require": ..., "field": ... }` — `non_empty`,
   `field_present` or `non_empty_list` — and the engine checks it against every

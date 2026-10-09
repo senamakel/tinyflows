@@ -90,6 +90,14 @@ Rust 2024 · MSRV 1.85 · `#![forbid(unsafe_code)]` · GPL-3.0-or-later.
 - Host-injected capability traits: `LlmProvider`, `ToolInvoker`, `HttpClient`,
   `CodeRunner`, `ShellRunner`, and `StateStore`. Deterministic in-memory mocks ship behind the
   `mock` cargo feature (`caps::mock::mock_capabilities()`).
+- Storage-driver backends behind the `storage-drivers` cargo feature:
+  `caps::DriverStateStore` (a `StateStore`) and
+  `graph::checkpoint::DriverCheckpointer` (a graph `Checkpointer` with
+  checkpoints, pending writes and namespace-scoped reads), both over a
+  [tinystoragedrivers](https://github.com/tinyhumansai/tinystoragedrivers)
+  document port. The host opens SQLite, MongoDB or memory and hands over a
+  tenant-scoped handle; the default collections (`flows_state`,
+  `flows_graph_*`) stay apart from TinyAgents' own. Needs Rust 1.88.
 - Opaque `connection_ref` credential references — the host resolves them to real
   secrets; the crate never sees them.
 - Versioned wire format: graph `schema_version` and per-node `type_version`, with
