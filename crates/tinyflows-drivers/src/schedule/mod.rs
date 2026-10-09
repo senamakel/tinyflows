@@ -58,6 +58,8 @@ use tinystoragedrivers_core::{
 mod codec;
 mod jobs;
 mod runs;
+#[cfg(test)]
+mod test_support;
 
 pub use tinyflows_schedule::{
     AgentJobSpec, MAX_CRON_OUTPUT_BYTES, TRUNCATED_OUTPUT_MARKER, truncate_cron_output,
