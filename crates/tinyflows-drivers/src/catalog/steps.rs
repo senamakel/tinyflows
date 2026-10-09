@@ -11,7 +11,7 @@ use anyhow::{Context, Result};
 use serde_json::{Value, json};
 use tinyflows_catalog::FlowRunStep;
 
-use super::{FlowCatalogDocuments, RUNS, compare_and_swap, text};
+use super::{FlowCatalogDocuments, RUNS, compare_and_swap, is_conflict, text};
 
 /// Attempts for a step upsert. Parallel branches of one run contend on the
 /// run document, so this is higher than the default.
@@ -69,7 +69,7 @@ impl FlowCatalogDocuments {
                         }
                     }
                 }
-                Err(error) if error.to_string().contains("kept changing") => {}
+                Err(error) if is_conflict(&error) => {}
                 Err(error) => {
                     return Err(error).context("Failed to persist incremental flow run step");
                 }
