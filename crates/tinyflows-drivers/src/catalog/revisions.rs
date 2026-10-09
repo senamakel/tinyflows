@@ -12,6 +12,7 @@ use tinystoragedrivers_core::{
 };
 use uuid::Uuid;
 
+use super::definitions::to_flow;
 use super::lineage::{FLOW_INCARNATION, belongs, incarnation, reclaim};
 use super::{
     DEFINITIONS, FlowCatalogDocuments, FlowUpdateError, MAX_REVISIONS_PER_FLOW, REVISIONS,
@@ -270,6 +271,10 @@ impl FlowCatalogDocuments {
     pub async fn list_revisions(&self, flow_id: &str, limit: usize) -> Result<Vec<FlowRevision>> {
         let docs = self.docs().await?;
         let Some(flow) = docs.get(DEFINITIONS, flow_id).await? else {
+            // Anything still filed under a removed flow is an orphan (a
+            // write that landed after its final sweep): hide and reclaim it.
+            let orphans = docs.query_all(REVISIONS, &newest_first(flow_id)).await?;
+            reclaim(docs, REVISIONS, &orphans).await;
             return Ok(Vec::new());
         };
         if limit == 0 {

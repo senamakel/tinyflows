@@ -109,25 +109,36 @@ async fn a_revision_written_during_the_removal_never_shows() {
 }
 
 #[tokio::test]
-async fn a_revision_pruned_in_flight_is_restored_after_the_swap() {
+async fn the_committed_revision_is_written_whatever_a_prune_did() {
     let store = catalog();
     let docs = store.docs().await.unwrap();
     let revision = json!({ "flow_id": "f", "graph_json": "{}", "name": "n", "created_at": "x" });
-    confirm_or_restore(docs, "gone", &revision).await.unwrap();
-    let restored = docs.get(REVISIONS, "gone").await.unwrap().unwrap();
-    assert!(!flag(&restored.doc, "pending"));
-    assert_eq!(restored.doc["name"], json!("n"));
-    // An existing one is only confirmed.
     let mut pending = revision.clone();
     pending["pending"] = json!(true);
-    docs.put(REVISIONS, "here", pending, Precondition::Absent)
+    docs.put(REVISIONS, "r", pending, Precondition::Absent)
         .await
         .unwrap();
-    confirm_or_restore(docs, "here", &revision).await.unwrap();
-    assert!(!flag(
-        &docs.get(REVISIONS, "here").await.unwrap().unwrap().doc,
-        "pending"
-    ));
+    // A prune reads the pending revision as abandoned...
+    let prune_read = docs.get(REVISIONS, "r").await.unwrap().unwrap();
+    // ...and deletes it before the committed update confirms it.
+    delete_unchanged(docs, &prune_read).await.unwrap();
+    assert!(docs.get(REVISIONS, "r").await.unwrap().is_none());
+    confirm_or_restore(docs, "r", &revision).await.unwrap();
+    let restored = docs.get(REVISIONS, "r").await.unwrap().unwrap();
+    assert!(!flag(&restored.doc, "pending"));
+    assert_eq!(restored.doc["name"], json!("n"));
+
+    // The other order: confirmed first, then a prune holding the old pending
+    // version cannot delete it.
+    let mut pending = revision.clone();
+    pending["pending"] = json!(true);
+    docs.put(REVISIONS, "s", pending, Precondition::Absent)
+        .await
+        .unwrap();
+    let prune_read = docs.get(REVISIONS, "s").await.unwrap().unwrap();
+    confirm_or_restore(docs, "s", &revision).await.unwrap();
+    delete_unchanged(docs, &prune_read).await.unwrap();
+    assert!(docs.get(REVISIONS, "s").await.unwrap().is_some());
 }
 
 #[tokio::test]

@@ -169,3 +169,85 @@ async fn an_unfenced_writers_run_stays_visible_and_is_never_reclaimed() {
     assert!(store.get_flow_run("old-writer").await.unwrap().is_some());
     assert!(docs.get(RUNS, "old-writer").await.unwrap().is_some());
 }
+
+#[tokio::test]
+async fn a_stale_classification_never_reclaims_the_recreated_flows_records() {
+    let store = catalog();
+    let flow = store
+        .create_flow("f".into(), trigger_graph(), false, true)
+        .await
+        .unwrap();
+    let docs = store.docs().await.unwrap();
+    // A reader snapshots incarnation A, then the flow is removed and created
+    // again (B), and B gets a run before the reader reclaims.
+    store.remove_flow(&flow.id).await.unwrap();
+    let mut again = flow.clone();
+    again.name = "again".into();
+    store.upsert_flow(&again).await.unwrap();
+    store
+        .insert_flow_run("b-run", &flow.id, "t", "2026-01-01T00:00:00Z")
+        .await
+        .unwrap();
+    let b_run = docs.get(RUNS, "b-run").await.unwrap().unwrap();
+    reclaim(docs, RUNS, std::slice::from_ref(&b_run)).await;
+    assert!(
+        docs.get(RUNS, "b-run").await.unwrap().is_some(),
+        "re-checked against the current definition, so kept"
+    );
+    assert_eq!(store.list_flow_runs(&flow.id, 10).await.unwrap().len(), 1);
+}
+
+/// Races real catalog operations against `remove_flow` many times; whatever
+/// the interleaving, nothing of the removed flow may ever be visible, and a
+/// flow created again under the same id starts clean.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn racing_writes_against_removal_never_leave_a_visible_orphan() {
+    let store = catalog();
+    for round in 0..40 {
+        let flow = store
+            .create_flow(format!("f{round}"), trigger_graph(), false, true)
+            .await
+            .unwrap();
+        let (updater, inserter, remover) = (store.clone(), store.clone(), store.clone());
+        let (id_u, id_i, id_r) = (flow.id.clone(), flow.id.clone(), flow.id.clone());
+        let update = tokio::spawn(async move {
+            let _ = updater
+                .update_flow_graph(
+                    &id_u,
+                    "v2".into(),
+                    trigger_graph(),
+                    false,
+                    None,
+                    false,
+                    None,
+                )
+                .await;
+        });
+        let insert = tokio::spawn(async move {
+            let _ = inserter
+                .insert_flow_run(&format!("run-{round}"), &id_i, "t", "2026-01-01T00:00:00Z")
+                .await;
+        });
+        let remove = tokio::spawn(async move { remover.remove_flow(&id_r).await });
+        update.await.unwrap();
+        insert.await.unwrap();
+        remove.await.unwrap().unwrap();
+
+        assert!(store.list_revisions(&flow.id, 10).await.unwrap().is_empty());
+        assert!(store.list_flow_runs(&flow.id, 10).await.unwrap().is_empty());
+        assert!(
+            store
+                .get_flow_run(&format!("run-{round}"))
+                .await
+                .unwrap()
+                .is_none()
+        );
+        let mut again = flow.clone();
+        again.name = "again".into();
+        store.upsert_flow(&again).await.unwrap();
+        assert!(store.list_revisions(&flow.id, 10).await.unwrap().is_empty());
+        assert!(store.list_flow_runs(&flow.id, 10).await.unwrap().is_empty());
+        store.remove_flow(&flow.id).await.unwrap();
+    }
+    assert!(store.list_all_flow_runs(100).await.unwrap().is_empty());
+}
