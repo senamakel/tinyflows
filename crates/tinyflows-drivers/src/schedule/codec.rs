@@ -19,7 +19,37 @@ pub(super) fn text<'a>(doc: &'a Value, field: &str) -> Option<&'a str> {
 }
 
 fn required<'a>(doc: &'a Value, field: &str) -> Result<&'a str> {
-    text(doc, field).ok_or_else(|| anyhow!("cron store: document has no `{field}`"))
+    optional(doc, field)?.ok_or_else(|| anyhow!("cron store: document has no `{field}`"))
+}
+
+/// The string field `field` of `doc`: `None` when absent, an error when
+/// present with another type, so a malformed document is never read as a
+/// default.
+fn optional<'a>(doc: &'a Value, field: &str) -> Result<Option<&'a str>> {
+    match doc.get(field) {
+        None => Ok(None),
+        Some(Value::String(value)) => Ok(Some(value)),
+        Some(_) => Err(anyhow!("cron store: `{field}` is not a string")),
+    }
+}
+
+/// A stored job type. Unknown values are an error rather than a shell job:
+/// reading a tampered `job_type` as `shell` would run its `command`.
+fn job_type(raw: &str) -> Result<JobType> {
+    [JobType::Shell, JobType::Agent, JobType::Flow]
+        .into_iter()
+        .find(|known| known.as_str() == raw)
+        .ok_or_else(|| anyhow!("cron store: unknown job type `{raw}`"))
+}
+
+/// The field holding a job's incarnation: a fresh id per created job, carried
+/// by its runs, so a run written late for a removed job never attaches to a
+/// later job that reuses its id (a flow's schedule job does).
+pub(super) const INCARNATION: &str = "incarnation";
+
+/// `doc`'s incarnation, when it has one.
+pub(super) fn incarnation(doc: &Value) -> Option<&str> {
+    text(doc, INCARNATION)
 }
 
 fn instant(raw: &str) -> Result<DateTime<Utc>> {
@@ -123,36 +153,47 @@ pub(super) fn doc_to_job(stored: &Versioned<Value>) -> Result<CronJob> {
     let doc = &stored.doc;
     let schedule: Schedule = serde_json::from_str(required(doc, "schedule")?)
         .context("Failed to parse cron schedule JSON")?;
-    let delivery: DeliveryConfig = match text(doc, "delivery") {
+    let delivery: DeliveryConfig = match optional(doc, "delivery")? {
         Some(raw) => serde_json::from_str(raw).context("Failed to parse cron delivery JSON")?,
         None => DeliveryConfig::default(),
     };
-    let origin: Option<JobOrigin> = text(doc, "origin")
+    let origin: Option<JobOrigin> = optional(doc, "origin")?
         .map(serde_json::from_str)
         .transpose()
         .context("Failed to parse cron origin JSON")?;
-    let flag = |field: &str| doc.get(field).and_then(Value::as_bool).unwrap_or(false);
+    let flag = |field: &str| match doc.get(field) {
+        None => Ok(false),
+        Some(Value::Bool(value)) => Ok(*value),
+        Some(_) => Err(anyhow!("cron store: `{field}` is not a boolean")),
+    };
+    let owned = |field: &str| optional(doc, field).map(|value| value.map(str::to_string));
     Ok(CronJob {
         id: stored.id.clone(),
-        expression: text(doc, "expression").unwrap_or_default().to_string(),
+        expression: required(doc, "expression")?.to_string(),
         schedule,
-        command: text(doc, "command").unwrap_or_default().to_string(),
-        prompt: text(doc, "prompt").map(str::to_string),
-        name: text(doc, "name").map(str::to_string),
-        job_type: JobType::parse(required(doc, "job_type")?),
-        session_target: SessionTarget::parse(text(doc, "session_target").unwrap_or("isolated")),
-        model: text(doc, "model").map(str::to_string),
-        agent_id: text(doc, "agent_id").map(str::to_string),
-        enabled: flag("enabled"),
+        command: required(doc, "command")?.to_string(),
+        prompt: owned("prompt")?,
+        name: owned("name")?,
+        job_type: job_type(required(doc, "job_type")?)?,
+        session_target: SessionTarget::parse(optional(doc, "session_target")?.unwrap_or("isolated")),
+        model: owned("model")?,
+        agent_id: owned("agent_id")?,
+        enabled: flag("enabled")?,
         delivery,
-        delete_after_run: flag("delete_after_run"),
+        delete_after_run: flag("delete_after_run")?,
         created_at: instant(required(doc, "created_at")?)?,
         next_run: instant(required(doc, "next_run")?)?,
-        last_run: text(doc, "last_run").map(instant).transpose()?,
-        last_status: text(doc, "last_status").map(str::to_string),
-        last_output: text(doc, "last_output").map(str::to_string),
+        last_run: optional(doc, "last_run")?.map(instant).transpose()?,
+        last_status: owned("last_status")?,
+        last_output: owned("last_output")?,
         origin,
     })
+}
+
+/// The instant a job document was created, at full precision (for ordering
+/// jobs created within one millisecond).
+pub(super) fn created_at(doc: &Value) -> Option<DateTime<Utc>> {
+    text(doc, "created_at").and_then(|raw| instant(raw).ok())
 }
 
 /// The document id of run number `seq`: zero-padded, so ids sort as numbers.
@@ -165,6 +206,7 @@ pub(super) fn run_id(seq: i64) -> String {
 pub(super) fn run_to_doc(
     seq: i64,
     job_id: &str,
+    incarnation: Option<&str>,
     started_at: DateTime<Utc>,
     finished_at: DateTime<Utc>,
     status: &str,
@@ -180,6 +222,7 @@ pub(super) fn run_to_doc(
     doc.insert("finished_at".into(), json!(finished_at.to_rfc3339()));
     doc.insert("status".into(), json!(status));
     doc.insert("duration_ms".into(), json!(duration_ms));
+    set(&mut doc, INCARNATION, incarnation.map(|value| json!(value)));
     set(&mut doc, "output", output.map(Value::String));
     set(
         &mut doc,
