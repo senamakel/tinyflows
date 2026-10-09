@@ -55,11 +55,17 @@ impl FlowCatalogDocuments {
         force_disarm_if_automatic: bool,
         expected_updated_at: Option<&str>,
     ) -> std::result::Result<Flow, FlowUpdateError> {
-        let current = self
-            .get_flow(id)
+        let docs = self.docs().await.map_err(FlowUpdateError::Store)?;
+        // One snapshot for everything below: the graph and stamp the update
+        // is based on, the incarnation the revision is filed under, and the
+        // revision the flow names — so a flow removed and created again in
+        // between can never be overwritten with this one's stale data.
+        let stored = docs
+            .get(DEFINITIONS, id)
             .await
-            .map_err(FlowUpdateError::Store)?
+            .map_err(|error| FlowUpdateError::Store(error.into()))?
             .ok_or(FlowUpdateError::NotFound)?;
+        let current = to_flow(&stored).map_err(FlowUpdateError::Store)?;
         if let Some(expected) = expected_updated_at
             && current.updated_at != expected
         {
@@ -95,20 +101,12 @@ impl FlowCatalogDocuments {
         // Strictly after the current stamp: `updated_at` is the concurrency
         // token and the revision order, so it must never repeat.
         let now = next_stamp(Some(&current.updated_at));
-        let docs = self.docs().await.map_err(FlowUpdateError::Store)?;
 
         // A previous update that crashed after its swap left its revision
         // pending; the flow names it, so confirm it before moving past it.
         // If confirming it fails the save stops here: moving `last_revision_id`
         // past an unconfirmed revision would hide that audit snapshot for good.
-        let stored = docs
-            .get(DEFINITIONS, id)
-            .await
-            .map_err(|error| FlowUpdateError::Store(error.into()))?;
-        if let Some(last) = stored
-            .as_ref()
-            .and_then(|stored| text(&stored.doc, "last_revision_id"))
-        {
+        if let Some(last) = text(&stored.doc, "last_revision_id") {
             confirm(docs, last)
                 .await
                 .context("Failed to confirm the previous flow revision")
@@ -118,10 +116,7 @@ impl FlowCatalogDocuments {
         // Pending until the swap below names it: a lost race or a crash in
         // between never shows a revision for an update that did not happen.
         let revision_id = Uuid::new_v4().to_string();
-        let flow_incarnation = stored
-            .as_ref()
-            .and_then(|stored| incarnation(&stored.doc))
-            .map(str::to_string);
+        let flow_incarnation = incarnation(&stored.doc).map(str::to_string);
         let mut revision = json!({
             "flow_id": id,
             "graph_json": prior_graph_json,
@@ -270,12 +265,35 @@ impl FlowCatalogDocuments {
         Ok((visible_revisions, pending, orphans))
     }
 
-    /// A flow's revisions, newest first, up to `limit`.
+    /// A flow's revisions, newest first, up to `limit`. Reads in pages of
+    /// `limit`, so memory follows the request rather than the history.
     pub async fn list_revisions(&self, flow_id: &str, limit: usize) -> Result<Vec<FlowRevision>> {
         let docs = self.docs().await?;
-        let (visible, _, orphans) = self.partition(docs, flow_id).await?;
+        let Some(flow) = docs.get(DEFINITIONS, flow_id).await? else {
+            return Ok(Vec::new());
+        };
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+        let latest = text(&flow.doc, "last_revision_id");
+        let mut query = newest_first(flow_id).limit(limit);
+        let (mut revisions, mut orphans) = (Vec::with_capacity(limit), Vec::new());
+        loop {
+            let page = docs.query(REVISIONS, &query).await?;
+            for stored in page.items {
+                if !belongs(&stored.doc, Some(&flow.doc)) {
+                    orphans.push(stored);
+                } else if visible(&stored, latest) && revisions.len() < limit {
+                    revisions.push(to_revision(&stored)?);
+                }
+            }
+            match page.next {
+                Some(cursor) if revisions.len() < limit => query = query.after(cursor),
+                _ => break,
+            }
+        }
         reclaim(docs, REVISIONS, &orphans).await;
-        visible.iter().take(limit).map(to_revision).collect()
+        Ok(revisions)
     }
 
     /// One revision of `flow_id` by id, or `None`.
@@ -332,30 +350,19 @@ async fn confirm(docs: &Arc<dyn DocumentStore>, id: &str) -> Result<bool> {
     Ok(docs.get(REVISIONS, id).await?.is_some())
 }
 
-/// Confirms the revision a committed update named, writing it again
-/// (confirmed) when a prune took it while the update was in flight, so the
-/// flow never names a missing snapshot.
+/// Writes the revision a committed update named, confirmed, whatever state
+/// it is in: pending (the common case), already confirmed, or taken by a
+/// prune while the update was in flight. One unconditional write of content
+/// this update owns, so there is no existence check to race; a prune that
+/// read the pending version before it fails its versioned delete.
 async fn confirm_or_restore(
     docs: &Arc<dyn DocumentStore>,
     id: &str,
     revision: &Value,
 ) -> Result<()> {
-    if confirm(docs, id).await? {
-        return Ok(());
-    }
-    tracing::warn!(
-        target: "flows",
-        revision_id = id,
-        "[flows] a committed update's revision was pruned in flight — restoring it"
-    );
-    match docs
-        .put(REVISIONS, id, revision.clone(), Precondition::Absent)
-        .await
-    {
-        Ok(_) => Ok(()),
-        Err(error) if error.kind() == ErrorKind::AlreadyExists => Ok(()),
-        Err(error) => Err(error.into()),
-    }
+    docs.put(REVISIONS, id, revision.clone(), Precondition::None)
+        .await?;
+    Ok(())
 }
 
 /// Deletes `stored` only at the version read; a revision changed since (a

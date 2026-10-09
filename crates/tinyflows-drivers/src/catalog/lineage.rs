@@ -76,14 +76,40 @@ pub(crate) fn belongs_in(dependent: &Value, flows: &HashMap<String, Option<Strin
         })
 }
 
-/// Deletes orphans a reader met, each only at the version read. Best effort:
-/// an orphan is invisible either way, so a failure is logged, not returned.
+/// Deletes orphans a reader met. Best effort: an orphan is invisible either
+/// way, so a failure is logged, not returned.
+///
+/// The reader classified them against a definition it read earlier; the flow
+/// may have been removed and created again since, and a record written under
+/// the new incarnation would then look like an orphan of the old one. So each
+/// is checked again against its flow's definition as it is *now*, and deleted
+/// only at the version the reader saw. Once that fresh check says orphan, no
+/// later definition can adopt it: a new incarnation is a new id.
 pub(crate) async fn reclaim(
     docs: &Arc<dyn DocumentStore>,
     collection: &str,
     orphans: &[Versioned<Value>],
 ) {
     for orphan in orphans {
+        let current = match text(&orphan.doc, "flow_id") {
+            Some(flow_id) => match docs.get(DEFINITIONS, flow_id).await {
+                Ok(current) => current,
+                Err(error) => {
+                    tracing::warn!(
+                        target: "flows",
+                        collection,
+                        id = %orphan.id,
+                        %error,
+                        "[flows] could not re-check a record of a removed flow (it stays hidden)"
+                    );
+                    continue;
+                }
+            },
+            None => None,
+        };
+        if belongs(&orphan.doc, current.as_ref().map(|stored| &stored.doc)) {
+            continue;
+        }
         match docs
             .delete(collection, &orphan.id, orphan.unchanged())
             .await
