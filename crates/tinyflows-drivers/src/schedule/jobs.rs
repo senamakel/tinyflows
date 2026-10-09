@@ -313,21 +313,50 @@ impl CronDocuments {
         Ok(true)
     }
 
-    /// Deletes every job (and every run). Returns the number of jobs removed.
+    /// Deletes every job and the runs of the jobs it deleted, then sweeps
+    /// runs left behind by jobs already gone. Returns the number of jobs
+    /// removed.
+    ///
+    /// Each job goes with its own incarnation's runs, so a job created while
+    /// this runs (and the runs it records) survives the clear.
     pub async fn clear_all_jobs(&self) -> Result<usize> {
         self.ensure().await?;
-        let removed = self
+        let jobs = self
             .docs
-            .delete_where(JOBS, &Filter::All)
+            .query_all(JOBS, &Query::all())
             .await
             .map_err(storage_error)
             .context("Failed to clear cron jobs")?;
-        self.docs
-            .delete_where(RUNS, &Filter::All)
-            .await
-            .map_err(storage_error)?;
-        tracing::info!("[cron] cleared all cron jobs (removed {removed} rows)");
-        Ok(usize::try_from(removed).unwrap_or(usize::MAX))
+        let mut removed = 0usize;
+        for stored in &jobs {
+            if self.remove_current(stored).await? {
+                removed += 1;
+            }
+        }
+        let swept = self.sweep_orphan_runs().await?;
+        tracing::info!("[cron] cleared all cron jobs (removed {removed} jobs, swept {swept} runs)");
+        Ok(removed)
+    }
+
+    /// Removes the job `stored` names as it currently is, retrying while it
+    /// changes. `false` when it is already gone.
+    async fn remove_current(&self, stored: &Versioned<Value>) -> Result<bool> {
+        if self.remove_stored(stored).await? {
+            return Ok(true);
+        }
+        for _ in 0..CAS_ATTEMPTS {
+            let Some(current) = self.docs.get(JOBS, &stored.id).await.map_err(storage_error)?
+            else {
+                return Ok(false);
+            };
+            if self.remove_stored(&current).await? {
+                return Ok(true);
+            }
+        }
+        anyhow::bail!(
+            "cron store: job {} kept changing under {CAS_ATTEMPTS} attempts",
+            stored.id
+        )
     }
 
     /// Removes duplicate jobs sharing a `name`: per name, keeps the job with

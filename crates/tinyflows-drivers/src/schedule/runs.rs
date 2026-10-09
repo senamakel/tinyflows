@@ -9,7 +9,10 @@ use tinyflows_schedule::{
 };
 use tinystoragedrivers_core::{DocumentStoreExt, ErrorKind, Filter, Precondition, Query, Sort};
 
-use super::codec::{doc_to_run, incarnation, nanos, run_id, run_to_doc, set_last_run};
+use super::codec::{
+    doc_to_run, incarnation, integer, nanos, run_id, run_to_doc, set_last_run,
+};
+use super::codec;
 use super::jobs::{reschedule, runs_of};
 use super::{
     CAS_ATTEMPTS, COUNTERS, CronDocuments, JOBS, RUNS, compare_and_swap, job_not_found,
@@ -196,11 +199,15 @@ impl CronDocuments {
                 .get(COUNTERS, RUN_COUNTER)
                 .await
                 .map_err(storage_error)?;
-            let next = stored
-                .as_ref()
-                .and_then(|stored| stored.doc.get("next"))
-                .and_then(Value::as_i64)
-                .unwrap_or(1);
+            // A missing counter starts at 1; a counter document without an
+            // integer `next` is corrupt, and guessing a number could reuse
+            // a run id.
+            let next = match &stored {
+                None => 1,
+                Some(stored) => integer(&stored.doc, "next")?.ok_or_else(|| {
+                    anyhow::anyhow!("cron store: the run counter has no `next`")
+                })?,
+            };
             let precondition = stored
                 .as_ref()
                 .map_or(Precondition::Absent, |stored| stored.unchanged());
@@ -255,6 +262,53 @@ impl CronDocuments {
             .await
             .map_err(storage_error)?;
         Ok(usize::try_from(removed).unwrap_or(usize::MAX))
+    }
+
+    /// Deletes runs whose job no longer exists, or exists as a later
+    /// incarnation (a removed flow job registered again). Returns how many
+    /// were deleted.
+    ///
+    /// Removing a job deletes its runs in a second write, so a crash in
+    /// between, or a run recorded while its job was being removed, can
+    /// leave runs no job lists. This collects them. A run recorded for a job
+    /// that exists is never touched: its incarnation matches.
+    pub async fn sweep_orphan_runs(&self) -> Result<usize> {
+        self.ensure().await?;
+        let runs = self
+            .docs
+            .query_all(RUNS, &Query::all())
+            .await
+            .map_err(storage_error)?;
+        let mut owners: std::collections::HashMap<String, Option<String>> =
+            std::collections::HashMap::new();
+        let mut swept = 0usize;
+        for run in &runs {
+            let job_id = codec::text(&run.doc, "job_id").unwrap_or_default().to_string();
+            if !owners.contains_key(&job_id) {
+                let job = self.docs.get(JOBS, &job_id).await.map_err(storage_error)?;
+                owners.insert(
+                    job_id.clone(),
+                    job.map(|stored| incarnation(&stored.doc).unwrap_or_default().to_string()),
+                );
+            }
+            let owner = owners.get(&job_id).and_then(Option::as_deref);
+            let run_incarnation = incarnation(&run.doc).unwrap_or_default();
+            if owner == Some(run_incarnation) {
+                continue;
+            }
+            if self
+                .docs
+                .delete(RUNS, &run.id, run.unchanged())
+                .await
+                .is_ok_and(|deleted| deleted)
+            {
+                swept += 1;
+            }
+        }
+        if swept > 0 {
+            tracing::info!(target: "cron", swept, "[cron] swept orphan runs");
+        }
+        Ok(swept)
     }
 
     /// The job's newest runs, most recent first, at most `limit` (min 1).

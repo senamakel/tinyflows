@@ -248,23 +248,35 @@ pub(super) fn run_to_doc(
     Value::Object(doc)
 }
 
-/// The run a stored document holds. A delivery status this build does not
-/// know reads as `None`, as it does in the SQLite store.
+/// The run a stored document holds.
+///
+/// A field of the wrong type is an error naming it, never a default. A
+/// delivery status string this build does not know reads as `None`, as it
+/// does in the SQLite store.
 pub(super) fn doc_to_run(stored: &Versioned<Value>) -> Result<CronRun> {
     let doc = &stored.doc;
     Ok(CronRun {
-        id: doc
-            .get("seq")
-            .and_then(Value::as_i64)
-            .ok_or_else(|| anyhow!("cron store: run document has no `seq`"))?,
+        id: integer(doc, "seq")?.ok_or_else(|| anyhow!("cron store: run document has no `seq`"))?,
         job_id: required(doc, "job_id")?.to_string(),
         started_at: instant(required(doc, "started_at")?)?,
         finished_at: instant(required(doc, "finished_at")?)?,
         status: required(doc, "status")?.to_string(),
-        output: text(doc, "output").map(str::to_string),
-        duration_ms: doc.get("duration_ms").and_then(Value::as_i64),
-        delivery_status: text(doc, "delivery_status").and_then(DeliveryStatus::parse),
+        output: optional(doc, "output")?.map(str::to_string),
+        duration_ms: integer(doc, "duration_ms")?,
+        delivery_status: optional(doc, "delivery_status")?.and_then(DeliveryStatus::parse),
     })
+}
+
+/// The integer field `field` of `doc`: `None` when absent, an error when
+/// present with another type.
+pub(super) fn integer(doc: &Value, field: &str) -> Result<Option<i64>> {
+    match doc.get(field) {
+        None => Ok(None),
+        Some(value) => value
+            .as_i64()
+            .map(Some)
+            .ok_or_else(|| anyhow!("cron store: `{field}` is not an integer")),
+    }
 }
 
 #[cfg(test)]
