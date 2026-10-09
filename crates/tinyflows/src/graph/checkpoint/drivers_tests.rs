@@ -195,7 +195,7 @@ async fn data_writes_are_append_once_and_control_plane_writes_upsert() {
         PendingWrite::data(
             "n1",
             "task-a",
-            tinyflows::graph::checkpoint::WRITES_IDX_RESUME,
+            crate::graph::checkpoint::WRITES_IDX_RESUME,
             "__resume__",
             payload,
         )
