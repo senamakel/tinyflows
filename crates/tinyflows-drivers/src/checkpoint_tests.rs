@@ -6,7 +6,7 @@
 use super::*;
 use serde_json::json;
 use tinyflows::graph::ids::NodeId;
-use tinystoragedrivers_core::{MemoryStorage, Scope, StorageBackend};
+use tinystoragedrivers_core::{MemoryStorage, Scope, StorageBackend, StorageError};
 
 fn docs(storage: &MemoryStorage, scope: &str) -> Arc<dyn DocumentStore> {
     Arc::clone(
