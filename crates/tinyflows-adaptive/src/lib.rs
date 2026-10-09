@@ -17,6 +17,8 @@
 pub mod closing;
 pub mod contracts;
 pub mod driver;
+#[cfg(feature = "storage-drivers")]
+pub mod drivers;
 pub mod evals;
 pub mod execute;
 pub mod host;

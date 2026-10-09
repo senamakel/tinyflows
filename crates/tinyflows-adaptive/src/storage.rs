@@ -15,10 +15,15 @@
 //! "mongodb://host/db"               → one Mongo database holding both
 //! ```
 //!
+//! A host that already opened a `tinystoragedrivers` backend skips the
+//! setting: [`Storage::from_documents`] (feature `storage-drivers`) puts both
+//! halves on its document handle.
+//!
 //! A URI for a backend this build does not carry fails **at parse time**, with
 //! the feature named — a config error at boot, not a missing symbol at the
 //! first write.
 
+#[cfg(feature = "sqlite")]
 use std::path::PathBuf;
 
 use async_trait::async_trait;
@@ -226,6 +231,25 @@ impl Storage {
     pub fn vault(&self) -> &AnyVault {
         &self.vault
     }
+
+    /// Both halves on a `tinystoragedrivers` document handle, in the global
+    /// bucket; [`for_tenant`](Self::for_tenant) scopes them as for every
+    /// other backend.
+    ///
+    /// The handle is usually one the host already bound to a storage scope
+    /// (its agent, its user), so the adaptive tenants live inside it.
+    #[cfg(feature = "storage-drivers")]
+    #[must_use]
+    pub fn from_documents(
+        docs: std::sync::Arc<dyn tinystoragedrivers_core::DocumentStore>,
+    ) -> Self {
+        Self {
+            ledger: AnyLedger::Driver(crate::drivers::DriverLedger::new(std::sync::Arc::clone(
+                &docs,
+            ))),
+            vault: AnyVault::Driver(crate::drivers::DriverVault::new(docs)),
+        }
+    }
 }
 
 /// Whichever ledger the config picked, behind the one trait.
@@ -238,6 +262,9 @@ pub enum AnyLedger {
     /// A MongoDB database.
     #[cfg(feature = "mongo")]
     Mongo(crate::ledger::mongo::MongoLedger),
+    /// A `tinystoragedrivers` document store.
+    #[cfg(feature = "storage-drivers")]
+    Driver(crate::drivers::DriverLedger),
 }
 
 impl AnyLedger {
@@ -250,6 +277,8 @@ impl AnyLedger {
             Self::Sqlite(l) => Self::Sqlite(l.for_tenant(scope)),
             #[cfg(feature = "mongo")]
             Self::Mongo(l) => Self::Mongo(l.for_tenant(scope)),
+            #[cfg(feature = "storage-drivers")]
+            Self::Driver(l) => Self::Driver(l.for_tenant(scope)),
         }
     }
 }
@@ -263,6 +292,8 @@ macro_rules! on_ledger {
             AnyLedger::Sqlite($l) => $call,
             #[cfg(feature = "mongo")]
             AnyLedger::Mongo($l) => $call,
+            #[cfg(feature = "storage-drivers")]
+            AnyLedger::Driver($l) => $call,
         }
     };
 }
@@ -332,6 +363,9 @@ pub enum AnyVault {
     /// A MongoDB database.
     #[cfg(feature = "mongo")]
     Mongo(crate::workflows::mongo::MongoVault),
+    /// A `tinystoragedrivers` document store.
+    #[cfg(feature = "storage-drivers")]
+    Driver(crate::drivers::DriverVault),
 }
 
 impl AnyVault {
@@ -344,6 +378,8 @@ impl AnyVault {
             Self::Sqlite(v) => Self::Sqlite(v.for_tenant(scope)),
             #[cfg(feature = "mongo")]
             Self::Mongo(v) => Self::Mongo(v.for_tenant(scope)),
+            #[cfg(feature = "storage-drivers")]
+            Self::Driver(v) => Self::Driver(v.for_tenant(scope)),
         }
     }
 }
@@ -356,6 +392,8 @@ macro_rules! on_vault {
             AnyVault::Sqlite($v) => $call,
             #[cfg(feature = "mongo")]
             AnyVault::Mongo($v) => $call,
+            #[cfg(feature = "storage-drivers")]
+            AnyVault::Driver($v) => $call,
         }
     };
 }
