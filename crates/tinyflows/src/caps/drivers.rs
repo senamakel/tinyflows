@@ -10,13 +10,11 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use serde_json::{Value, json};
-use tinystoragedrivers_core::{
-    CollectionSpec, DocumentStore, ErrorKind, Precondition, StorageError,
-};
+use tinystoragedrivers_core::{CollectionSpec, DocumentStore, Precondition, StorageError};
 use tokio::sync::OnceCell;
 
 use super::StateStore;
-use crate::error::{Result, TinyFlowsError};
+use crate::error::{EngineError, Result};
 
 /// A [`StateStore`] keeping each key in a driver [`DocumentStore`].
 #[derive(Debug, Clone)]
@@ -58,13 +56,12 @@ impl DriverStateStore {
     }
 }
 
-/// A state key as a document id: keys longer than the driver's id limit are
-/// refused rather than truncated or hashed, so two keys never share a slot.
-fn map_error(error: StorageError) -> TinyFlowsError {
-    match error.kind() {
-        ErrorKind::InvalidInput => TinyFlowsError::Validation(format!("state store: {error}")),
-        _ => TinyFlowsError::Capability(format!("state store: {error}")),
-    }
+/// A storage failure as the engine's capability error. A key the driver
+/// cannot store as an id (empty, over its length limit, holding NUL) is
+/// refused here rather than truncated or hashed, so two keys never share a
+/// slot.
+fn map_error(error: StorageError) -> EngineError {
+    EngineError::Capability(format!("state store: {error}"))
 }
 
 #[async_trait]

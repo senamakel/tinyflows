@@ -59,7 +59,7 @@ tinystoragedrivers-core = { git = "https://github.com/tinyhumansai/tinystoragedr
 # over `tinystoragedrivers` document ports, so a host keeps run state and graph
 # checkpoints in whichever backend it opened (SQLite, MongoDB, memory). Needs
 # Rust 1.88, the storage crates' MSRV.
-storage-drivers = ["dep:tinystoragedrivers-core"]
+storage-drivers = ["dep:tinystoragedrivers-core", "dep:sha2"]
 # Off by default; enables in-memory mock capability impls for downstream tests
 # and examples. Mocks are always available inside this crate's own tests.
 default = []
