@@ -105,12 +105,16 @@ Across processes sharing one database:
 - `reschedule_after_run` advances `next_run` only from the occurrence the
   caller fired, so it never advances twice or overwrites an edited schedule;
 - a flow's schedule job has a deterministic id written only if absent, so
-  registering it is idempotent;
+  registering it is idempotent, and its `command` (the flow it fires) cannot
+  be patched to another flow in either store (`tinyflows_schedule::check_patch`);
 - run numbers come from a compare-and-swap counter.
 
 `due_jobs` is a read, so two schedulers can both run the same due job (as
-with two processes on one SQLite file); recording a run and pruning history
-are separate writes.
+with two processes on one SQLite file); it orders by `next_run_ns`, falling
+back to `next_run_ms` for documents written before that field. Recording a
+run and pruning history are separate writes, and so are removing a job and
+its runs; `sweep_orphan_runs` (run by `clear_all_jobs`) collects runs whose
+job is gone or was re-created.
 
 ## Checkpointer guarantees
 
