@@ -39,7 +39,8 @@ async fn orphan_after_removal(store: &FlowCatalogDocuments) -> (String, String) 
             "thread_id": "t",
             "status": "pending_approval",
             "started_at": "2020-01-01T00:00:00Z",
-            "started_ns": 1,
+            // Newest of all, so a list must page past it.
+            "started_ns": i64::MAX,
             "steps_json": "[]",
             "pending_approvals_json": "[]",
         }),
