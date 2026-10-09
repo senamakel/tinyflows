@@ -16,9 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `for_tenant` as every other backend. It is a port of the Mongo backend:
   tenancy is a `scope_key` field (writes to the handle's bucket, reads
   include global); counters and first-write-wins edges are compare-and-swap
-  and insert-only writes, so concurrent loops never lose an increment. It
-  passes the ledger and vault conformance and tenancy suites on the memory
-  and SQLite drivers. Off by default; needs Rust 1.88.
+  and insert-only writes, so concurrent loops never lose an increment. Records are
+  stored as JSON strings and steps one document each, as the Mongo backend
+  does, so a MongoDB-backed port never meets a dotted key or the document size
+  limit. It passes the ledger and vault conformance and tenancy suites. Off by
+  default; needs Rust 1.88.
 
 - **Node postconditions (`tinyflows::postcondition`).** A node may declare
   `config.postcondition = { "require": ..., "field": ... }` — `non_empty`,
