@@ -17,6 +17,18 @@ use super::{
     compare_and_swap, instant_before, instant_ns, required, set_optional, text,
 };
 
+/// Whether `current` (the definition read after a run query) is still the
+/// flow `read` (the one the runs were judged against). A fenced definition
+/// is the same flow while its incarnation is. A pre-fence one carries none,
+/// so a replacement by an older process could not be told apart by it: it
+/// is held to the exact document version instead.
+fn still_the_flow(read: &Versioned<Value>, current: Option<&Versioned<Value>>) -> bool {
+    current.is_some_and(|current| match incarnation(&read.doc) {
+        Some(incarnation_read) => incarnation(&current.doc) == Some(incarnation_read),
+        None => incarnation(&current.doc).is_none() && current.version == read.version,
+    })
+}
+
 /// Statuses a run is still live in; never pruned, and the only ones
 /// `finish_flow_run` settles.
 const LIVE: [&str; 2] = ["running", "pending_approval"];
@@ -393,16 +405,7 @@ impl FlowCatalogDocuments {
                 })
                 .await?;
             let after = docs.get(DEFINITIONS, flow_id).await?;
-            // A fenced definition is the same flow while its incarnation is.
-            // A pre-fence one carries none, so a replacement by an older
-            // process could not be told apart by it: hold that one to the
-            // exact document version instead.
-            let same_flow = after
-                .as_ref()
-                .is_some_and(|current| match incarnation(&flow.doc) {
-                    Some(read) => incarnation(&current.doc) == Some(read),
-                    None => incarnation(&current.doc).is_none() && current.version == flow.version,
-                });
+            let same_flow = still_the_flow(&flow, after.as_ref());
             if same_flow {
                 return Ok(runs);
             }

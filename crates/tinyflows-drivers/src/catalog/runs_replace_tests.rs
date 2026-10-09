@@ -95,67 +95,34 @@ async fn an_unchanged_flow_lists_its_runs() {
     assert_eq!(listed[0].id, "r");
 }
 
-/// A pre-fence definition (no incarnation) replaced by an older process
-/// mid-listing is caught by its document version instead.
-#[tokio::test]
-async fn a_replaced_pre_fence_flow_lists_again() {
-    let storage = MemoryStorage::new();
-    let inner = docs_in(&storage, "local");
-    let setup = FlowCatalogDocuments::new(Arc::clone(&inner));
-    let flow = setup
-        .create_flow("f".into(), trigger_graph(), false, true)
-        .await
-        .unwrap();
-    // Strip the fence: a definition written before incarnations existed.
-    let mut stored = inner.get(DEFINITIONS, &flow.id).await.unwrap().unwrap();
-    stored.doc.as_object_mut().unwrap().remove("incarnation");
-    inner
-        .put(
-            DEFINITIONS,
-            &flow.id,
-            stored.doc.clone(),
-            Precondition::None,
-        )
-        .await
-        .unwrap();
-    let mut old_run = json!({
-        "flow_id": flow.id,
-        "thread_id": "t",
-        "status": "succeeded",
-        "started_at": "2020-01-01T00:00:00Z",
-        "started_ns": 1,
-        "steps_json": "[]",
-        "pending_approvals_json": "[]",
-    });
-    old_run["finished_at"] = json!("2020-01-01T00:00:01Z");
-    inner
-        .put(RUNS, "pre-fence-run", old_run, Precondition::Absent)
-        .await
-        .unwrap();
-
-    // An older process removes and recreates it (still unfenced) and drops
-    // the old run, right before the run query.
-    let (flow_id, doc) = (flow.id.clone(), stored.doc);
-    let store = FlowCatalogDocuments::new(Interposed::wrap(
-        Arc::clone(&inner),
-        ("query", RUNS),
-        Box::new(move |docs: Arc<dyn DocumentStore>| {
-            Box::pin(async move {
-                docs.delete(DEFINITIONS, &flow_id, Precondition::None)
-                    .await
-                    .unwrap();
-                docs.put(DEFINITIONS, &flow_id, doc, Precondition::Absent)
-                    .await
-                    .unwrap();
-                docs.delete(RUNS, "pre-fence-run", Precondition::None)
-                    .await
-                    .unwrap();
-            })
-        }),
+/// The continuity rule `list_flow_runs` re-checks after its query.
+#[test]
+fn continuity_follows_the_incarnation_or_the_pre_fence_version() {
+    use tinystoragedrivers_core::Version;
+    let def = |doc: serde_json::Value, version: u64| Versioned {
+        id: "f".to_string(),
+        version: Version(version),
+        doc,
+    };
+    let fenced = def(json!({ "incarnation": "a" }), 1);
+    assert!(still_the_flow(
+        &fenced,
+        Some(&def(json!({ "incarnation": "a" }), 7))
     ));
-    let listed = store.list_flow_runs(&flow.id, 10).await.unwrap();
+    assert!(!still_the_flow(
+        &fenced,
+        Some(&def(json!({ "incarnation": "b" }), 1))
+    ));
+    assert!(!still_the_flow(&fenced, None));
+
+    let pre_fence = def(json!({}), 3);
+    assert!(still_the_flow(&pre_fence, Some(&def(json!({}), 3))));
     assert!(
-        listed.is_empty(),
-        "listed against the replaced definition: {listed:?}"
+        !still_the_flow(&pre_fence, Some(&def(json!({}), 4))),
+        "replaced (or changed) by an unfenced writer"
     );
+    assert!(!still_the_flow(
+        &pre_fence,
+        Some(&def(json!({ "incarnation": "a" }), 3))
+    ));
 }
