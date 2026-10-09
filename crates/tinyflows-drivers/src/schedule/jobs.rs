@@ -17,7 +17,7 @@ use tinystoragedrivers_core::{
 use uuid::Uuid;
 
 use super::codec::{
-    INCARNATION, created_at, doc_to_job, incarnation, job_to_doc, set_next_run, text,
+    INCARNATION, created_at, doc_to_job, incarnation, job_to_doc, nanos, set_next_run, text,
 };
 use super::patch::apply_patch;
 use super::{CAS_ATTEMPTS, CronDocuments, JOBS, RUNS, job_not_found, storage_error};
@@ -254,6 +254,7 @@ impl CronDocuments {
         self.ensure().await?;
         let query = Query::all()
             .sort(Sort::asc("next_run_ms"))
+            .sort(Sort::asc("next_run_ns"))
             .sort(Sort::asc("_id"));
         self.docs
             .query_all(JOBS, &query)
@@ -381,12 +382,15 @@ impl CronDocuments {
     /// size. A read: see the module docs on two schedulers sharing a database.
     pub async fn due_jobs(&self, now: DateTime<Utc>) -> Result<Vec<CronJob>> {
         self.ensure().await?;
-        let query = Query::filter(
-            Filter::eq("enabled", true).and(Filter::lte("next_run_ms", now.timestamp_millis())),
-        )
-        .sort(Sort::asc("next_run_ms"))
-        .sort(Sort::asc("_id"))
-        .limit(self.max_tasks);
+        // Due at nanosecond precision; a document written before
+        // `next_run_ns` existed falls back to its millisecond field.
+        let due = Filter::lte("next_run_ns", nanos(now)).or(Filter::exists("next_run_ns", false)
+            .and(Filter::lte("next_run_ms", now.timestamp_millis())));
+        let query = Query::filter(Filter::eq("enabled", true).and(due))
+            .sort(Sort::asc("next_run_ms"))
+            .sort(Sort::asc("next_run_ns"))
+            .sort(Sort::asc("_id"))
+            .limit(self.max_tasks);
         let page = self.docs.query(JOBS, &query).await.map_err(storage_error)?;
         page.items.iter().map(doc_to_job).collect()
     }

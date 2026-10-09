@@ -127,10 +127,19 @@ pub(super) fn job_to_doc(job: &CronJob) -> Result<Value> {
     Ok(Value::Object(doc))
 }
 
-/// Writes `next_run` in both its readable and its ordering form.
+/// Writes `next_run` in its readable form and its two ordering forms:
+/// milliseconds (`next_run_ms`, kept so documents written before
+/// `next_run_ns` still order and match) and nanoseconds (`next_run_ns`, so
+/// two jobs due within one millisecond are picked in their real order).
 pub(super) fn set_next_run(doc: &mut Map<String, Value>, next_run: DateTime<Utc>) {
     doc.insert("next_run".into(), json!(next_run.to_rfc3339()));
     doc.insert("next_run_ms".into(), json!(next_run.timestamp_millis()));
+    doc.insert("next_run_ns".into(), json!(nanos(next_run)));
+}
+
+/// `at` in epoch nanoseconds, saturating past the year 2262.
+pub(super) fn nanos(at: DateTime<Utc>) -> i64 {
+    at.timestamp_nanos_opt().unwrap_or(i64::MAX)
 }
 
 /// Records a run's outcome on a job document.

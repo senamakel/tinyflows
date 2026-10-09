@@ -18,9 +18,10 @@
 //! A job's `schedule`, `delivery` and `origin` are JSON strings, so a MongoDB
 //! backend never meets keys a caller chose. Optional fields are left out
 //! rather than stored as `null`. Instants are kept twice: RFC 3339 text for
-//! reading back, and epoch milliseconds (`next_run_ms`, `created_ms`,
-//! `started_ns`, nanoseconds, so runs started within one millisecond still
-//! order by their real start) for ordering and range filters.
+//! reading back, and epoch integers for ordering and range filters:
+//! `created_ms`, `next_run_ms` plus `next_run_ns`, and `started_ns`
+//! (nanoseconds, so jobs due and runs started within one millisecond still
+//! order by their real instant).
 //!
 //! # Concurrency
 //!
@@ -112,7 +113,7 @@ impl CronDocuments {
         vec![
             CollectionSpec::new(JOBS)
                 .index(IndexSpec::new("by_next_run", ["next_run_ms"]))
-                .index(IndexSpec::new("by_due", ["enabled", "next_run_ms"]))
+                .index(IndexSpec::new("by_due", ["enabled", "next_run_ms", "next_run_ns"]))
                 .index(IndexSpec::new("by_name", ["name"]))
                 .index(IndexSpec::new("by_flow", ["job_type", "command"])),
             CollectionSpec::new(RUNS)
