@@ -16,13 +16,29 @@ use tinystoragedrivers_core::{
 };
 use uuid::Uuid;
 
-use super::codec::{doc_to_job, job_to_doc, set_next_run, text};
+use super::codec::{INCARNATION, created_at, doc_to_job, incarnation, job_to_doc, set_next_run, text};
 use super::{CAS_ATTEMPTS, CronDocuments, JOBS, RUNS, job_not_found, storage_error};
 
 /// The document id of `flow_id`'s schedule job. Deterministic, so writing it
 /// only if absent makes registration idempotent across processes.
 fn flow_job_id(flow_id: &str) -> String {
     format!("flow:{flow_id}")
+}
+
+/// The document for a newly created `job`, with a fresh incarnation.
+fn new_job_doc(job: &CronJob) -> Result<Value> {
+    let mut doc = job_to_doc(job)?;
+    doc[INCARNATION] = json!(Uuid::new_v4().to_string());
+    Ok(doc)
+}
+
+/// The document for an updated `job`, keeping `previous`'s incarnation.
+fn updated_job_doc(job: &CronJob, previous: &Value) -> Result<Value> {
+    let mut doc = job_to_doc(job)?;
+    if let Some(incarnation) = incarnation(previous) {
+        doc[INCARNATION] = json!(incarnation);
+    }
+    Ok(doc)
 }
 
 /// A fresh job of `job_type` on `schedule`, due at its next occurrence.
@@ -55,7 +71,7 @@ impl CronDocuments {
     async fn insert(&self, job: &CronJob, what: &str) -> Result<CronJob> {
         self.ensure().await?;
         self.docs
-            .put(JOBS, &job.id, job_to_doc(job)?, Precondition::Absent)
+            .put(JOBS, &job.id, new_job_doc(job)?, Precondition::Absent)
             .await
             .map_err(storage_error)
             .with_context(|| format!("Failed to insert cron {what}"))?;
@@ -194,7 +210,7 @@ impl CronDocuments {
         self.ensure().await?;
         match self
             .docs
-            .put(JOBS, &job.id, job_to_doc(&job)?, Precondition::Absent)
+            .put(JOBS, &job.id, new_job_doc(&job)?, Precondition::Absent)
             .await
         {
             Ok(_) => self.get_job(&job.id).await,
@@ -310,30 +326,25 @@ impl CronDocuments {
             .query_all(JOBS, &Query::filter(Filter::exists("name", true)))
             .await
             .map_err(storage_error)?;
-        let mut by_name: BTreeMap<String, Vec<(String, i64)>> = BTreeMap::new();
+        // Ranked by creation at full precision: jobs created within one
+        // millisecond (the concurrent-seeding case) still keep the earliest.
+        let mut by_name: BTreeMap<String, Vec<&Versioned<Value>>> = BTreeMap::new();
         for stored in &named {
             if let Some(name) = text(&stored.doc, "name") {
-                let created = stored
-                    .doc
-                    .get("created_ms")
-                    .and_then(Value::as_i64)
-                    .unwrap_or(i64::MAX);
-                by_name
-                    .entry(name.to_string())
-                    .or_default()
-                    .push((stored.id.clone(), created));
+                by_name.entry(name.to_string()).or_default().push(stored);
             }
         }
         let mut total_removed = 0usize;
         for (name, jobs) in by_name.into_iter().filter(|(_, jobs)| jobs.len() > 1) {
             let mut ranked = Vec::with_capacity(jobs.len());
-            for (id, created) in jobs {
+            for stored in jobs {
                 let runs = self
                     .docs
-                    .count(RUNS, &Filter::eq("job_id", id.as_str()))
+                    .count(RUNS, &runs_of(&stored.id, &stored.doc))
                     .await
                     .map_err(storage_error)?;
-                ranked.push((std::cmp::Reverse(runs), created, id));
+                let created = created_at(&stored.doc).unwrap_or(DateTime::<Utc>::MAX_UTC);
+                ranked.push((std::cmp::Reverse(runs), created, stored.id.clone()));
             }
             ranked.sort();
             let keep = ranked[0].2.clone();
@@ -385,16 +396,17 @@ impl CronDocuments {
                 .map_err(storage_error)?
                 .ok_or_else(|| job_not_found(job_id))?;
             let job = apply_patch(doc_to_job(&stored)?, patch.clone())?;
+            let doc = updated_job_doc(&job, &stored.doc)?;
             match self
                 .docs
-                .put(JOBS, job_id, job_to_doc(&job)?, stored.unchanged())
+                .put(JOBS, job_id, doc.clone(), stored.unchanged())
                 .await
             {
                 Ok(version) => {
                     return doc_to_job(&Versioned {
                         id: job_id.to_string(),
                         version,
-                        doc: job_to_doc(&job)?,
+                        doc,
                     });
                 }
                 Err(error) if error.kind() == ErrorKind::Conflict => {}
@@ -462,6 +474,16 @@ fn apply_patch(mut job: CronJob, patch: CronJobPatch) -> Result<CronJob> {
         }
     }
     Ok(job)
+}
+
+/// The filter for the runs of the job stored as `job_id` with `doc`: its
+/// own incarnation's runs only.
+pub(super) fn runs_of(job_id: &str, doc: &Value) -> Filter {
+    let of_job = Filter::eq("job_id", job_id);
+    match incarnation(doc) {
+        Some(incarnation) => of_job.and(Filter::eq(INCARNATION, incarnation)),
+        None => of_job,
+    }
 }
 
 /// Marks `doc` as rescheduled to `next_run` (used by the run bookkeeping).
