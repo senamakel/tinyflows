@@ -16,6 +16,8 @@
 //! - [`graph_policy`] — the save/run safety predicates over a graph: whether it
 //!   fires unattended, whether it can act on the world, whether it has anything
 //!   to do at all.
+//! - [`store`] — what every catalog store shares: [`store::FlowUpdateError`]
+//!   and the retention caps.
 //! - [`graph_hash`] — the content pin over a graph plus its approval flag, used
 //!   to refuse resuming a parked run whose graph changed under it.
 //!
@@ -36,6 +38,7 @@ pub mod graph_policy;
 pub mod import;
 pub mod run_registry;
 pub mod run_summary;
+pub mod store;
 
 #[cfg(test)]
 #[path = "run_summary_tests.rs"]

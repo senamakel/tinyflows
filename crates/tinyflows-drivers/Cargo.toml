@@ -18,14 +18,40 @@ readme = "README.md"
 publish = false
 
 [dependencies]
-tinyflows = { workspace = true }
+tinyflows = { workspace = true, optional = true }
 tinystoragedrivers-core = { git = "https://github.com/tinyhumansai/tinystoragedrivers", tag = "v0.4.0" }
+# `catalog` only: the flow catalog model, and what a catalog store reports.
+tinyflows-catalog = { version = "0.1.0", path = "../tinyflows-catalog", optional = true }
+anyhow = { version = "1.0", optional = true }
+chrono = { workspace = true, optional = true }
+uuid = { workspace = true, optional = true }
 async-trait = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+
+[features]
+# `engine`: the engine's own capabilities (`DriverStateStore`,
+# `DriverCheckpointer`), which need `tinyflows`.
+default = ["engine"]
+engine = ["dep:tinyflows"]
+# `catalog`: the flow catalog and drafts (`FlowCatalogDocuments`) and the
+# namespaced flow state (`FlowStateDocuments`). Its synchronous `DedupKv`
+# side runs on the storage crates' `Blocking` bridge.
+catalog = [
+    "engine",
+    "dep:tinyflows-catalog",
+    "dep:anyhow",
+    "dep:chrono",
+    "dep:uuid",
+    "tinystoragedrivers-core/blocking",
+]
+# The fixture-only writers (`force_run_status_for_test`,
+# `force_corrupt_graph_json_for_test`), mirroring tinyflows-sqlite's feature
+# of the same name.
+test-fixtures = ["catalog"]
 
 [dev-dependencies]
 tokio = { workspace = true }

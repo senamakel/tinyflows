@@ -2674,6 +2674,7 @@ dependencies = [
 name = "tinyflows-catalog"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "hex",
  "serde",
  "serde_json",

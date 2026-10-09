@@ -13,17 +13,7 @@ use super::{sql_conversion_error, with_connection};
 const FLOW_RUN_COLUMNS: &str = "id, flow_id, thread_id, status, started_at, finished_at, \
      steps_json, pending_approvals_json, error, graph_hash";
 
-/// Default per-flow run-history retention cap: how many of the most-recent runs
-/// a single flow keeps before older *terminal* runs are pruned on the next
-/// insert (and by the manual `flows_prune_runs` sweep). Bounds unbounded
-/// `flow_runs` growth for a hot, frequently-triggered flow while keeping enough
-/// history for the run-history inspector.
-///
-/// Non-terminal runs (`running`, `pending_approval`) are **never** pruned — a
-/// parked `pending_approval` run must survive so a later `flows_resume` can find
-/// it — so the effective row count for a flow may briefly exceed this cap by the
-/// number of live/parked runs. See [`prune_flow_runs`].
-pub const MAX_FLOW_RUNS_PER_FLOW: usize = 100;
+pub use tinyflows_catalog::store::MAX_FLOW_RUNS_PER_FLOW;
 
 /// Inserts the initial `"running"` row for a new `flows_run` / `flows_resume`
 /// invocation. `id` and `thread_id` are the same value in practice (the

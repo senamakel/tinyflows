@@ -11,33 +11,7 @@ use uuid::Uuid;
 use super::definitions::get_flow;
 use super::{sql_conversion_error, with_connection, with_immediate_transaction};
 
-/// How many revision snapshots to retain per flow (audit F6). Older ones are
-/// pruned on each new capture.
-const MAX_REVISIONS_PER_FLOW: usize = 20;
-
-/// Failure modes of [`update_flow_graph`] that the caller must distinguish:
-/// a genuine not-found, an optimistic-concurrency conflict (carrying the
-/// current server flow so the UI can diff/reload), or a store error.
-#[derive(Debug)]
-pub enum FlowUpdateError {
-    /// No flow with that id exists.
-    NotFound,
-    /// The flow changed since `expected_updated_at` was observed — the write
-    /// was refused to avoid clobbering. Carries the current server flow.
-    Conflict(Box<Flow>),
-    /// An underlying store failure.
-    Store(anyhow::Error),
-}
-
-impl std::fmt::Display for FlowUpdateError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::NotFound => write!(f, "flow not found"),
-            Self::Conflict(_) => write!(f, "flow changed since it was loaded"),
-            Self::Store(e) => write!(f, "{e}"),
-        }
-    }
-}
+pub use tinyflows_catalog::store::{FlowUpdateError, MAX_REVISIONS_PER_FLOW};
 
 /// Replaces a flow's name/graph/`require_approval` (re-validated by the caller
 /// before this is invoked) in place, bumping `updated_at`, capturing the prior
