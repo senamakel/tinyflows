@@ -1,4 +1,5 @@
 use super::*;
+#[cfg(feature = "storage-drivers")]
 use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 #[test]
