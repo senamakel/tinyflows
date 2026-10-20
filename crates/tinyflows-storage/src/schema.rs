@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tinystoragedrivers_api::{DocumentStore, DocumentStoreExt};
 use tinystoragedrivers_types::{
-    CollectionSpec, Filter, Meta, Precondition, Query, Result, StorageError,
+    CollectionSpec, ErrorKind, Filter, Meta, Precondition, Query, Result, Sort, StorageError,
     WriteOptions, SCHEMA_FIELD,
 };
 
@@ -171,7 +171,9 @@ impl Schema {
             if migrations.done(self.owner.as_str(), step.id).await? { report.already_done += 1; continue; }
             let progress_id = Key::of([self.owner.as_str(), step.id])?.as_str().to_owned();
             let progress = migrations.docs.get_as::<Progress>(&migrations.collection, &progress_id).await?;
-            let mut query = Query::filter(Filter::default()).limit(options.batch_size);
+            let mut query = Query::filter(Filter::default())
+                .sort(Sort::asc("_id"))
+                .limit(options.batch_size);
             if let Some(cursor) = progress.and_then(|p| p.doc.cursor) {
                 query = query.after(tinystoragedrivers_types::Cursor(cursor));
             }
@@ -181,16 +183,23 @@ impl Schema {
                 let page = docs.query(source, &query).await?;
                 if page.items.is_empty() { break; }
                 let last_cursor = page.next.clone();
-                let inputs = page.items.iter().map(|row| SourceRecord { id: row.id.clone(), body: row.doc.clone(), meta: row.meta.clone() }).collect();
+                let inputs = page.items.iter()
+                    .filter(|row| row.meta.schema < step.to)
+                    .map(|row| SourceRecord { id: row.id.clone(), body: row.doc.clone(), meta: row.meta.clone() })
+                    .collect();
                 let outputs = (step.run)(inputs)?;
                 let output_ids: std::collections::HashSet<(String, String)> = outputs.iter().map(|r| (r.collection.clone(), r.id.clone())).collect();
                 for mut target in outputs {
                     if !target.body.is_object() { return Err(StorageError::invalid_input("migration output must be an object")); }
                     target.body[SCHEMA_FIELD] = step.to.into();
                     let options = target.created_ms.map_or_else(WriteOptions::new, |ms| WriteOptions::new().created_ms(ms));
-                    match docs.put_with(&target.collection, &target.id, target.body.clone(), Precondition::Absent, options).await {
+                    let source_row = (source == step.item)
+                        .then(|| page.items.iter().find(|row| row.id == target.id));
+                    let precondition = source_row.flatten()
+                        .map_or(Precondition::Absent, |row| Precondition::Version(row.version));
+                    match docs.put_with(&target.collection, &target.id, target.body.clone(), precondition, options).await {
                         Ok(_) => written += 1,
-                        Err(error) if error.kind() == tinystoragedrivers_types::ErrorKind::Conflict => {
+                        Err(error) if matches!(error.kind(), ErrorKind::Conflict | ErrorKind::AlreadyExists) => {
                             let existing = docs.get(&target.collection, &target.id).await?;
                             if existing.is_none_or(|row| row.doc != target.body) { return Err(error); }
                             written += 1;
@@ -198,11 +207,10 @@ impl Schema {
                         Err(error) => return Err(error),
                     }
                 }
-                if source != step.item {
-                    for row in &page.items {
-                        if output_ids.contains(&(step.item.to_owned(), row.id.clone())) {
-                            docs.delete(source, &row.id, Precondition::Version(row.version)).await?;
-                        }
+                for row in &page.items {
+                    if row.meta.schema >= step.to { continue; }
+                    if source != step.item || !output_ids.contains(&(step.item.to_owned(), row.id.clone())) {
+                        docs.delete(source, &row.id, Precondition::Version(row.version)).await?;
                     }
                 }
                 let cursor = last_cursor.map(|cursor| cursor.0);
