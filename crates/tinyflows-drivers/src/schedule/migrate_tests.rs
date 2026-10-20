@@ -1,7 +1,7 @@
 use super::*;
 use chrono::TimeZone;
 use serde_json::json;
-use tinyflows_schedule::Schedule;
+use tinyflows_schedule::{Schedule, runtime::RunRecord};
 use tinyflows_storage::{
     DocumentStoreExt, MigrateOptions, Precondition, Query, Scope, Storage, StorageBackend,
 };
@@ -120,13 +120,10 @@ async fn v1_jobs_runs_and_the_ledger_migrate_and_read_back() {
     assert_eq!(j1.doc["origin"], json!({"kind": "web", "thread_id": "t"}));
     assert_eq!(j1.doc["next_run_ms"], 1_772_701_200_000_i64);
     assert_eq!(j1.doc["last_run_ms"], 1_772_614_800_000_i64);
-    assert_eq!(
-        j1.meta.created_ms, 1_772_600_767_123_i64,
-        "creation time is metadata"
-    );
+    assert_eq!(j1.doc["created_ms"], 1_772_600_767_123_i64);
+    assert!(j1.meta.created_ms > 0, "backend owns record metadata");
     for gone in [
         "created_at",
-        "created_ms",
         "next_run",
         "next_run_ns",
         "last_run",
@@ -176,6 +173,37 @@ async fn v1_jobs_runs_and_the_ledger_migrate_and_read_back() {
             .unwrap()
             .is_none()
     );
+}
+
+#[tokio::test]
+async fn a_claimed_run_accepts_a_migrated_jobs_body_creation_time() {
+    let storage = scoped();
+    seed(
+        &storage,
+        "cron_jobs",
+        "migrated-job",
+        v1_job(json!({"kind": "cron", "expr": "0 9 * * *", "tz": null, "active_hours": null})),
+    )
+    .await;
+    migrate(&storage).await;
+
+    let store = CronDocuments::new(std::sync::Arc::clone(storage.documents()));
+    let created_at = chrono::DateTime::from_timestamp_millis(1_772_600_767_123_i64).unwrap();
+    let now = chrono::Utc::now();
+    store
+        .record_claimed_run(&RunRecord {
+            run_id: "migration-run".into(),
+            job_id: "migrated-job".into(),
+            job_created_at: created_at,
+            started_at: now,
+            finished_at: now,
+            status: "ok".into(),
+            output: "done".into(),
+            delivery_status: None,
+        })
+        .await
+        .expect("a migration's body creation time is the job identity");
+    assert_eq!(store.list_runs("migrated-job", 10).await.unwrap().len(), 1);
 }
 
 #[tokio::test]

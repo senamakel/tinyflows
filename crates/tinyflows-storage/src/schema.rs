@@ -67,8 +67,8 @@ pub struct TargetRecord {
     pub id: String,
     /// Destination body.
     pub body: Value,
-    /// Creation timestamp to preserve where available.
-    pub created_ms: Option<i64>,
+    /// Absolute expiry to preserve or assign to the destination record.
+    pub expires_ms: Option<i64>,
 }
 
 impl TargetRecord {
@@ -79,14 +79,22 @@ impl TargetRecord {
             collection: collection.into(),
             id: id.into(),
             body,
-            created_ms: None,
+            expires_ms: None,
         }
     }
 
-    /// Preserve the source creation timestamp.
+    /// Set the destination's absolute expiry timestamp.
     #[must_use]
-    pub fn created_ms(mut self, value: i64) -> Self {
-        self.created_ms = Some(value);
+    pub fn expires_ms(mut self, value: i64) -> Self {
+        self.expires_ms = Some(value);
+        self
+    }
+
+    /// Preserve the source record's absolute expiry when the migration
+    /// changes the destination id or collection.
+    #[must_use]
+    pub fn preserve_expiry_from(mut self, source: &SourceRecord) -> Self {
+        self.expires_ms = source.meta.expires_ms;
         self
     }
 }
@@ -266,21 +274,19 @@ impl Schema {
                         ));
                     }
                     let output_schema = self.target_schema(step, &target)?;
-                    let source_row = (source == step.item && target.collection == step.item)
-                        .then(|| page.items.iter().find(|row| row.id == target.id));
-                    let source_row = source_row.flatten();
-                    let precondition = source_row.map_or(Precondition::Absent, |row| {
+                    let origin_row = page.items.iter().find(|row| row.id == target.id);
+                    let same_row = (source == step.item && target.collection == step.item)
+                        .then_some(origin_row)
+                        .flatten();
+                    let precondition = same_row.map_or(Precondition::Absent, |row| {
                         Precondition::Version(row.version)
                     });
-                    let created_ms = target
-                        .created_ms
-                        .or_else(|| source_row.map(|row| row.meta.created_ms));
                     let mut options = WriteOptions::new();
                     options = options.schema(output_schema);
-                    if let Some(created_ms) = created_ms {
-                        options = options.created_ms(created_ms);
-                    }
-                    if let Some(expires_ms) = source_row.and_then(|row| row.meta.expires_ms) {
+                    let expected_expiry = target
+                        .expires_ms
+                        .or_else(|| origin_row.and_then(|row| row.meta.expires_ms));
+                    if let Some(expires_ms) = expected_expiry {
                         options = options.expires_ms(expires_ms);
                     }
                     match docs
@@ -301,13 +307,12 @@ impl Schema {
                             ) =>
                         {
                             let existing = docs.get(&target.collection, &target.id).await?;
-                            let expected_expiry =
-                                source_row.and_then(|source| source.meta.expires_ms);
                             let identical = existing.is_some_and(|row| {
                                 row.doc == target.body
                                     && row.meta.schema == output_schema
-                                    && created_ms
-                                        .is_none_or(|created| row.meta.created_ms == created)
+                                    && same_row.is_none_or(|source| {
+                                        row.meta.created_ms == source.meta.created_ms
+                                    })
                                     && row.meta.expires_ms == expected_expiry
                             });
                             if !identical {

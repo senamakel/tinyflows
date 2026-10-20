@@ -105,7 +105,7 @@ async fn a_v1_row_migrates_to_a_flat_body_with_an_ms_time() {
     assert_eq!(stored.doc["at_ms"], 1_767_225_602_000_i64);
     assert_eq!(stored.doc["satisfied"], true);
     assert!(stored.doc.get("record").is_none() && stored.doc.get("at").is_none());
-    assert_eq!(stored.meta.created_ms, 1_767_225_602_000_i64);
+    assert!(stored.meta.created_ms > 0, "backend owns record metadata");
     let ledger = DriverLedger::new(docs(&storage)).for_tenant("t");
     let rows = ledger.rows("ep").await.unwrap();
     assert_eq!(rows[0].id, "ldg_00000007");

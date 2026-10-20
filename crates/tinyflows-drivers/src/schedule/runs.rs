@@ -200,7 +200,7 @@ impl CronDocuments {
         let stored = self.job_doc(job_id).await?;
         if let Some(expected) = expected_creation {
             anyhow::ensure!(
-                from_ms(stored.meta.created_ms)? == expected,
+                from_ms(codec::job_created_ms(&stored.doc, stored.meta.created_ms)?)? == expected,
                 "cron run belongs to a removed job creation"
             );
         }

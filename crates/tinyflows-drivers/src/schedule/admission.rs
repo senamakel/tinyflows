@@ -180,8 +180,8 @@ impl CronDocuments {
         bail!("cron store: admission initialization kept changing")
     }
 
-    /// Writes a new job with an explicit creation time (an importer keeps the
-    /// original) and enrols it in the admission ledger. The job is written
+    /// Writes a new job with its original creation time in the document body
+    /// and enrols it in the admission ledger. The job is written
     /// first and enrolled second, so a job over the cap is taken back.
     ///
     /// # Errors
@@ -189,13 +189,14 @@ impl CronDocuments {
     pub(super) async fn insert_with_created(
         &self,
         id: &str,
-        doc: Value,
+        mut doc: Value,
         created_ms: i64,
     ) -> Result<()> {
-        let mut options = tinyflows_storage::WriteOptions::new().schema(super::SCHEMA_VERSION);
-        if created_ms > 0 {
-            options = options.created_ms(created_ms);
-        }
+        let body = doc
+            .as_object_mut()
+            .ok_or_else(|| anyhow!("cron store: imported job must be an object"))?;
+        body.insert("created_ms".into(), created_ms.into());
+        let options = tinyflows_storage::WriteOptions::new().schema(super::SCHEMA_VERSION);
         let member = member(id, &doc)?;
         // A nontransactional backend cannot enrol, so check the persisted
         // policy before the job exists rather than after it is written.
@@ -209,14 +210,6 @@ impl CronDocuments {
             .await
         {
             Ok(_) => {}
-            // A store that cannot set a creation time (a module's document
-            // callback) files the job under the time of the import instead.
-            Err(error) if matches!(error.kind(), ErrorKind::Unsupported(_)) => {
-                return self
-                    .commit_job(id, None, Some(doc), vec![])
-                    .await
-                    .map(|_| ());
-            }
             Err(error) => return Err(storage_error(error)),
         }
         if !transactional {

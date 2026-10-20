@@ -53,15 +53,17 @@ impl Documents {
             }
             "get" => encode(self.docs.get(collection, id).await?),
             "put" => {
+                if request["created_ms"].as_i64().is_some() {
+                    return Err(StorageError::invalid_input(
+                        "a module cannot set created_ms: it is a host-only migration option",
+                    ));
+                }
                 let mut options = tinyflows_storage::WriteOptions::new();
                 if let Some(schema) = request["schema"].as_u64() {
                     options = options.schema(u32::try_from(schema).unwrap_or(0));
                 }
                 if let Some(expires_ms) = request["expires_ms"].as_i64() {
                     options = options.expires_ms(expires_ms);
-                }
-                if let Some(created_ms) = request["created_ms"].as_i64() {
-                    options = options.created_ms(created_ms);
                 }
                 encode(
                     self.docs

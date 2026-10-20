@@ -270,6 +270,11 @@ impl DocumentStore for Documents {
         precondition: Precondition,
         options: WriteOptions,
     ) -> Result<Version> {
+        if options.created_ms.is_some() {
+            return Err(StorageError::invalid_input(
+                "a module cannot set created_ms: it is a host-only migration option",
+            ));
+        }
         self.call_record(
             storage::PUT,
             collection,
@@ -281,7 +286,7 @@ impl DocumentStore for Documents {
                 precondition: serde_json::from_value(serde_json::to_value(precondition)?)?,
                 schema: options.schema,
                 expires_ms: options.expires_ms,
-                created_ms: options.created_ms,
+                created_ms: None,
             },
         )
         .await

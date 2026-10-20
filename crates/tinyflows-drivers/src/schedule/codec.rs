@@ -3,8 +3,9 @@
 //! Bodies are bare snake_case objects. Nested values (`schedule`, `delivery`,
 //! `origin`, `policy`) are real objects, not JSON strings; every instant is one
 //! `_ms` field (`next_run_ms`, `last_run_ms`, `started_ms`, `finished_ms`), and
-//! a job's creation time is the document's `created_ms` metadata, not a body
-//! field. Optional fields are left out rather than stored as `null`. A job
+//! a job's creation time normally comes from document metadata, with a body
+//! `created_ms` override for imported or migrated jobs. Optional fields are
+//! left out rather than stored as `null`. A job
 //! document that cannot be read back is an error naming the field, never a
 //! silently defaulted job.
 
@@ -164,8 +165,16 @@ pub(super) fn set_last_run(
     doc.insert("last_output".into(), json!(output));
 }
 
-/// The job a stored document holds. Its creation time is the document's
-/// `created_ms` metadata.
+/// The creation identity used for run fencing and duplicate ranking.
+/// Migrated jobs carry their original creation time in the body because the
+/// module document port cannot write host-owned metadata.
+pub(super) fn job_created_ms(doc: &Value, metadata_created_ms: i64) -> Result<i64> {
+    Ok(integer(doc, "created_ms")?.unwrap_or(metadata_created_ms))
+}
+
+/// The job a stored document holds. Imported jobs retain their original
+/// creation time in the body because module document ports cannot set the
+/// host-owned record metadata; ordinary jobs still use backend metadata.
 pub(super) fn doc_to_job(stored: &Versioned<Value>) -> Result<CronJob> {
     let doc = &stored.doc;
     let schedule = schedule_from_value(
@@ -215,7 +224,7 @@ pub(super) fn doc_to_job(stored: &Versioned<Value>) -> Result<CronJob> {
         enabled: flag("enabled")?,
         delivery,
         delete_after_run: flag("delete_after_run")?,
-        created_at: from_ms(stored.meta.created_ms)?,
+        created_at: from_ms(job_created_ms(doc, stored.meta.created_ms)?)?,
         next_run: from_ms(
             integer(doc, "next_run_ms")?
                 .ok_or_else(|| anyhow!("cron store: document has no `next_run_ms`"))?,

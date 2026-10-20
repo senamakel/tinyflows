@@ -4,16 +4,21 @@ use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use std::sync::Arc;
 use tinyflows_storage::{Capability, ErrorKind, Scope, StorageBackend, WriteOp};
 
-struct Callback(Arc<dyn DocumentStore>);
+#[derive(Clone)]
+struct Callback {
+    docs: Arc<dyn DocumentStore>,
+    calls: Arc<std::sync::atomic::AtomicUsize>,
+}
 #[tinybus::interface(name = "ai.tinyhumans.tinyflows.ScheduleDocuments")]
 impl Callback {
     async fn document(&self, request: Value) -> tinybus::Result<Value> {
+        self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let value = match request["op"].as_str().unwrap() {
             "capabilities" => Ok(
-                json!({"transactions": self.0.capabilities().contains(Capability::Transactions)}),
+                json!({"transactions": self.docs.capabilities().contains(Capability::Transactions)}),
             ),
             "atomic_batch" => self
-                .0
+                .docs
                 .atomic_batch(serde_json::from_value(request["ops"].clone()).unwrap())
                 .await
                 .map(|results| serde_json::to_value(results).unwrap()),
@@ -47,11 +52,12 @@ async fn document_bridge_preserves_atomic_writes_conflicts_and_collection_scope(
         .ensure_collection(&CollectionSpec::new("other_domain"))
         .await
         .unwrap();
+    let callbacks = Callback {
+        docs: storage.clone(),
+        calls: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+    };
     connection
-        .serve_at(
-            "/test/Documents".try_into().unwrap(),
-            Callback(storage.clone()),
-        )
+        .serve_at("/test/Documents".try_into().unwrap(), callbacks.clone())
         .await
         .unwrap();
     connection.request_name("test.Documents").await.unwrap();
@@ -65,6 +71,24 @@ async fn document_bridge_preserves_atomic_writes_conflicts_and_collection_scope(
     .await
     .unwrap();
     assert!(documents.capabilities().contains(Capability::Transactions));
+    let calls_before_host_metadata_request =
+        callbacks.calls.load(std::sync::atomic::Ordering::SeqCst);
+    let metadata_error = documents
+        .put_with(
+            "cron.jobs",
+            "job-with-forged-created-time",
+            json!({"enabled":true}),
+            Precondition::Absent,
+            tinyflows_storage::WriteOptions::new().created_ms(1),
+        )
+        .await
+        .expect_err("module must refuse host-owned creation metadata");
+    assert_eq!(metadata_error.kind(), ErrorKind::InvalidInput);
+    assert_eq!(
+        callbacks.calls.load(std::sync::atomic::Ordering::SeqCst),
+        calls_before_host_metadata_request,
+        "the forbidden metadata must be rejected before the callback"
+    );
     let put = |collection: &str, precondition| WriteOp::Put {
         collection: collection.into(),
         id: "job".into(),

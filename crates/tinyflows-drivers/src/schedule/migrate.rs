@@ -2,7 +2,7 @@
 //!
 //! | v1 | v2 |
 //! |---|---|
-//! | `cron_jobs` | `cron.jobs`: `schedule`/`delivery`/`origin` become objects, `next_run`+`next_run_ns` become `next_run_ms`, `created_at`+`created_ms` become the record's creation metadata, `last_run` becomes `last_run_ms` |
+//! | `cron_jobs` | `cron.jobs`: `schedule`/`delivery`/`origin` become objects, `next_run`+`next_run_ns` become `next_run_ms`, `created_at`+`created_ms` become the body field `created_ms`, `last_run` becomes `last_run_ms` |
 //! | `cron_runs` | `cron.runs`: `started_at`+`started_ns` become `started_ms`, `finished_at` becomes `finished_ms` |
 //! | `cron_counters` `admission` | `cron.admission` `ledger` (members as a list) |
 //! | `cron_counters` `runs` | `tsd.counters` owner `cron` name `runs`, through [`import_legacy_cron_counters`] |
@@ -72,6 +72,7 @@ fn map(
             convert(source).unwrap_or_else(|| {
                 tracing::warn!(collection, id = %source.id, "[cron-storage] carrying unconvertible v1 record");
                 TargetRecord::new(collection, source.id.clone(), source.body.clone())
+                    .preserve_expiry_from(source)
             })
         })
         .collect()
@@ -165,12 +166,10 @@ fn job(source: &SourceRecord) -> Option<TargetRecord> {
         .and_then(instant_ms)
         .or_else(|| body.get("created_ms").and_then(Value::as_i64))
         .unwrap_or(source.meta.created_ms);
-    let record = TargetRecord::new(JOBS, source.id.clone(), Value::Object(out));
-    Some(if created > 0 {
-        record.created_ms(created)
-    } else {
-        record
-    })
+    out.insert("created_ms".into(), created.into());
+    Some(
+        TargetRecord::new(JOBS, source.id.clone(), Value::Object(out)).preserve_expiry_from(source),
+    )
 }
 
 fn run(source: &SourceRecord) -> Option<TargetRecord> {
@@ -201,7 +200,9 @@ fn run(source: &SourceRecord) -> Option<TargetRecord> {
         "finished_ms".into(),
         ms("finished_at", "finished_ns")?.into(),
     );
-    Some(TargetRecord::new(RUNS, source.id.clone(), Value::Object(out)).created_ms(started))
+    Some(
+        TargetRecord::new(RUNS, source.id.clone(), Value::Object(out)).preserve_expiry_from(source),
+    )
 }
 
 /// `cron_counters` holds two documents: the run counter and the admission
@@ -225,13 +226,19 @@ fn counter_record(source: &SourceRecord) -> Option<TargetRecord> {
                 out.insert("limit".into(), limit.clone());
             }
             out.insert("members".into(), Value::Array(members));
-            Some(TargetRecord::new(ADMISSION, LEDGER, Value::Object(out)))
+            Some(
+                TargetRecord::new(ADMISSION, LEDGER, Value::Object(out))
+                    .preserve_expiry_from(source),
+            )
         }
-        "runs" => Some(TargetRecord::new(
-            ADMISSION,
-            STAGED_COUNTER,
-            json!({ "next": source.body.get("next")?.as_i64()? }),
-        )),
+        "runs" => Some(
+            TargetRecord::new(
+                ADMISSION,
+                STAGED_COUNTER,
+                json!({ "next": source.body.get("next")?.as_i64()? }),
+            )
+            .preserve_expiry_from(source),
+        ),
         _ => None,
     }
 }

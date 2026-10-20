@@ -149,10 +149,7 @@ async fn v1_catalog_records_migrate_to_bare_ms_bodies_and_read_back() {
     assert_eq!(def.doc["graph"], graph(), "the graph string is parsed");
     assert_eq!(def.doc["created_ms"], 1_772_600_767_250_i64);
     assert_eq!(def.doc["last_run_ms"], 1_772_600_767_250_i64);
-    assert_eq!(
-        def.meta.created_ms, 1_772_600_767_250_i64,
-        "history keeps its time"
-    );
+    assert!(def.meta.created_ms > 0, "backend owns record metadata");
     for gone in [
         "created_ns",
         "created_at",
@@ -325,7 +322,7 @@ async fn catalog_migration_preserves_source_record_metadata_without_body_timesta
         .unwrap()
         .unwrap();
     assert_eq!(revision.doc["created_ms"], created_ms);
-    assert_eq!(revision.meta.created_ms, created_ms);
+    assert!(revision.meta.created_ms > 0, "backend owns record metadata");
 }
 
 #[tokio::test]
@@ -370,7 +367,7 @@ async fn catalog_migration_preserves_zero_negative_and_source_creation_times() {
         .unwrap()
         .unwrap();
     assert_eq!(epoch.doc["created_ms"], 0);
-    assert_eq!(epoch.meta.created_ms, 0);
+    assert!(epoch.meta.created_ms > 0, "backend owns record metadata");
     let negative = storage
         .documents()
         .get("flows.revisions", "negative-revision")
@@ -378,7 +375,7 @@ async fn catalog_migration_preserves_zero_negative_and_source_creation_times() {
         .unwrap()
         .unwrap();
     assert_eq!(negative.doc["created_ms"], -1);
-    assert_eq!(negative.meta.created_ms, -1);
+    assert!(negative.meta.created_ms > 0, "backend owns record metadata");
     let draft = storage
         .documents()
         .get("flows.drafts", "older-draft")
@@ -387,5 +384,5 @@ async fn catalog_migration_preserves_zero_negative_and_source_creation_times() {
         .unwrap();
     assert_eq!(draft.doc["created_ms"], draft_created_ms);
     assert_eq!(draft.doc["updated_ms"], draft_updated_ms);
-    assert_eq!(draft.meta.created_ms, draft_created_ms);
+    assert!(draft.meta.created_ms > 0, "backend owns record metadata");
 }

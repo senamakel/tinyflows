@@ -16,7 +16,9 @@
 //!
 //! Run numbers come from `tsd.counters` (owner `cron`, name `runs`), occurrence
 //! claims are `tsd.leases` (owner `cron`, key `Key::of([job_id, occurrence_ms])`)
-//! and a job's creation time is the document's `created_ms` metadata. A job's
+//! and a job's creation time is normally the document's `created_ms` metadata.
+//! Imported and migrated jobs retain their original time in the body field
+//! `created_ms`, since module ports cannot set host-owned metadata. A job's
 //! `schedule`, `delivery`, `origin` and `policy` are real objects. Optional
 //! fields are left out rather than stored as `null`. Every other instant is one
 //! epoch-millisecond field: `next_run_ms`, `last_run_ms`, `started_ms`,

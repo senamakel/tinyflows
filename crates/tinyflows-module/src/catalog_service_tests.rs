@@ -44,6 +44,13 @@ impl HostDocuments {
     }
 
     async fn doc_put(&self, request: Value) -> tinybus::Result<Value> {
+        if request["created_ms"].as_i64().is_some() {
+            return Ok(reply(Err::<(), _>(
+                tinyflows_storage::StorageError::invalid_input(
+                    "a module cannot set created_ms: it is a host-only migration option",
+                ),
+            )));
+        }
         if request["collection"] == "flows.revisions"
             && self.fail_revision_put.swap(false, Ordering::SeqCst)
         {
@@ -54,9 +61,6 @@ impl HostDocuments {
         let mut options = WriteOptions::new();
         if let Some(schema) = request["schema"].as_u64() {
             options = options.schema(u32::try_from(schema).unwrap_or(0));
-        }
-        if let Some(created_ms) = request["created_ms"].as_i64() {
-            options = options.created_ms(created_ms);
         }
         let result = self
             .documents

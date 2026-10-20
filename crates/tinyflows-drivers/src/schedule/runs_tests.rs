@@ -309,6 +309,36 @@ async fn dedup_ties_go_to_the_earliest_created() {
 }
 
 #[tokio::test]
+async fn dedup_ranks_migrated_jobs_by_their_body_creation_time() {
+    let store = store();
+    let first = store
+        .add_shell_job(Some("imported-dup".into()), daily(), "a")
+        .await
+        .unwrap();
+    let second = store
+        .add_shell_job(Some("imported-dup".into()), daily(), "b")
+        .await
+        .unwrap();
+
+    // Migration/import chronology lives in the body while backend metadata
+    // reflects when these records were inserted.
+    for (id, created_ms) in [(&first.id, 2_000_i64), (&second.id, 1_000_i64)] {
+        let stored = store.docs.get(JOBS, id).await.unwrap().unwrap();
+        let mut doc = stored.doc.as_object().cloned().unwrap();
+        doc.insert("created_ms".into(), json!(created_ms));
+        store
+            .docs
+            .put(JOBS, id, Value::Object(doc), stored.unchanged())
+            .await
+            .unwrap();
+    }
+
+    assert_eq!(store.dedup_named_jobs().await.unwrap(), 1);
+    assert_eq!(store.get_job(&second.id).await.unwrap().id, second.id);
+    assert!(store.get_job(&first.id).await.is_err());
+}
+
+#[tokio::test]
 async fn a_run_for_a_missing_job_is_refused() {
     let store = store();
     let now = Utc::now();
