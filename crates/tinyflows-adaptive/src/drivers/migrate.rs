@@ -167,7 +167,11 @@ fn episode(source: &SourceRecord) -> Option<TargetRecord> {
         .unwrap_or_default()
         .to_owned();
     let body = episode_body(rec, scope);
-    Some(TargetRecord::new(EPISODES, key(&[scope, &id], &source.id), body))
+    Some(TargetRecord::new(
+        EPISODES,
+        key(&[scope, &id], &source.id),
+        body,
+    ))
 }
 
 fn steps(source: &SourceRecord) -> Option<TargetRecord> {

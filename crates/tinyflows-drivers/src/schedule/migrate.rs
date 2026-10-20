@@ -166,7 +166,11 @@ fn job(source: &SourceRecord) -> Option<TargetRecord> {
         .or_else(|| body.get("created_ms").and_then(Value::as_i64))
         .unwrap_or(source.meta.created_ms);
     out.insert("created_ms".into(), created.into());
-    Some(TargetRecord::new(JOBS, source.id.clone(), Value::Object(out)))
+    Some(TargetRecord::new(
+        JOBS,
+        source.id.clone(),
+        Value::Object(out),
+    ))
 }
 
 fn run(source: &SourceRecord) -> Option<TargetRecord> {
@@ -197,7 +201,11 @@ fn run(source: &SourceRecord) -> Option<TargetRecord> {
         "finished_ms".into(),
         ms("finished_at", "finished_ns")?.into(),
     );
-    Some(TargetRecord::new(RUNS, source.id.clone(), Value::Object(out)))
+    Some(TargetRecord::new(
+        RUNS,
+        source.id.clone(),
+        Value::Object(out),
+    ))
 }
 
 /// `cron_counters` holds two documents: the run counter and the admission

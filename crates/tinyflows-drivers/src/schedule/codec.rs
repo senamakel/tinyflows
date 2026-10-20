@@ -217,9 +217,7 @@ pub(super) fn doc_to_job(stored: &Versioned<Value>) -> Result<CronJob> {
         enabled: flag("enabled")?,
         delivery,
         delete_after_run: flag("delete_after_run")?,
-        created_at: from_ms(
-            integer(doc, "created_ms")?.unwrap_or(stored.meta.created_ms),
-        )?,
+        created_at: from_ms(integer(doc, "created_ms")?.unwrap_or(stored.meta.created_ms))?,
         next_run: from_ms(
             integer(doc, "next_run_ms")?
                 .ok_or_else(|| anyhow!("cron store: document has no `next_run_ms`"))?,
