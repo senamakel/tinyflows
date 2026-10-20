@@ -1,3 +1,4 @@
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 //! Racing writers: the compare-and-swap on a definition and the revision
 //! captured beside it must hold up when two threads, or two store instances,
 //! write at once.

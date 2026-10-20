@@ -1,4 +1,5 @@
 use super::*;
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 use std::future::Future as _;
 use std::task::Poll;

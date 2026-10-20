@@ -1,3 +1,4 @@
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 //! Revision snapshotting, undo, and rollback: saving over a workflow snapshots
 //! what it replaced, undo restores (and is itself undoable), a named rollback
 //! restores exactly that revision, and history never leaks into the ordinary

@@ -1,3 +1,4 @@
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 //! A run lifecycle driven through two catalog handles on one backend.
 
 use super::*;

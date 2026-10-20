@@ -1,3 +1,4 @@
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 //! Save/delete round-tripping: the graph and host fields survive a save, the
 //! `defaults` block round-trips, an uncompilable graph is refused, ids are
 //! guarded, and the host policy judges reads as well as writes.

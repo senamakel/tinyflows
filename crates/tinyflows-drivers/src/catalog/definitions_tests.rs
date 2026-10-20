@@ -1,4 +1,5 @@
 use super::*;
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use crate::catalog::test_support::{catalog, catalog_in, trigger_graph};
 use std::sync::Arc;
 use tinyflows_storage::MemoryStorage;

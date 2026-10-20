@@ -1,4 +1,5 @@
 use super::*;
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 #[tokio::test]
 async fn prepared_manual_worker_stop_wait_and_ack_are_idempotent_and_fenced() {

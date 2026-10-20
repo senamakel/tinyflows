@@ -1,3 +1,4 @@
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 //! Behaviour of the storage-driver checkpointer, run against a driver document
 //! store: the checkpointer contract every durable backend is held to, plus the
 //! isolation and key-encoding guarantees the driver layout adds.

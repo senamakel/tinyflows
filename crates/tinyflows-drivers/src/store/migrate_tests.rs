@@ -1,3 +1,4 @@
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use std::sync::Arc;
 
 use serde_json::{Value, json};

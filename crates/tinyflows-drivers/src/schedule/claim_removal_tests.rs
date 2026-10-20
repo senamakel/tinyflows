@@ -1,3 +1,4 @@
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 //! A completed receipt removes only its own unchanged incarnation.
 use super::{
     CronDocuments,

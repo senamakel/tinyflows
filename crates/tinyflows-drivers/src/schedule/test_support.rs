@@ -1,3 +1,4 @@
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 //! Fixtures the schedule tests share.
 
 use std::sync::Arc;

@@ -1,4 +1,5 @@
 use super::*;
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 #[test]
 fn memory_has_to_be_asked_for_by_name() {

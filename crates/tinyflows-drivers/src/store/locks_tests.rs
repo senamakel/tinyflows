@@ -1,3 +1,4 @@
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 //! The decision lease: exclusion across store instances, release on drop, and
 //! recovery from a holder that went away.
 

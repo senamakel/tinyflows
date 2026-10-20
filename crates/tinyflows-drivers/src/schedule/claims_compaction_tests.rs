@@ -1,3 +1,4 @@
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 //! Occurrence leases are compacted once the job has moved past them, without
 //! weakening the fencing of stale workers.
 use super::test_support::{daily, docs_in, store};

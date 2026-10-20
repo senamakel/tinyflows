@@ -1,3 +1,4 @@
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 //! Tests for patch-based workflow editing.
 //!
 //! The theme is that a bad edit costs an error message, never the saved

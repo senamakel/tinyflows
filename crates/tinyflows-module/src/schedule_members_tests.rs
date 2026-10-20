@@ -1,3 +1,4 @@
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 //! Every contract-v3 pure member, called through the bus like a host would.
 use super::tests::{connections, document_callbacks};
 use super::*;

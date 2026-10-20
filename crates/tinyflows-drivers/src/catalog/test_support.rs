@@ -1,3 +1,4 @@
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 //! Fixtures shared by the catalog tests.
 
 use std::sync::Arc;

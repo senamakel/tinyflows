@@ -1,3 +1,4 @@
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 //! The journal on documents: ordering, scoping, supersession, the cap, and what
 //! happens when things go wrong: a journal that cannot be parsed, an id that is
 //! not usable, concurrent appenders.

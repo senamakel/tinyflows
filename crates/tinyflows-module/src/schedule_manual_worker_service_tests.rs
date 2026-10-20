@@ -1,4 +1,5 @@
 use super::*;
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 #[cfg(test)]
 #[path = "schedule_manual_worker_stop_identity_tests.rs"]

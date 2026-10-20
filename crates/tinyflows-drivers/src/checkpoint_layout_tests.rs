@@ -1,3 +1,4 @@
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 //! Pins the checkpointer's documents to the layout `tinyagents-graph` stores
 //! for namespace `flows`. The fixtures are copied from tinyagents' own tests
 //! (`checkpoint/drivers_tests.rs`, `storage/mod_tests.rs` on its epic branch)
