@@ -164,8 +164,9 @@ pub(super) fn set_last_run(
     doc.insert("last_output".into(), json!(output));
 }
 
-/// The job a stored document holds. Its creation time is the document's
-/// `created_ms` metadata.
+/// The job a stored document holds. Imported jobs retain their original
+/// creation time in the body because module document ports cannot set the
+/// host-owned record metadata; ordinary jobs still use backend metadata.
 pub(super) fn doc_to_job(stored: &Versioned<Value>) -> Result<CronJob> {
     let doc = &stored.doc;
     let schedule = schedule_from_value(
@@ -215,7 +216,9 @@ pub(super) fn doc_to_job(stored: &Versioned<Value>) -> Result<CronJob> {
         enabled: flag("enabled")?,
         delivery,
         delete_after_run: flag("delete_after_run")?,
-        created_at: from_ms(stored.meta.created_ms)?,
+        created_at: from_ms(
+            integer(doc, "created_ms")?.unwrap_or(stored.meta.created_ms),
+        )?,
         next_run: from_ms(
             integer(doc, "next_run_ms")?
                 .ok_or_else(|| anyhow!("cron store: document has no `next_run_ms`"))?,

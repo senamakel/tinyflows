@@ -120,13 +120,10 @@ async fn v1_jobs_runs_and_the_ledger_migrate_and_read_back() {
     assert_eq!(j1.doc["origin"], json!({"kind": "web", "thread_id": "t"}));
     assert_eq!(j1.doc["next_run_ms"], 1_772_701_200_000_i64);
     assert_eq!(j1.doc["last_run_ms"], 1_772_614_800_000_i64);
-    assert_eq!(
-        j1.meta.created_ms, 1_772_600_767_123_i64,
-        "creation time is metadata"
-    );
+    assert_eq!(j1.doc["created_ms"], 1_772_600_767_123_i64);
+    assert!(j1.meta.created_ms > 0, "backend owns record metadata");
     for gone in [
         "created_at",
-        "created_ms",
         "next_run",
         "next_run_ns",
         "last_run",
