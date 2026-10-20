@@ -3,8 +3,9 @@
 //! Bodies are bare snake_case objects. Nested values (`schedule`, `delivery`,
 //! `origin`, `policy`) are real objects, not JSON strings; every instant is one
 //! `_ms` field (`next_run_ms`, `last_run_ms`, `started_ms`, `finished_ms`), and
-//! a job's creation time is the document's `created_ms` metadata, not a body
-//! field. Optional fields are left out rather than stored as `null`. A job
+//! a job's creation time normally comes from document metadata, with a body
+//! `created_ms` override for imported or migrated jobs. Optional fields are
+//! left out rather than stored as `null`. A job
 //! document that cannot be read back is an error naming the field, never a
 //! silently defaulted job.
 
