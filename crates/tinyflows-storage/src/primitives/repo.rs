@@ -9,7 +9,7 @@ use std::time::Duration;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
-use tinystoragedrivers_api::types::{
+use tinystoragedrivers_api::{
     DocumentStore, Page, Precondition, Query, Version, Versioned, WriteOptions, validate_collection,
 };
 use tinystoragedrivers_types::{ErrorKind, Result};

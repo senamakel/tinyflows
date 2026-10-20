@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use super::COUNTERS;
 use super::repo::{Repo, RetryPolicy};
-use tinystoragedrivers_api::types::DocumentStore;
+use tinystoragedrivers_api::DocumentStore;
 use tinystoragedrivers_types::{Result, StorageError};
 use tinystoragedrivers_types::Key;
 
