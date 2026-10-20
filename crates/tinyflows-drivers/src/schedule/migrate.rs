@@ -21,8 +21,9 @@
 //! moves it into `tsd.counters` once per scope after `Registry::migrate`.
 
 use serde_json::{Map, Value, json};
+use std::sync::Arc;
 use tinyflows_storage::{
-    Counters, Migrations, Owner, Precondition, Result, Schema, ScopeClass, ScopedStorage,
+    Counters, DocumentStore, Migrations, Owner, Precondition, Result, Schema, ScopeClass,
     SourceRecord, Step, TargetRecord,
 };
 
@@ -248,13 +249,13 @@ fn counter_record(source: &SourceRecord) -> Option<TargetRecord> {
 /// # Errors
 ///
 /// The first storage error; the import resumes on the next call.
-pub async fn import_legacy_cron_counters(storage: &ScopedStorage) -> Result<bool> {
-    let migrations = Migrations::new(storage);
+pub async fn import_legacy_cron_counters(docs: &Arc<dyn DocumentStore>) -> Result<bool> {
+    let migrations = Migrations::new(docs, OWNER);
     if migrations.done(OWNER, COUNTERS_STEP).await? {
         return Ok(false);
     }
-    tinyflows_storage::primitives::ensure(storage).await?;
-    let docs = storage.documents();
+    tinyflows_storage::primitives::ensure(docs).await?;
+    docs.ensure_collection(&tinyflows_storage::CollectionSpec::new("cron.migrations")).await?;
     docs.ensure_collection(&CronDocuments::collections().remove(2))
         .await?;
     let mut carried = false;

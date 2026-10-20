@@ -20,8 +20,9 @@
 //! visible (readers report it) instead of being lost.
 
 use serde_json::{Map, Value};
+use std::sync::Arc;
 use tinyflows_storage::{
-    Cursor, Filter, ID_FIELD, Key, Migrations, Query, Result, Schema, ScopeClass, ScopedStorage,
+    Cursor, DocumentStore, Filter, ID_FIELD, Key, Migrations, Query, Result, Schema, ScopeClass,
     Sort, SourceRecord, Step, TargetRecord, primitives,
 };
 
@@ -224,13 +225,13 @@ fn workflow(source: &SourceRecord) -> Option<TargetRecord> {
 ///
 /// The first storage error; the import resumes on the next call because
 /// nothing is removed before the counters are raised.
-pub async fn import_legacy_adaptive_counters(storage: &ScopedStorage) -> Result<u64> {
-    let migrations = Migrations::new(storage);
+pub async fn import_legacy_adaptive_counters(docs: &Arc<dyn DocumentStore>) -> Result<u64> {
+    let migrations = Migrations::new(docs, "adaptive");
     if migrations.done(COUNTER_OWNER, COUNTERS_STEP).await? {
         return Ok(0);
     }
-    primitives::ensure(storage).await?;
-    let docs = storage.documents();
+    primitives::ensure(docs).await?;
+    docs.ensure_collection(&tinyflows_storage::CollectionSpec::new("adaptive.migrations")).await?;
     docs.ensure_collection(&tinyflows_storage::CollectionSpec::new(COUNTERS))
         .await?;
     let counters = tinyflows_storage::Counters::new(docs);
