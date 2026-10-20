@@ -17,12 +17,10 @@ use serde::{Deserialize, Serialize};
 
 use super::LEASES;
 use super::repo::{Repo, RetryPolicy};
-use tinystoragedrivers_api::types::DocumentStore;
+use tinystoragedrivers_api::DocumentStore;
 use tinystoragedrivers_types::{Result, StorageError};
-use crate::fence::Fence;
 use tinystoragedrivers_types::Key;
-use crate::memory::{Clock, system_clock};
-use crate::scope::Scope;
+use crate::{Clock, system_clock};
 
 /// The stored body: `{holder, epoch, expires_ms}` plus the optional
 /// `endpoint` and `released` fields, both absent from records that never
@@ -134,22 +132,6 @@ pub struct Lease {
 }
 
 impl Lease {
-    /// A [`Fence`] that holds while this lease's epoch is still the stored
-    /// one. Bind it with
-    /// [`StorageBackend::for_scope_fenced`](crate::StorageBackend::for_scope_fenced)
-    /// so a holder that lost the lease cannot land a late write.
-    ///
-    /// `scope` is the scope the lease record lives in, the one the
-    /// [`Leases`] handle was opened for.
-    ///
-    /// The fence checks the epoch only: it refuses writes once another holder
-    /// took over, not merely because the clock passed `expires_ms`. A holder
-    /// that wants the second guarantee renews before expiry.
-    #[must_use]
-    pub fn fence(&self, scope: &Scope) -> Fence {
-        Fence::epoch(scope.clone(), LEASES, self.id.clone(), "epoch", self.epoch)
-    }
-
     fn from_body(id: String, body: Body) -> Self {
         Self {
             id,
