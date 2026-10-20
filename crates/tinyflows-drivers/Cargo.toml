@@ -31,7 +31,6 @@ catalog = [
     "dep:anyhow",
     "dep:chrono",
     "dep:uuid",
-    "tinyflows-storage",
 ]
 # `schedule`: the cron job/run store (`schedule::CronDocuments`). It needs only
 # `tinyflows-schedule`, so a host that runs scheduled jobs but no flows can
@@ -45,7 +44,6 @@ store = [
     "engine",
     "tinyflows/store",
     "dep:uuid",
-    "tinyflows-storage",
 ]
 # The fixture-only writers (`force_run_status_for_test`,
 # `force_corrupt_graph_json_for_test`) that stage states no production path can
