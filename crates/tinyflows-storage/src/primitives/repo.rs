@@ -9,10 +9,10 @@ use std::time::Duration;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
-use crate::document::{
+use tinystoragedrivers_api::types::{
     DocumentStore, Page, Precondition, Query, Version, Versioned, WriteOptions, validate_collection,
 };
-use crate::error::{ErrorKind, Result};
+use tinystoragedrivers_types::{ErrorKind, Result};
 
 /// How long [`Repo::update`] keeps retrying a lost compare-and-swap.
 ///

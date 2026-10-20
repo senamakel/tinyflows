@@ -8,10 +8,10 @@ use serde_json::Value;
 
 use super::KV;
 use super::repo::Repo;
-use crate::document::{DocumentStore, Precondition, Query, Version};
-use crate::error::{Result, StorageError};
-use crate::filter::{Filter, Sort};
-use crate::key::Key;
+use tinystoragedrivers_api::types::{DocumentStore, Precondition, Query, Version};
+use tinystoragedrivers_types::{Result, StorageError};
+use tinystoragedrivers_types::{Filter, Sort};
+use tinystoragedrivers_types::Key;
 
 /// Entries per page while [`Kv::list`] walks a namespace.
 const PAGE: usize = 200;

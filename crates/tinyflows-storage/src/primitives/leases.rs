@@ -17,10 +17,10 @@ use serde::{Deserialize, Serialize};
 
 use super::LEASES;
 use super::repo::{Repo, RetryPolicy};
-use crate::document::DocumentStore;
-use crate::error::{Result, StorageError};
+use tinystoragedrivers_api::types::DocumentStore;
+use tinystoragedrivers_types::{Result, StorageError};
 use crate::fence::Fence;
-use crate::key::Key;
+use tinystoragedrivers_types::Key;
 use crate::memory::{Clock, system_clock};
 use crate::scope::Scope;
 

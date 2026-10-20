@@ -3,13 +3,18 @@
 //! These helpers contain record and migration behavior owned by TinyFlows;
 //! backend selection stays with the host.
 
-mod primitives;
-
 pub use tinystoragedrivers_api::{DocumentStore, DocumentStoreExt};
 pub use tinystoragedrivers_types::*;
 pub use primitives::{Acquire, Acquisition, Counters, Kv, Lease, LeaseRecord, Leases, Repo, RetryPolicy};
 
 pub(crate) type Clock = std::sync::Arc<dyn Fn() -> u64 + Send + Sync>;
+
+pub(crate) fn system_clock() -> u64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |duration| u64::try_from(duration.as_millis()).unwrap_or(u64::MAX))
+}
 
 pub mod primitives {
     use std::sync::Arc;
