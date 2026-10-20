@@ -72,6 +72,7 @@ fn map(
             convert(source).unwrap_or_else(|| {
                 tracing::warn!(collection, id = %source.id, "[cron-storage] carrying unconvertible v1 record");
                 TargetRecord::new(collection, source.id.clone(), source.body.clone())
+                    .preserve_expiry_from(source)
             })
         })
         .collect()
@@ -170,7 +171,8 @@ fn job(source: &SourceRecord) -> Option<TargetRecord> {
         JOBS,
         source.id.clone(),
         Value::Object(out),
-    ))
+    )
+    .preserve_expiry_from(source))
 }
 
 fn run(source: &SourceRecord) -> Option<TargetRecord> {
@@ -205,7 +207,8 @@ fn run(source: &SourceRecord) -> Option<TargetRecord> {
         RUNS,
         source.id.clone(),
         Value::Object(out),
-    ))
+    )
+    .preserve_expiry_from(source))
 }
 
 /// `cron_counters` holds two documents: the run counter and the admission
@@ -229,13 +232,17 @@ fn counter_record(source: &SourceRecord) -> Option<TargetRecord> {
                 out.insert("limit".into(), limit.clone());
             }
             out.insert("members".into(), Value::Array(members));
-            Some(TargetRecord::new(ADMISSION, LEDGER, Value::Object(out)))
+            Some(
+                TargetRecord::new(ADMISSION, LEDGER, Value::Object(out))
+                    .preserve_expiry_from(source),
+            )
         }
         "runs" => Some(TargetRecord::new(
             ADMISSION,
             STAGED_COUNTER,
             json!({ "next": source.body.get("next")?.as_i64()? }),
-        )),
+        )
+        .preserve_expiry_from(source)),
         _ => None,
     }
 }
