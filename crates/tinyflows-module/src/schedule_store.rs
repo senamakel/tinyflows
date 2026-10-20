@@ -13,7 +13,7 @@ use tinyflows_schedule::{
     CronJob,
     runtime::{Completion, RunRecord},
 };
-use tinyflows_storage::{MigrateOptions, Registry, Scope};
+use tinyflows_storage::MigrateOptions;
 
 /// The module's schedule store: `CronDocuments` over the host's document port.
 pub(super) struct Store(CronDocuments);
@@ -44,16 +44,13 @@ impl Store {
             Arc::new(super::schedule_documents::Documents::new(connection, callback).await?);
         documents.require_record_metadata()?;
         let _guard = super::migration_lock::schedule().await;
-        let storage = tinyflows_drivers::document_only_scope(Scope::local(), documents.clone())?;
         CronDocuments::new(documents)
             .ensure()
             .await
             .map_err(anyhow::Error::msg)?;
-        let registry = Registry::compose([tinyflows_drivers::cron_storage_schema()])?;
-        let report = registry
-            .migrate(&storage, &MigrateOptions::default())
-            .await?;
-        let counter_imported = tinyflows_drivers::import_legacy_cron_counters(&storage).await?;
+        let schema = tinyflows_drivers::cron_storage_schema();
+        let report = schema.migrate(&documents, &MigrateOptions::default()).await?;
+        let counter_imported = tinyflows_drivers::import_legacy_cron_counters(&documents).await?;
         Ok(serde_json::json!({
             "steps_run": report.ran.len(),
             "already_done": report.already_done,
