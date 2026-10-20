@@ -2,11 +2,11 @@
 //! happens when things go wrong: a journal that cannot be parsed, an id that is
 //! not usable, concurrent appenders.
 
-use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use serde_json::json;
 use tinyflows::store::types::{NoteKind, NoteSource, WorkflowError, WorkflowNote};
 use tinyflows::store::{MAX_NOTES, WorkflowStore, current_notes, mint_note_id};
-use tinyflows_storage::{DocumentStoreExt,  Precondition, Query};
+use tinyflows_storage::{DocumentStoreExt, Precondition, Query};
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 use super::test_support::{block_on, docs_in, store, store_over};
 use super::{DriverWorkflowStore, NOTES, QUARANTINE};
@@ -287,4 +287,3 @@ fn a_note_round_trips_every_field() {
     store.append_note(&written).unwrap();
     assert_eq!(store.list_notes("sweep").unwrap().remove(0), written);
 }
-

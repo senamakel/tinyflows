@@ -8,9 +8,9 @@ use serde_json::Value;
 
 use super::KV;
 use super::repo::Repo;
+use crate::Key;
 use tinystoragedrivers_api::DocumentStore;
 use tinystoragedrivers_types::{Filter, Precondition, Query, Result, Sort, StorageError, Version};
-use crate::Key;
 
 /// Entries per page while [`Kv::list`] walks a namespace.
 const PAGE: usize = 200;

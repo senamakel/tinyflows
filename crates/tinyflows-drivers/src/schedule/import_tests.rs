@@ -1,6 +1,6 @@
-use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use super::*;
 use crate::schedule::job_not_found;
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 use crate::schedule::test_support::{channel_origin, daily, docs_in, store};
 use chrono::{TimeZone, Utc};

@@ -1,4 +1,3 @@
-use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use async_trait::async_trait;
 use serde_json::{Value, json};
 use std::sync::{
@@ -10,9 +9,10 @@ use tinyflows_bus::catalog::{self, CatalogStorage};
 use tinyflows_bus::runs::RunControlRequest;
 use tinyflows_drivers::catalog::FlowCatalogDocuments;
 use tinyflows_storage::{
-    Capabilities, CollectionSpec, DocumentStore, Filter, MemoryStorage, Page, Precondition, Query,
-    Scope, Sort, StorageBackend, StorageError, Version, Versioned, WriteOptions,
+    Capabilities, CollectionSpec, DocumentStore, Filter, Page, Precondition, Query, Scope, Sort,
+    StorageBackend, StorageError, Version, Versioned, WriteOptions,
 };
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 pub(super) struct TestSetup {
     pub(super) catalog: FlowCatalogDocuments,
@@ -23,7 +23,9 @@ pub(super) struct TestSetup {
 }
 
 pub(super) async fn setup(mode: FaultMode, status: &str) -> TestSetup {
-    let scoped = MemoryStorage::new().for_scope(&Scope::new("local").expect("valid scope")).unwrap();
+    let scoped = MemoryStorage::new()
+        .for_scope(&Scope::new("local").expect("valid scope"))
+        .unwrap();
     let docs = Arc::new(FaultingDocuments {
         inner: scoped.documents().clone(),
         mode,
@@ -173,10 +175,7 @@ impl DocumentStore for FaultingDocuments {
         self.inner.capabilities()
     }
 
-    async fn ensure_collection(
-        &self,
-        spec: &CollectionSpec,
-    ) -> tinyflows_storage::Result<()> {
+    async fn ensure_collection(&self, spec: &CollectionSpec) -> tinyflows_storage::Result<()> {
         self.inner.ensure_collection(spec).await
     }
 
@@ -328,11 +327,7 @@ impl DocumentStore for FaultingDocuments {
         self.inner.query(collection, query).await
     }
 
-    async fn count(
-        &self,
-        collection: &str,
-        filter: &Filter,
-    ) -> tinyflows_storage::Result<u64> {
+    async fn count(&self, collection: &str, filter: &Filter) -> tinyflows_storage::Result<u64> {
         self.inner.count(collection, filter).await
     }
 

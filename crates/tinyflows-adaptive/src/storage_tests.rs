@@ -1,5 +1,5 @@
-use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use super::*;
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 #[test]
 fn memory_has_to_be_asked_for_by_name() {
@@ -65,7 +65,7 @@ async fn one_call_scopes_both_halves() {
 #[cfg(feature = "storage-drivers")]
 #[tokio::test]
 async fn one_document_handle_holds_both_halves_and_survives_reopening() {
-    use tinyflows_storage::{ Scope, StorageBackend};
+    use tinyflows_storage::{Scope, StorageBackend};
     let scoped = MemoryStorage::new()
         .for_scope(&Scope::new("local").expect("valid scope"))
         .expect("scope");

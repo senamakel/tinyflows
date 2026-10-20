@@ -3,8 +3,8 @@
 //! The theme is that a bad edit costs an error message, never the saved
 //! workflow.
 
-use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use std::sync::Arc;
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 use serde_json::json;
 use tinyflows::graph_ops::GraphOp;
@@ -322,4 +322,3 @@ fn editing_a_workflow_that_does_not_exist_says_so() {
 
     assert!(matches!(err, WorkflowError::NotFound(_)), "got {err:?}");
 }
-

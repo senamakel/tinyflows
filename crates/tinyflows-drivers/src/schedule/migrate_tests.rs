@@ -1,15 +1,16 @@
-use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use super::*;
 use chrono::TimeZone;
 use serde_json::json;
 use tinyflows_schedule::Schedule;
 use tinyflows_storage::{
-    DocumentStoreExt, MigrateOptions, Precondition, Query, Scope,
-    Storage, StorageBackend,
+    DocumentStoreExt, MigrateOptions, Precondition, Query, Scope, Storage, StorageBackend,
 };
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 fn scoped() -> Storage {
-    MemoryStorage::new().for_scope(&Scope::new("local").expect("valid scope")).unwrap()
+    MemoryStorage::new()
+        .for_scope(&Scope::new("local").expect("valid scope"))
+        .unwrap()
 }
 
 async fn seed(storage: &Storage, collection: &str, id: &str, body: Value) {
@@ -46,9 +47,18 @@ fn v1_job(schedule: Value) -> Value {
 fn the_schema_composes_and_declares_the_cron_collections() {
     let schema = storage_schema();
     assert_eq!(schema.owner.as_str(), "cron");
-    let names: Vec<String> = schema.items.iter().map(|(item, _, _)| item.name.clone()).collect();
+    let names: Vec<String> = schema
+        .items
+        .iter()
+        .map(|(item, _, _)| item.name.clone())
+        .collect();
     assert_eq!(names, ["cron.jobs", "cron.runs", "cron.admission"]);
-    assert!(schema.collections().iter().any(|item| item.name == "tsd.migrations"));
+    assert!(
+        schema
+            .collections()
+            .iter()
+            .any(|item| item.name == "tsd.migrations")
+    );
 }
 
 #[tokio::test]
@@ -88,9 +98,15 @@ async fn v1_jobs_runs_and_the_ledger_migrate_and_read_back() {
     seed(&storage, "cron_counters", "runs", json!({"next": 8})).await;
 
     migrate(&storage).await;
-    assert!(import_legacy_cron_counters(storage.documents()).await.unwrap());
     assert!(
-        !import_legacy_cron_counters(storage.documents()).await.unwrap(),
+        import_legacy_cron_counters(storage.documents())
+            .await
+            .unwrap()
+    );
+    assert!(
+        !import_legacy_cron_counters(storage.documents())
+            .await
+            .unwrap(),
         "runs once"
     );
 

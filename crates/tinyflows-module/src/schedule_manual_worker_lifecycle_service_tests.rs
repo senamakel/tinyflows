@@ -7,7 +7,7 @@ async fn prepared_manual_worker_stop_wait_and_ack_are_idempotent_and_fenced() {
         ManualDelivery, ManualRunOutcome, ManualRunRequest, ManualRunState, PrepareManualRun,
         StartManualRun, StopManualRun, StoreConfig, WaitManualRun,
     };
-    use tinyflows_storage::{ Scope, StorageBackend};
+    use tinyflows_storage::{Scope, StorageBackend};
 
     let (_server, host, state) = connections().await;
     state
@@ -279,7 +279,7 @@ async fn delivery_projection_error_releases_claim_before_failed_terminal() {
         ManualDelivery, ManualRunOutcome, ManualRunRequest, ManualRunState, PrepareManualRun,
         StartManualRun, WaitManualRun,
     };
-    use tinyflows_storage::{ Scope, StorageBackend};
+    use tinyflows_storage::{Scope, StorageBackend};
 
     let (_server, host, state) = connections().await;
     state

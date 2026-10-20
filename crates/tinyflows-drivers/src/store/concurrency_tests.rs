@@ -2,8 +2,8 @@
 //! captured beside it must hold up when two threads, or two store instances,
 //! write at once.
 
-use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use std::sync::{Arc, Barrier};
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 use tinyflows::store::WorkflowStore;
 
@@ -189,4 +189,3 @@ fn a_guarded_save_of_an_invalid_graph_is_refused_before_anything_is_written() {
     );
     assert!(store.list_revisions("guarded").unwrap().is_empty());
 }
-

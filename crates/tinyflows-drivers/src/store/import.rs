@@ -9,8 +9,7 @@
 //! that has since been written to, without clobbering anything. The return
 //! value says whether this call wrote the record.
 //!
-//! The reading half (opening the legacy files) lives in the unpublished
-//! `tinyflows-import` crate, which is where the file formats are known.
+//! Hosts own any file discovery and source-format decoding.
 
 use serde_json::Value;
 use tinyflows::store::types::{

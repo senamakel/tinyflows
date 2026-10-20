@@ -19,8 +19,8 @@
 //!   an import into a scope with history never overwrites it. The counter is
 //!   always left beyond every number used.
 //!
-//! The reading half (opening `jobs.db`) lives in the unpublished
-//! `tinyflows-import` crate.
+//! Hosts own any file discovery; these methods only write through the
+//! caller-provided storage port.
 
 use anyhow::{Context, Result};
 use tinyflows_schedule::{CronJob, CronRun, JobType};

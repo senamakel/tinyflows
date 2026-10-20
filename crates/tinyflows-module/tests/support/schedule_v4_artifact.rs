@@ -6,7 +6,7 @@ use serde_json::Value;
 use std::sync::Arc;
 use tinybus::Proxy;
 use tinyflows_bus::schedule::CallbackAddress;
-use tinystoragedrivers_core::DocumentStore;
+use tinyflows_storage::DocumentStore;
 
 pub fn verify_captured_triggers(state: &callbacks::State, stored_job_id: &str) {
     let jobs = state.trigger_jobs.lock().unwrap();

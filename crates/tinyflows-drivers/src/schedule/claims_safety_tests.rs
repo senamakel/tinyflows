@@ -1,12 +1,12 @@
 //! A claim's lease and the job document are two writes; these pin down that a
 //! holder which lost its claim cannot commit through the gap between them, and
 //! that no error path strands a lease.
-use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use super::CronDocuments;
 use super::test_support::{FaultDocuments, daily, docs_in};
 use chrono::Duration;
 use std::sync::{Arc, atomic::AtomicBool};
 use tinyflows_schedule::CronJobPatch;
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 fn fault_store(
     backend: &MemoryStorage,
@@ -315,4 +315,3 @@ async fn a_failed_lease_release_after_a_committed_completion_does_not_fail_it() 
     assert!(store.list_runs(&job.id, 10).await.unwrap().is_empty());
     assert!(store.find_job(&job.id).await.unwrap().is_none());
 }
-

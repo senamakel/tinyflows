@@ -1,10 +1,10 @@
 //! A run lifecycle driven through two catalog handles on one backend.
 
-use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use super::*;
 use crate::catalog::test_support::trigger_graph;
 use tinyflows::nodes::control_flow::dedup::{committed_key, tentative_key};
 use tinyflows::nodes::control_flow::dedup_settle;
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 fn step(node: &str) -> FlowRunStep {
     FlowRunStep {
@@ -20,7 +20,7 @@ fn step(node: &str) -> FlowRunStep {
 async fn two_handles_on_one_backend_agree_on_a_run_lifecycle() {
     use crate::catalog::FlowStateDocuments;
     use tinyflows::caps::StateStore;
-    
+
     let storage = MemoryStorage::new();
     let a = crate::catalog::test_support::catalog_in(&storage, "tenant");
     let b = crate::catalog::test_support::catalog_in(&storage, "tenant");
@@ -195,4 +195,3 @@ async fn parked_finish_does_not_settle_a_run_claimed_for_resume() {
         "running"
     );
 }
-

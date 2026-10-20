@@ -1,13 +1,13 @@
 //! The decision lease: exclusion across store instances, release on drop, and
 //! recovery from a holder that went away.
 
-use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use std::sync::mpsc;
 use std::time::Duration;
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 use serde_json::json;
 use tinyflows::store::WorkflowStore;
-use tinyflows_storage::{Key,  Precondition, primitives};
+use tinyflows_storage::{Key, Precondition, primitives};
 
 use super::DriverWorkflowStore;
 use super::locks::{LEASE_OWNER, lease_key};
@@ -146,4 +146,3 @@ fn a_lease_id_that_is_not_usable_is_refused() {
     let store = store_over(&MemoryStorage::new(), "local");
     assert!(store.lock_proposal_decision("").is_err());
 }
-

@@ -1,14 +1,16 @@
-use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use super::*;
 use crate::catalog::FlowCatalogDocuments;
 use serde_json::json;
 use tinyflows_storage::{
-    DocumentStoreExt, MigrateOptions, Precondition, Query, Scope,
-    Storage, StorageBackend, WriteOptions,
+    DocumentStoreExt, MigrateOptions, Precondition, Query, Scope, Storage, StorageBackend,
+    WriteOptions,
 };
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 fn scoped() -> Storage {
-    MemoryStorage::new().for_scope(&Scope::new("local").expect("valid scope")).unwrap()
+    MemoryStorage::new()
+        .for_scope(&Scope::new("local").expect("valid scope"))
+        .unwrap()
 }
 
 async fn seed(storage: &Storage, collection: &str, id: &str, body: Value) {
@@ -54,7 +56,11 @@ fn graph() -> Value {
 fn the_schema_composes_and_names_every_catalog_collection() {
     let schema = crate::catalog_storage_schema();
     assert_eq!(schema.owner.as_str(), "flows");
-    let names: Vec<String> = schema.items.iter().map(|(item, _, _)| item.name.clone()).collect();
+    let names: Vec<String> = schema
+        .items
+        .iter()
+        .map(|(item, _, _)| item.name.clone())
+        .collect();
     for name in [
         "flows.definitions",
         "flows.revisions",
@@ -64,14 +70,24 @@ fn the_schema_composes_and_names_every_catalog_collection() {
     ] {
         assert!(names.iter().any(|actual| actual == name), "{name}");
     }
-    assert!(schema.items.iter().all(|(_, _, scope)| *scope == ScopeClass::Tenant));
+    assert!(
+        schema
+            .items
+            .iter()
+            .all(|(_, _, scope)| *scope == ScopeClass::Tenant)
+    );
     assert!(
         !schema
             .items
             .iter()
             .any(|(item, _, _)| item.name == "flows.workflows")
     );
-    assert!(schema.collections().iter().any(|item| item.name == "tsd.migrations"));
+    assert!(
+        schema
+            .collections()
+            .iter()
+            .any(|item| item.name == "tsd.migrations")
+    );
 }
 
 #[tokio::test]

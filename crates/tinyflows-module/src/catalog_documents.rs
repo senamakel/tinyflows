@@ -65,10 +65,9 @@ fn storage_error(error: CatalogStorageFailure) -> StorageError {
         "already_exists" => StorageError::already_exists(error.message),
         "not_found" => StorageError::not_found(error.message),
         "invalid_input" => StorageError::invalid_input(error.message),
-        "serialization" => StorageError::new(
-            tinyflows_storage::ErrorKind::Serialization,
-            error.message,
-        ),
+        "serialization" => {
+            StorageError::new(tinyflows_storage::ErrorKind::Serialization, error.message)
+        }
         "unavailable" => StorageError::unavailable(error.message),
         _ => StorageError::backend(error.message),
     }

@@ -9,7 +9,8 @@ use tinyflows_bus::schedule::{
 };
 use tinyflows_drivers::schedule::CronDocuments;
 use tinyflows_schedule::{CronRun, Schedule};
-use tinystoragedrivers_core::{MemoryStorage, Scope, StorageBackend};
+use tinyflows_storage::{Scope, StorageBackend};
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 #[tokio::test]
 #[ignore = "run with TINYFLOWS_MODULE_ARTIFACT set to a compiled module"]
@@ -39,7 +40,9 @@ async fn compiled_module_serves_manual_worker_lifecycle_through_schedule_abi() {
         .await
         .unwrap();
 
-    let scoped = MemoryStorage::new().for_scope(&Scope::new("local").expect("valid scope")).unwrap();
+    let scoped = MemoryStorage::new()
+        .for_scope(&Scope::new("local").expect("valid scope"))
+        .unwrap();
     let documents = CronDocuments::new(scoped.documents().clone());
     let job = documents
         .add_shell_job(

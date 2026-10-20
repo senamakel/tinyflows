@@ -1,10 +1,10 @@
-use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use serde_json::json;
 use tinyflows::store::types::{
     NoteKind, NoteSource, ProposalStatus, RunStatus, WorkflowError, WorkflowNote, WorkflowProposal,
     WorkflowRevision,
 };
 use tinyflows::store::{MAX_NOTES, MAX_REVISIONS, WorkflowStore, mint_note_id, new_run_record};
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 use crate::store::test_support::{record, store, store_over};
 

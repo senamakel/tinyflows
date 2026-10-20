@@ -6,13 +6,14 @@ use tinyflows_bus::catalog::{
     WorkflowRevision,
 };
 use tinyflows_drivers::schedule::CronDocuments;
-use tinystoragedrivers_core::{
-    CollectionSpec, DocumentStore, MemoryStorage, Precondition, Scope, StorageBackend, WriteOptions,
+use tinyflows_storage::{
+    CollectionSpec, DocumentStore, Precondition, Scope, StorageBackend, WriteOptions,
 };
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 pub(super) struct CatalogCallback(pub(super) Arc<dyn DocumentStore>);
 
-fn catalog_reply<T: serde::Serialize>(result: tinystoragedrivers_core::Result<T>) -> Value {
+fn catalog_reply<T: serde::Serialize>(result: tinyflows_storage::Result<T>) -> Value {
     match result {
         Ok(value) => json!({"value":serde_json::to_value(value).unwrap()}),
         Err(error) => {
@@ -114,27 +115,20 @@ async fn published_module_migrates_legacy_schedule_records_through_owned_bus_cal
     broker.attach(Arc::new(transport));
     let connection = Connection::connect(Box::new(client)).await.unwrap();
 
-    let scoped = MemoryStorage::new().for_scope(&Scope::new("local").expect("valid scope")).unwrap();
+    let scoped = MemoryStorage::new()
+        .for_scope(&Scope::new("local").expect("valid scope"))
+        .unwrap();
     let docs = scoped.documents().clone();
-    docs.ensure_collection(&tinystoragedrivers_core::CollectionSpec::new("cron_jobs"))
+    docs.ensure_collection(&tinyflows_storage::CollectionSpec::new("cron_jobs"))
         .await
         .unwrap();
+    let legacy: Value =
+        serde_json::from_str(include_str!("../fixtures/storage/cron-job-v0.8.8.json")).unwrap();
+    let legacy_id = legacy["id"].as_str().unwrap();
     docs.put(
         "cron_jobs",
-        "legacy-job",
-        json!({
-            "claim_generation": 1,
-            "expression": "0 9 * * *",
-            "command": "echo migrated",
-            "schedule": "{\"kind\":\"cron\",\"expr\":\"0 9 * * *\",\"tz\":null,\"active_hours\":null}",
-            "job_type": "shell",
-            "session_target": "isolated",
-            "enabled": true,
-            "delivery": "{\"mode\":\"none\",\"channel\":null,\"to\":null,\"best_effort\":true}",
-            "delete_after_run": false,
-            "created_at": "2026-03-04T05:06:07+00:00",
-            "next_run": "2026-03-05T09:00:00+00:00"
-        }),
+        legacy_id,
+        legacy["doc"].clone(),
         Precondition::None,
     )
     .await
@@ -181,11 +175,99 @@ async fn published_module_migrates_legacy_schedule_records_through_owned_bus_cal
     concurrent.unwrap();
     let _: Value = schedule.call("ScheduleStore", &(request,)).await.unwrap();
 
-    let migrated = docs.get("cron.jobs", "legacy-job").await.unwrap().unwrap();
-    assert_eq!(migrated.meta.created_ms, 1_772_600_767_000_i64);
+    let migrated = docs.get("cron.jobs", legacy_id).await.unwrap().unwrap();
+    let legacy_created_ms =
+        chrono::DateTime::parse_from_rfc3339(legacy["doc"]["created_at"].as_str().unwrap())
+            .unwrap()
+            .timestamp_millis();
+    assert_eq!(migrated.meta.created_ms, legacy_created_ms);
     let jobs = CronDocuments::new(docs).list_jobs().await.unwrap();
     assert_eq!(jobs.len(), 1, "the legacy job is visible after migration");
-    assert_eq!(jobs[0].id, "legacy-job");
+    assert_eq!(jobs[0].id, legacy_id);
+    assert_eq!(jobs[0].command, "legacy-fixture-flow");
+}
+
+#[tokio::test]
+#[ignore = "run through scripts/verify-module-artifact.sh"]
+async fn published_module_reads_previous_release_schedule_records_on_open() {
+    let artifact = std::env::var_os("TINYFLOWS_MODULE_ARTIFACT")
+        .expect("set TINYFLOWS_MODULE_ARTIFACT to a compiled cdylib");
+    let broker = Broker::new();
+    let host = ModuleHost::new(broker.clone());
+    host.load_file(std::path::PathBuf::from(artifact)).unwrap();
+    let (client, transport) = MemoryTransport::pair();
+    broker.attach(Arc::new(transport));
+    let connection = Connection::connect(Box::new(client)).await.unwrap();
+
+    let scoped = MemoryStorage::new()
+        .for_scope(&Scope::new("local").expect("valid scope"))
+        .unwrap();
+    let docs = scoped.documents().clone();
+    docs.ensure_collection(&tinyflows_storage::CollectionSpec::new("cron.jobs"))
+        .await
+        .unwrap();
+    let previous: Value =
+        serde_json::from_str(include_str!("../fixtures/storage/cron-job-v0.8.28.json")).unwrap();
+    let previous_meta = &previous["meta"];
+    let created_ms = previous_meta["created_ms"].as_i64().unwrap();
+    let schema = u32::try_from(previous_meta["schema"].as_u64().unwrap()).unwrap();
+    let previous_id = previous["id"].as_str().unwrap();
+    let original = docs
+        .put_with(
+            "cron.jobs",
+            previous_id,
+            previous["doc"].clone(),
+            Precondition::None,
+            WriteOptions::new().created_ms(created_ms).schema(schema),
+        )
+        .await
+        .unwrap();
+
+    connection
+        .serve_at(
+            "/test/ScheduleDocuments".try_into().unwrap(),
+            super::document_callbacks::Documents {
+                docs: docs.clone(),
+                conflict_once: Arc::new(AtomicBool::new(false)),
+                atomic_calls: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            },
+        )
+        .await
+        .unwrap();
+    connection
+        .request_name("test.ScheduleDocuments")
+        .await
+        .unwrap();
+    let schedule = connection
+        .proxy(
+            tinyflows_bus::schedule::BUS_NAME,
+            tinyflows_bus::schedule::OBJECT_PATH,
+            tinyflows_bus::schedule::INTERFACE,
+        )
+        .unwrap();
+    let request = json!({
+        "storage": {
+            "backend": {"kind":"documents", "callback": {
+                "destination":"test.ScheduleDocuments",
+                "object_path":"/test/ScheduleDocuments"
+            }}
+        },
+        "operation": {"op":"migrate"}
+    });
+    let _: Value = schedule.call("ScheduleStore", &(request,)).await.unwrap();
+
+    let reopened = docs
+        .get("cron.jobs", previous_id)
+        .await
+        .unwrap()
+        .expect("the previous release's schedule remains readable");
+    assert_eq!(reopened.doc, previous["doc"]);
+    assert_eq!(reopened.version, original);
+    assert_eq!(reopened.meta.created_ms, created_ms);
+    let jobs = CronDocuments::new(docs).list_jobs().await.unwrap();
+    assert_eq!(jobs.len(), 1);
+    assert_eq!(jobs[0].id, previous_id);
+    assert_eq!(jobs[0].command, "base-fixture-flow");
 }
 
 #[tokio::test]
@@ -199,7 +281,9 @@ async fn published_module_migrates_legacy_catalog_records_through_owned_bus_call
     let (client, transport) = MemoryTransport::pair();
     broker.attach(Arc::new(transport));
     let connection = Connection::connect(Box::new(client)).await.unwrap();
-    let scoped = MemoryStorage::new().for_scope(&Scope::new("local").expect("valid scope")).unwrap();
+    let scoped = MemoryStorage::new()
+        .for_scope(&Scope::new("local").expect("valid scope"))
+        .unwrap();
     let docs = scoped.documents().clone();
     for collection in [
         "flows_definitions",
@@ -314,8 +398,8 @@ async fn published_module_migrates_legacy_catalog_records_through_owned_bus_call
         .unwrap();
     assert_eq!(migrated_revision.doc["created_ms"], revision_created_ms);
     assert_eq!(migrated_revision.meta.created_ms, revision_created_ms);
-    let catalog_state = tinystoragedrivers_core::Key::of(["flows", "kv:legacy-flow", "k"]).unwrap();
-    let state = tinystoragedrivers_core::Key::of(["flows", "state", "state-key"]).unwrap();
+    let catalog_state = tinyflows_storage::Key::of(["flows", "kv:legacy-flow", "k"]).unwrap();
+    let state = tinyflows_storage::Key::of(["flows", "state", "state-key"]).unwrap();
     assert_eq!(
         docs.get("tsd.kv", catalog_state.as_str())
             .await

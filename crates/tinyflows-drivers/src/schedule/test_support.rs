@@ -1,7 +1,7 @@
 //! Fixtures the schedule tests share.
 
-use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use std::sync::Arc;
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 use tinyflows_schedule::{JobOrigin, Schedule};
 use tinyflows_storage::{DocumentStore, Scope, StorageBackend};
@@ -99,9 +99,7 @@ impl DocumentStore for FaultDocuments {
         &self,
         c: &str,
         id: &str,
-    ) -> tinyflows_storage::Result<
-        Option<tinyflows_storage::Versioned<serde_json::Value>>,
-    > {
+    ) -> tinyflows_storage::Result<Option<tinyflows_storage::Versioned<serde_json::Value>>> {
         if c == "cron.jobs" {
             let read = self
                 .faults
@@ -180,9 +178,7 @@ impl DocumentStore for FaultDocuments {
         f: &tinyflows_storage::Filter,
         s: &[tinyflows_storage::Sort],
         p: &serde_json::Value,
-    ) -> tinyflows_storage::Result<
-        Option<tinyflows_storage::Versioned<serde_json::Value>>,
-    > {
+    ) -> tinyflows_storage::Result<Option<tinyflows_storage::Versioned<serde_json::Value>>> {
         self.inner.claim(c, f, s, p).await
     }
     async fn drop_collection(&self, c: &str) -> tinyflows_storage::Result<()> {
@@ -205,4 +201,3 @@ impl DocumentStore for FaultDocuments {
         self.inner.atomic_batch(ops).await
     }
 }
-

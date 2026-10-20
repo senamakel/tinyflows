@@ -3,10 +3,10 @@
 //! restores exactly that revision, and history never leaks into the ordinary
 //! workflow listing.
 
-use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use super::test_support::{record, store, store_over};
 use tinyflows::store::types::WorkflowError;
 use tinyflows::store::{MAX_REVISIONS, WorkflowStore, require, rollback, undo_last};
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 #[test]
 fn a_workflow_saved_for_the_first_time_has_no_history_to_go_back_to() {
@@ -211,4 +211,3 @@ fn history_does_not_show_up_in_the_workflow_listing() {
     assert_eq!(store.list().unwrap().len(), 1);
     assert_eq!(require(&store, "greet").unwrap().description, "again");
 }
-

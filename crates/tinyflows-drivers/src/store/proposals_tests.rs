@@ -4,13 +4,13 @@
 //! proposals, a decision that replaces rather than adds, a save that refuses
 //! when the graph moved underneath it.
 
-use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use std::sync::atomic::Ordering;
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 use serde_json::json;
 use tinyflows::store::types::{ProposalStatus, WorkflowError, WorkflowProposal, fingerprint};
 use tinyflows::store::{WorkflowStore, mint_proposal_id, require_proposal};
-use tinyflows_storage::{DocumentStoreExt,  Precondition};
+use tinyflows_storage::{DocumentStoreExt, Precondition};
 
 use super::test_support::{Faulty, block_on, docs_in, record, store, store_over};
 use super::{DEFINITIONS, DriverWorkflowStore, PROPOSALS};
@@ -285,4 +285,3 @@ fn an_edit_that_lands_between_the_check_and_the_write_refuses_the_proposal() {
             .is_empty()
     );
 }
-

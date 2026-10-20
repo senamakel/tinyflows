@@ -1,10 +1,10 @@
-use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use super::*;
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 use super::test_support::{daily, docs_in, store};
 use chrono::Utc;
 use serde_json::json;
-use tinyflows_storage::{ Precondition};
+use tinyflows_storage::Precondition;
 
 #[test]
 fn limits_default_like_the_sqlite_store_and_clamp_to_one() {

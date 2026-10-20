@@ -1,7 +1,7 @@
 //! Fixtures the store tests share.
 
-use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use std::sync::Arc;
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 use serde_json::json;
 use tinyflows::store::parse_workflow;
@@ -124,9 +124,7 @@ impl DocumentStore for Faulty {
         &self,
         collection: &str,
         id: &str,
-    ) -> tinyflows_storage::Result<
-        Option<tinyflows_storage::Versioned<serde_json::Value>>,
-    > {
+    ) -> tinyflows_storage::Result<Option<tinyflows_storage::Versioned<serde_json::Value>>> {
         self.inner.get(collection, id).await
     }
 
@@ -206,9 +204,7 @@ impl DocumentStore for Faulty {
         filter: &tinyflows_storage::Filter,
         sort: &[tinyflows_storage::Sort],
         patch: &serde_json::Value,
-    ) -> tinyflows_storage::Result<
-        Option<tinyflows_storage::Versioned<serde_json::Value>>,
-    > {
+    ) -> tinyflows_storage::Result<Option<tinyflows_storage::Versioned<serde_json::Value>>> {
         self.inner.claim(collection, filter, sort, patch).await
     }
 
@@ -241,4 +237,3 @@ impl DocumentStore for Faulty {
         self.inner.atomic_batch_checked(checks, ops).await
     }
 }
-

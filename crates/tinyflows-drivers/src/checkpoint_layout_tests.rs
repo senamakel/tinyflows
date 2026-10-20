@@ -4,12 +4,12 @@
 //! and from the document shape its `checkpoints_flows_v2` step produces, so a
 //! drift on either side fails here.
 
-use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use crate::checkpoint::DriverCheckpointer;
 use serde_json::json;
 use std::sync::Arc;
 use tinyflows::graph::{Checkpoint, CheckpointConfig, Checkpointer, PendingWrite};
-use tinyflows_storage::{DocumentStore,  Precondition, Scope, StorageBackend};
+use tinyflows_storage::{DocumentStore, Precondition, Scope, StorageBackend};
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 fn docs() -> Arc<dyn DocumentStore> {
     Arc::clone(
@@ -173,4 +173,3 @@ async fn written_documents_have_exactly_the_tinyagents_fields_and_ids() {
     assert_eq!(writes.doc["checkpoint_id"], "c1");
     assert_eq!(writes.doc["ns"], "flows");
 }
-

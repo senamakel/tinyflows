@@ -5,7 +5,7 @@
 //! their steps, state, suggestions, drafts), reporting [`FlowUpdateError`] for a
 //! guarded graph update. The backend is whatever document handle the host
 //! passes in. It replaces the `flows.db` and draft-file catalog of the retired
-//! `tinyflows-sqlite`, whose data `tinyflows-import` brings across.
+//! `tinyflows-sqlite`; hosts own any remaining file discovery or conversion.
 //!
 //! # Layout (storage schema v2, owner `flows`)
 //!

@@ -1,10 +1,10 @@
-use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use super::*;
 use crate::drivers::key;
 use crate::execute::StepRecord;
 use crate::ledger::{Ledger, Score, conformance};
 use tinyflows_storage::Counters;
-use tinyflows_storage::{ Scope, StorageBackend};
+use tinyflows_storage::{Scope, StorageBackend};
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 fn memory_docs() -> Arc<dyn DocumentStore> {
     Arc::clone(

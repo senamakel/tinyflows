@@ -1,4 +1,3 @@
-use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use super::*;
 use async_trait::async_trait;
 use chrono::{Duration, Utc};
@@ -6,9 +5,10 @@ use serde_json::Value;
 use std::sync::Arc;
 use tinyflows_schedule::Schedule;
 use tinyflows_storage::{
-    Capabilities, CollectionSpec, DocumentStore, Filter,  Page, Precondition, Query,
-    Scope, Sort, StorageBackend, Version, Versioned, WriteOp, WriteResult,
+    Capabilities, CollectionSpec, DocumentStore, Filter, Page, Precondition, Query, Scope, Sort,
+    StorageBackend, Version, Versioned, WriteOp, WriteResult,
 };
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use tokio::sync::Notify;
 
 #[derive(Debug)]
@@ -25,10 +25,7 @@ impl DocumentStore for HeldClaimWrite {
         self.inner.capabilities()
     }
 
-    async fn ensure_collection(
-        &self,
-        spec: &CollectionSpec,
-    ) -> tinyflows_storage::Result<()> {
+    async fn ensure_collection(&self, spec: &CollectionSpec) -> tinyflows_storage::Result<()> {
         self.inner.ensure_collection(spec).await
     }
 
@@ -67,11 +64,7 @@ impl DocumentStore for HeldClaimWrite {
         self.inner.query(collection, query).await
     }
 
-    async fn count(
-        &self,
-        collection: &str,
-        filter: &Filter,
-    ) -> tinyflows_storage::Result<u64> {
+    async fn count(&self, collection: &str, filter: &Filter) -> tinyflows_storage::Result<u64> {
         self.inner.count(collection, filter).await
     }
 
@@ -93,10 +86,7 @@ impl DocumentStore for HeldClaimWrite {
         self.inner.claim(collection, filter, sort, patch).await
     }
 
-    async fn atomic_batch(
-        &self,
-        ops: Vec<WriteOp>,
-    ) -> tinyflows_storage::Result<Vec<WriteResult>> {
+    async fn atomic_batch(&self, ops: Vec<WriteOp>) -> tinyflows_storage::Result<Vec<WriteResult>> {
         let late_claim = ops.iter().any(|op| match op {
             WriteOp::Put {
                 collection, doc, ..
@@ -140,7 +130,9 @@ impl DocumentStore for HeldClaimWrite {
 #[tokio::test]
 async fn admission_fence_rejects_claim_transaction_that_commits_after_reconciliation() {
     let backend = MemoryStorage::new();
-    let scoped = backend.for_scope(&Scope::new("local").expect("valid scope")).unwrap();
+    let scoped = backend
+        .for_scope(&Scope::new("local").expect("valid scope"))
+        .unwrap();
     let held_docs = Arc::new(HeldClaimWrite {
         inner: scoped.documents().clone(),
         entered: Notify::new(),
@@ -208,7 +200,9 @@ async fn admission_fence_rejects_claim_transaction_that_commits_after_reconcilia
 #[tokio::test]
 async fn reconciliation_does_not_fence_changed_snapshots_and_lost_fence_reply_is_idempotent() {
     let backend = MemoryStorage::new();
-    let scoped = backend.for_scope(&Scope::new("local").expect("valid scope")).unwrap();
+    let scoped = backend
+        .for_scope(&Scope::new("local").expect("valid scope"))
+        .unwrap();
     let held_docs = Arc::new(HeldClaimWrite {
         inner: scoped.documents().clone(),
         entered: Notify::new(),

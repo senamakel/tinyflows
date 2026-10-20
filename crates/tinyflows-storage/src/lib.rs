@@ -3,15 +3,22 @@
 //! These helpers contain record and migration behavior owned by TinyFlows;
 //! backend selection stays with the host.
 
-pub use tinystoragedrivers_api::{DocumentStore, DocumentStoreExt, Storage, StorageBackend, async_trait};
+pub use tinystoragedrivers_api::{
+    DocumentStore, DocumentStoreExt, Storage, StorageBackend, async_trait,
+};
 pub use tinystoragedrivers_types::*;
 mod key;
 mod schema;
 pub use key::Key;
-pub use schema::{MigrateOptions, MigrationReport, Migrations, Owner, Schema, ScopeClass, SourceRecord, Step, StepReport, TargetRecord};
+pub use schema::{
+    MigrateOptions, MigrationReport, Migrations, Owner, Schema, ScopeClass, SourceRecord, Step,
+    StepReport, TargetRecord,
+};
 mod blocking;
 pub use blocking::Blocking;
-pub use primitives::{Acquire, Acquisition, Counters, Kv, Lease, LeaseRecord, Leases, Repo, RetryPolicy};
+pub use primitives::{
+    Acquire, Acquisition, Counters, Kv, Lease, LeaseRecord, Leases, Repo, RetryPolicy,
+};
 
 pub(crate) type Clock = std::sync::Arc<dyn Fn() -> u64 + Send + Sync>;
 
@@ -19,7 +26,9 @@ pub(crate) fn system_clock() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map_or(0, |duration| u64::try_from(duration.as_millis()).unwrap_or(u64::MAX))
+        .map_or(0, |duration| {
+            u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
+        })
 }
 
 pub mod primitives {

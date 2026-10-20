@@ -1,10 +1,12 @@
-use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use super::*;
 use serde_json::json;
 use tinyflows_storage::{Kv, Scope, Storage, StorageBackend};
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 fn scoped() -> Storage {
-    MemoryStorage::new().for_scope(&Scope::new("local").expect("valid scope")).unwrap()
+    MemoryStorage::new()
+        .for_scope(&Scope::new("local").expect("valid scope"))
+        .unwrap()
 }
 
 async fn seed(storage: &Storage, collection: &str, id: &str, body: Value) {

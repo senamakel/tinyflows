@@ -8,7 +8,7 @@ use tinyflows_bus::schedule::{
 };
 use tinyflows_drivers::schedule::CronDocuments;
 use tinyflows_schedule::{CronJobPatch, Schedule};
-use tinystoragedrivers_core::DocumentStore;
+use tinyflows_storage::DocumentStore;
 
 /// Exercises module-owned manual queueing and lease refusal through the loaded cdylib.
 pub async fn verify(

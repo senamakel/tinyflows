@@ -18,7 +18,7 @@ async fn retry_sleep_uses_tokio_time_without_changing_the_calendar_instant() {
 #[tokio::test]
 async fn a_manual_pass_uses_the_supplied_time_for_due_jobs_and_run_records() {
     use tinyflows_bus::schedule::{Schedule, StoreConfig};
-    use tinyflows_storage::{ Scope, StorageBackend};
+    use tinyflows_storage::{Scope, StorageBackend};
 
     let (_server, host, _state) = tests::connections().await;
     let proxy = host
@@ -162,7 +162,7 @@ fn a_host_clock_reads_system_time_until_the_host_sets_an_instant() {
 #[tokio::test]
 async fn ticking_at_a_later_instant_runs_a_future_job_without_waiting_for_it() {
     use tinyflows_bus::schedule::{Schedule, StoreConfig};
-    use tinyflows_storage::{ Scope, StorageBackend};
+    use tinyflows_storage::{Scope, StorageBackend};
 
     let (_server, host, _state) = tests::connections().await;
     let proxy = host

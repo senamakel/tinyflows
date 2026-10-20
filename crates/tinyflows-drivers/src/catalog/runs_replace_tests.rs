@@ -1,8 +1,8 @@
-use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use super::*;
 use serde_json::json;
 use std::sync::Arc;
-use tinyflows_storage::{DocumentStore,  Precondition};
+use tinyflows_storage::{DocumentStore, Precondition};
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 use crate::catalog::test_support::{Interposed, docs_in, trigger_graph};
 

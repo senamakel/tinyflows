@@ -4,7 +4,7 @@
 //! storage backend (SQLite on a desktop, MongoDB in the cloud, memory in tests)
 //! hands it a document handle, usually one already bound to a tenant scope. It
 //! replaces the `jobs.db` store of the retired `tinyflows-sqlite`, whose data
-//! `tinyflows-import` brings across.
+//! host-owned migration tooling may bring across.
 //!
 //! # Layout (storage schema v2, owner `cron`)
 //!
@@ -241,8 +241,7 @@ async fn compare_job(
             .await
         {
             Ok(results) => {
-                let Some(tinyflows_storage::WriteResult::Put { version }) = results.first()
-                else {
+                let Some(tinyflows_storage::WriteResult::Put { version }) = results.first() else {
                     anyhow::bail!("cron store: invalid atomic write result");
                 };
                 return Ok(Some(Versioned {

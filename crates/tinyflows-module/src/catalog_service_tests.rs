@@ -1,5 +1,4 @@
 use super::*;
-use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 use std::sync::{
@@ -11,9 +10,9 @@ use tinyflows_bus::catalog::{
     PutWorkflowRequest, PutWorkflowResponse,
 };
 use tinyflows_storage::{
-    CollectionSpec, DocumentStore, Key,  Precondition, Scope, StorageBackend,
-    WriteOptions,
+    CollectionSpec, DocumentStore, Key, Precondition, Scope, StorageBackend, WriteOptions,
 };
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 pub(super) struct HostDocuments {
     pub(super) documents: Arc<dyn DocumentStore>,
@@ -49,9 +48,7 @@ impl HostDocuments {
             && self.fail_revision_put.swap(false, Ordering::SeqCst)
         {
             return Ok(reply(Err::<(), _>(
-                tinyflows_storage::StorageError::unavailable(
-                    "injected revision migration failure",
-                ),
+                tinyflows_storage::StorageError::unavailable("injected revision migration failure"),
             )));
         }
         let mut options = WriteOptions::new();

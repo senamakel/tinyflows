@@ -5,7 +5,7 @@ use std::sync::{
     Arc,
     atomic::{AtomicBool, AtomicUsize, Ordering},
 };
-use tinystoragedrivers_core::{DocumentStore, Result, StorageError};
+use tinyflows_storage::{DocumentStore, Result, StorageError};
 fn decode<T: DeserializeOwned>(value: &Value) -> Result<T> {
     Ok(serde_json::from_value(value.clone())?)
 }
@@ -36,7 +36,7 @@ impl Documents {
         let id = request["id"].as_str().unwrap_or("");
         match request["op"].as_str().unwrap_or("") {
             "capabilities" => Ok(
-                json!({"transactions":self.docs.capabilities().contains(tinystoragedrivers_core::Capability::Transactions),"record_metadata":true}),
+                json!({"transactions":self.docs.capabilities().contains(tinyflows_storage::Capability::Transactions),"record_metadata":true}),
             ),
             "atomic_batch" => {
                 self.atomic_calls.fetch_add(1, Ordering::SeqCst);
@@ -53,7 +53,7 @@ impl Documents {
             }
             "get" => encode(self.docs.get(collection, id).await?),
             "put" => {
-                let mut options = tinystoragedrivers_core::WriteOptions::new();
+                let mut options = tinyflows_storage::WriteOptions::new();
                 if let Some(schema) = request["schema"].as_u64() {
                     options = options.schema(u32::try_from(schema).unwrap_or(0));
                 }

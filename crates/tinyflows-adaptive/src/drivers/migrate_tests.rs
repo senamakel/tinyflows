@@ -59,7 +59,10 @@ fn the_schema_declares_the_eight_adaptive_collections_and_the_vault() {
         "flows.adaptive_steps",
         "flows.adaptive_workflows",
     ] {
-        assert!(names.contains(&name), "{name} missing from {names:?}");
+        assert!(
+            names.iter().any(|candidate| candidate == name),
+            "{name} missing from {names:?}"
+        );
     }
     assert!(
         schema
@@ -260,13 +263,19 @@ async fn the_v1_sequences_carry_into_tsd_counters() {
     )
     .await;
 
-    assert_eq!(import_legacy_adaptive_counters(&storage).await.unwrap(), 2);
+    let document_store = docs(&storage);
+    assert_eq!(
+        import_legacy_adaptive_counters(&document_store)
+            .await
+            .unwrap(),
+        2
+    );
 
-    let counters = Counters::new(&docs(&storage));
+    let counters = Counters::new(&document_store);
     assert_eq!(counters.peek("flows", "adaptive_rows").await.unwrap(), 41);
     assert_eq!(counters.peek("flows", "adaptive_lessons").await.unwrap(), 6);
     assert!(
-        docs(&storage)
+        document_store
             .get("adaptive_counters", "adaptive_rows")
             .await
             .unwrap()
@@ -281,11 +290,21 @@ async fn the_v1_sequences_carry_into_tsd_counters() {
         .unwrap();
     assert_eq!(id, "ldg_00000042");
     // A second run is a no-op.
-    assert_eq!(import_legacy_adaptive_counters(&storage).await.unwrap(), 0);
+    assert_eq!(
+        import_legacy_adaptive_counters(&document_store)
+            .await
+            .unwrap(),
+        0
+    );
 }
 
 #[tokio::test]
 async fn importing_with_no_v1_counters_only_records_completion() {
     let storage = scoped();
-    assert_eq!(import_legacy_adaptive_counters(&storage).await.unwrap(), 0);
+    assert_eq!(
+        import_legacy_adaptive_counters(&docs(&storage))
+            .await
+            .unwrap(),
+        0
+    );
 }

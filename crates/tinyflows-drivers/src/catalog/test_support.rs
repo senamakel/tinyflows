@@ -1,7 +1,7 @@
 //! Fixtures shared by the catalog tests.
 
-use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use std::sync::Arc;
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 use tinyflows::model::{Node, NodeKind, WorkflowGraph};
 use tinyflows_storage::{DocumentStore, Scope, StorageBackend};
@@ -123,9 +123,7 @@ impl DocumentStore for Interposed {
         &self,
         collection: &str,
         id: &str,
-    ) -> tinyflows_storage::Result<
-        Option<tinyflows_storage::Versioned<serde_json::Value>>,
-    > {
+    ) -> tinyflows_storage::Result<Option<tinyflows_storage::Versioned<serde_json::Value>>> {
         self.maybe_interject("get", collection).await;
         self.inner.get(collection, id).await
     }
@@ -198,9 +196,7 @@ impl DocumentStore for Interposed {
         filter: &tinyflows_storage::Filter,
         sort: &[tinyflows_storage::Sort],
         patch: &serde_json::Value,
-    ) -> tinyflows_storage::Result<
-        Option<tinyflows_storage::Versioned<serde_json::Value>>,
-    > {
+    ) -> tinyflows_storage::Result<Option<tinyflows_storage::Versioned<serde_json::Value>>> {
         self.inner.claim(collection, filter, sort, patch).await
     }
 
@@ -208,4 +204,3 @@ impl DocumentStore for Interposed {
         self.inner.drop_collection(collection).await
     }
 }
-

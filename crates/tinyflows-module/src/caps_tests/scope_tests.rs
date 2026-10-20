@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 use std::sync::Arc;
 use tinyflows_bus::catalog::{self, CatalogStorage};
 use tinyflows_drivers::catalog::FlowCatalogDocuments;
-use tinyflows_storage::{DocumentStore,  Scope, StorageBackend};
+use tinyflows_storage::{DocumentStore, Scope, StorageBackend};
 
 struct DocumentsHost(Arc<dyn DocumentStore>);
 

@@ -49,10 +49,9 @@ impl Failure {
             "already_exists" => StorageError::already_exists(self.message),
             "not_found" => StorageError::not_found(self.message),
             "invalid_input" => StorageError::invalid_input(self.message),
-            "serialization" => StorageError::new(
-                tinyflows_storage::ErrorKind::Serialization,
-                self.message,
-            ),
+            "serialization" => {
+                StorageError::new(tinyflows_storage::ErrorKind::Serialization, self.message)
+            }
             "unavailable" => StorageError::unavailable(self.message),
             _ => StorageError::backend(self.message),
         }

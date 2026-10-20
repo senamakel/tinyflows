@@ -1,10 +1,10 @@
 //! Occurrences are leased across handles and fenced against stale workers.
-use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use super::{
     CronDocuments,
     test_support::{daily, docs_in},
 };
 use chrono::Duration;
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 #[tokio::test]
 async fn two_handles_cannot_claim_the_same_occurrence() {
@@ -489,4 +489,3 @@ async fn a_claim_is_a_tsd_lease_and_run_numbers_a_tsd_counter() {
             .unwrap()
     );
 }
-

@@ -8,7 +8,7 @@ use tinyflows_bus::schedule::{
 };
 use tinyflows_drivers::schedule::CronDocuments;
 use tinyflows_schedule::{CronJobPatch, DeliveryStatus, Schedule};
-use tinystoragedrivers_core::DocumentStore;
+use tinyflows_storage::DocumentStore;
 
 /// Verifies one actual send and truthful terminal projection through the cdylib.
 pub async fn verify(

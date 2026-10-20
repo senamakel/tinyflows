@@ -1,10 +1,10 @@
 //! Removal compatibility and admission bookkeeping across supported backends.
-use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use super::super::{
     CronDocuments, JOBS,
     test_support::{FaultDocuments, daily, docs_in},
 };
 use std::sync::{Arc, atomic::AtomicBool};
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 #[tokio::test]
 async fn nontransactional_deduplication_and_clear_keep_legacy_behavior() {
@@ -135,4 +135,3 @@ async fn a_legacy_row_without_enabled_is_imported_as_disabled() {
     b.add_shell_job(None, daily(), "enabled").await.unwrap();
     assert_eq!(b.list_jobs().await.unwrap().len(), 2);
 }
-

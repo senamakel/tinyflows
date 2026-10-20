@@ -228,11 +228,11 @@ already removed it. The catalog and run checkpoints use the document port
 (`CatalogStorage`: ensure/get/put/delete/query/delete-where over scoped collections), backed on the
 host by `tinystoragedrivers` (sqlite, file, mongodb) selected by
 `OPENHUMAN_STORAGE_URL`. `tinyflows-drivers` keeps the document-port
-implementation of catalog and checkpoint stores. `tinyflows-import` separates
-host-side raw readers (`flow-read`, `checkpoint-read`, and `schedule-read`)
-from semantic writers; the raw reader features do not link TinyFlows
-implementation crates. No `tinyflows-sqlite` crate is created. Scope is the
-agent id, set by the host when it binds the callback object.
+implementation of catalog and checkpoint stores. Hosts own legacy source
+discovery and raw readers; the module accepts bounded records through the
+callback contract and applies TinyFlows-owned semantic writes. No
+`tinyflows-sqlite` crate is created. Scope is the agent id, set by the host
+when it binds the callback object.
 
 The served Catalog v2 receives a `CatalogStorage` callback address on each
 request. That object is created by the host for the acting agent, so the module

@@ -17,10 +17,10 @@ use serde::{Deserialize, Serialize};
 
 use super::LEASES;
 use super::repo::{Repo, RetryPolicy};
-use tinystoragedrivers_api::DocumentStore;
-use tinystoragedrivers_types::{Result, StorageError};
 use crate::Key;
 use crate::{Clock, system_clock};
+use tinystoragedrivers_api::DocumentStore;
+use tinystoragedrivers_types::{Result, StorageError};
 
 /// The stored body: `{holder, epoch, expires_ms}` plus the optional
 /// `endpoint` and `released` fields, both absent from records that never

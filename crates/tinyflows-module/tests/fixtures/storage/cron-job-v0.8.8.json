@@ -1,0 +1,20 @@
+{
+  "doc": {
+    "command": "legacy-fixture-flow",
+    "created_at": "2026-10-20T14:15:31.602870071+00:00",
+    "created_ms": 1792505731602,
+    "delete_after_run": false,
+    "delivery": "{\"mode\":\"none\",\"channel\":null,\"to\":null,\"best_effort\":true}",
+    "enabled": true,
+    "expression": "",
+    "incarnation": "b6494c77-cc99-46e4-894b-17136325e4c3",
+    "job_type": "flow",
+    "name": "flow:legacy-fixture-flow",
+    "next_run": "2026-10-20T14:16:31.602870071+00:00",
+    "next_run_ms": 1792505791602,
+    "next_run_ns": 1792505791602870071,
+    "schedule": "{\"kind\":\"every\",\"every_ms\":60000}",
+    "session_target": "isolated"
+  },
+  "id": "flow:legacy-fixture-flow"
+}

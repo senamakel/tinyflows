@@ -2,8 +2,10 @@
 
 `tinyflows` storage on
 [tinystoragedrivers](https://github.com/tinyhumansai/tinystoragedrivers)
-document ports, and nothing else: this crate depends on `tinystoragedrivers-core`
-only, so no SQLite, MongoDB or file code lives in tinyflows. A host that has
+document ports, and nothing else: this crate depends on TinyFlows-owned
+`tinyflows-storage` helpers built on the public `tinystoragedrivers-api` and
+`tinystoragedrivers-types` contracts, so no SQLite, MongoDB or file code lives
+in tinyflows. A host that has
 opened a storage backend (SQLite on a desktop, MongoDB in the cloud, memory in
 tests) gets the engine's durable pieces on it, scoped per tenant by the
 document handle it passes in.
@@ -44,20 +46,20 @@ engine nor its expression stack.
 
 ## Storage schema v2
 
-Everything here stores on the uniform schema of `tinystoragedrivers` v1.0.0.
+Everything here stores on the uniform schema of `tinystoragedrivers` v2.0.0.
 `storage_schema()` (owner `flows`) and `cron_storage_schema()` (owner `cron`)
-declare the collections and carry the v1 -> v2 steps; the host composes them
-with `Registry::compose` and runs `Registry::migrate` per scope, then calls
+declare the collections and carry the v1 -> v2 steps; each owning crate runs
+its schema migration against the host-bound document port, then calls
 `import_legacy_kv` and `import_legacy_cron_counters` once per scope (a document
-step cannot write `tsd.*`). The graph checkpointer reads and writes the
+step cannot write `tsd.*`). All owners share `tsd.migrations` with distinct
+owner/item/step progress keys. The graph checkpointer reads and writes the
 `graph.*` documents of `tinyagents-graph` under namespace `flows`. With the
 `store` feature `storage_schema()` also declares the workflow store
 (`flows.workflows`, `flows.workflow_*`). `tinyflows-adaptive` (feature
-`storage-drivers`) extends the same schema with `flows.adaptive_*` through
-`tinyflows_adaptive::drivers::extend_storage_schema`, and
+`storage-drivers`) owns a separate schema for the existing `flows.adaptive_*`
+collections and runs its migration on the same bound document port.
 `tinyflows_adaptive::drivers::import_legacy_adaptive_counters` moves its id
-sequences into `tsd.counters`: an owner is declared once, so pass the schema
-through both.
+sequences into `tsd.counters`.
 
 ## The flow catalog (`catalog`)
 
@@ -291,5 +293,7 @@ this crate is the only storage tinyflows has. To bring a host's existing data
 across, every store has write-if-absent import methods
 (`FlowCatalogDocuments::import_flow` / `import_run` / ..., `CronDocuments::import_job`
 / `import_run`, `DriverWorkflowStore::import_workflow` / ...), and the unpublished
-`tinyflows-import` crate reads the legacy files and calls them: id for id, never
-replacing what is already there, and never touching the legacy files.
+The previous one-time file/SQLite importer was retired after the v0.8.9
+transition window. The host owns any remaining legacy file discovery or
+compatibility policy; drivers expose document import methods but never read
+paths or open files.

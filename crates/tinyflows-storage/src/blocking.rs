@@ -37,10 +37,11 @@ thread_local! {
 /// use tinyflows_storage::{Blocking, Precondition, Scope, StorageBackend, StorageError};
 /// use tinystoragedrivers_testkit::MemoryBackend;
 /// use serde_json::json;
+/// use std::sync::Arc;
 ///
 /// let bridge = Blocking::new()?;
 /// let storage = MemoryBackend::new().for_scope(&Scope::new("local")?)?;
-/// let docs = storage.documents();
+/// let docs = Arc::clone(storage.documents());
 /// let version = bridge.run(async move {
 ///     docs.put("settings", "theme", json!({"dark": true}), Precondition::None).await
 /// })??;

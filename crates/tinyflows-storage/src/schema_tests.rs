@@ -21,7 +21,7 @@ async fn owner_migration_rewrites_in_place_once_and_preserves_document_metadata(
         WriteOptions::new()
             .schema(1)
             .created_ms(123)
-            .expires_ms(999),
+            .expires_ms(i64::MAX),
     )
     .await
     .expect("seed source");
@@ -55,7 +55,7 @@ async fn owner_migration_rewrites_in_place_once_and_preserves_document_metadata(
     assert_eq!(stored.doc["value"], "after");
     assert_eq!(stored.meta.schema, 2);
     assert_eq!(stored.meta.created_ms, 123);
-    assert_eq!(stored.meta.expires_ms, Some(999));
+    assert_eq!(stored.meta.expires_ms, Some(i64::MAX));
     assert_eq!(first.ran.len(), 1);
 
     let second = schema
@@ -135,6 +135,55 @@ async fn owner_migration_rejects_same_id_conflicts_in_a_different_declared_colle
             .expect("read source")
             .is_some()
     );
+}
+
+#[tokio::test]
+async fn owner_migration_uses_the_declared_version_of_a_different_target_collection() {
+    let storage = MemoryBackend::new()
+        .for_scope(&Scope::new("local").expect("valid scope"))
+        .expect("memory scope");
+    let docs = Arc::clone(storage.documents());
+    docs.ensure_collection(&CollectionSpec::new("legacy.items"))
+        .await
+        .expect("legacy source collection");
+    docs.put_with(
+        "legacy.items",
+        "one",
+        json!({"value": "before"}),
+        Precondition::Absent,
+        WriteOptions::new().schema(1),
+    )
+    .await
+    .expect("seed source");
+
+    let schema = Schema::new(Owner::new("flows").expect("valid owner"))
+        .collection("flows.items", 2, ScopeClass::Tenant)
+        .collection("flows.archive", 9, ScopeClass::Tenant)
+        .step(
+            Step::new("items_to_archive", "flows.items", 1, 2, |rows| {
+                Ok(rows
+                    .into_iter()
+                    .map(|row| {
+                        TargetRecord::new("flows.archive", row.id, json!({"value": "archived"}))
+                            .created_ms(456)
+                    })
+                    .collect())
+            })
+            .source("legacy.items"),
+        );
+
+    schema
+        .migrate(&docs, &MigrateOptions::default())
+        .await
+        .expect("cross-collection migration succeeds");
+    let archived = docs
+        .get("flows.archive", "one")
+        .await
+        .expect("read archived row")
+        .expect("archived row exists");
+    assert_eq!(archived.meta.schema, 9);
+    assert_eq!(archived.meta.created_ms, 456);
+    assert_eq!(archived.doc["value"], "archived");
 }
 
 #[tokio::test]

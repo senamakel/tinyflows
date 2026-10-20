@@ -1,0 +1,31 @@
+{
+  "doc": {
+    "claim_generation": 0,
+    "command": "base-fixture-flow",
+    "delete_after_run": false,
+    "delivery": {
+      "best_effort": true,
+      "channel": null,
+      "mode": "none",
+      "to": null
+    },
+    "enabled": true,
+    "expression": "",
+    "incarnation": "494223b4-d8c9-4f59-83ea-99e63182ad61",
+    "job_type": "flow",
+    "name": "flow:base-fixture-flow",
+    "next_run_ms": 1792505373456,
+    "schedule": {
+      "every_ms": 60000,
+      "kind": "every"
+    },
+    "session_target": "isolated"
+  },
+  "id": "flow:base-fixture-flow",
+  "meta": {
+    "created_ms": 1792505313456,
+    "schema": 0,
+    "updated_ms": 1792505313456
+  },
+  "version": 1
+}
