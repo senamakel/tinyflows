@@ -22,7 +22,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use serde_json::Value;
-use tinystoragedrivers_core::{DocumentStore, DocumentStoreExt, ErrorKind, Query, Versioned};
+use tinyflows_storage::{DocumentStore, DocumentStoreExt, ErrorKind, Query, Versioned};
 
 use super::{DEFINITIONS, text};
 

@@ -8,7 +8,7 @@ use serde_json::Value;
 use tinyflows::caps::StateStore;
 use tinyflows::error::{EngineError, Result};
 use tinyflows::nodes::control_flow::dedup_settle::DedupKv;
-use tinystoragedrivers_core::Blocking;
+use tinyflows_storage::Blocking;
 
 use super::FlowCatalogDocuments;
 

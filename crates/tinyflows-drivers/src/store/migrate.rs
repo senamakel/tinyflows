@@ -16,7 +16,7 @@
 //! lost.
 
 use serde_json::{Map, Value, json};
-use tinystoragedrivers_core::{Key, Schema, ScopeClass, SourceRecord, Step, TargetRecord};
+use tinyflows_storage::{Key, Schema, ScopeClass, SourceRecord, Step, TargetRecord};
 
 use super::codec::to_stored;
 use super::{

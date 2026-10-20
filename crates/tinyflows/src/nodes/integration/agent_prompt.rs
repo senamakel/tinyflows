@@ -278,10 +278,10 @@ pub fn extract_balanced_json(text: &str) -> Option<Value> {
                 if depth == 0 {
                     // Found a balanced span — try to parse it.
                     let candidate = &text[start..=end];
-                    if let Ok(parsed) = serde_json::from_str::<Value>(candidate) {
-                        if matches!(parsed, Value::Object(_) | Value::Array(_)) {
-                            return Some(parsed);
-                        }
+                    if let Ok(parsed) = serde_json::from_str::<Value>(candidate)
+                        && matches!(parsed, Value::Object(_) | Value::Array(_))
+                    {
+                        return Some(parsed);
                     }
                     // Span didn't parse; continue scanning from the position
                     // after this false-positive open byte.

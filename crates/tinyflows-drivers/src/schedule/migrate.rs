@@ -18,11 +18,12 @@
 //! `tsd.counters` belongs to `tsd`, so a document step cannot write it. The
 //! step that reads `cron_counters` therefore files the run counter as
 //! `cron.admission/runs_counter` (`{next}`), and [`import_legacy_cron_counters`]
-//! moves it into `tsd.counters` once per scope after `Registry::migrate`.
+//! moves it into `tsd.counters` once per scope after this schema migration.
 
 use serde_json::{Map, Value, json};
-use tinystoragedrivers_core::{
-    Counters, Migrations, Owner, Precondition, Result, Schema, ScopeClass, ScopedStorage,
+use std::sync::Arc;
+use tinyflows_storage::{
+    Counters, DocumentStore, Migrations, Owner, Precondition, Result, Schema, ScopeClass,
     SourceRecord, Step, TargetRecord,
 };
 
@@ -34,8 +35,7 @@ const STAGED_COUNTER: &str = "runs_counter";
 const COUNTERS_STEP: &str = "counters_import";
 
 /// The `cron` owner's declarations (`cron.jobs`, `cron.runs`,
-/// `cron.admission`) and their v1 -> v2 steps. The host composes it with
-/// `Registry::compose` and runs `Registry::migrate` per scope.
+/// `cron.admission`) and their v1 -> v2 steps.
 #[must_use]
 #[allow(clippy::expect_used, reason = "`cron` is a valid owner name")]
 pub fn storage_schema() -> Schema {
@@ -248,13 +248,12 @@ fn counter_record(source: &SourceRecord) -> Option<TargetRecord> {
 /// # Errors
 ///
 /// The first storage error; the import resumes on the next call.
-pub async fn import_legacy_cron_counters(storage: &ScopedStorage) -> Result<bool> {
-    let migrations = Migrations::new(storage);
+pub async fn import_legacy_cron_counters(docs: &Arc<dyn DocumentStore>) -> Result<bool> {
+    let migrations = Migrations::new(docs, OWNER);
     if migrations.done(OWNER, COUNTERS_STEP).await? {
         return Ok(false);
     }
-    tinystoragedrivers_core::primitives::ensure(storage).await?;
-    let docs = storage.documents();
+    tinyflows_storage::primitives::ensure(docs).await?;
     docs.ensure_collection(&CronDocuments::collections().remove(2))
         .await?;
     let mut carried = false;

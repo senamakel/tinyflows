@@ -1,7 +1,7 @@
 use super::*;
 
 use serde_json::json;
-use tinystoragedrivers_core::{Meta, Version};
+use tinyflows_storage::{Meta, Version};
 
 fn stored(doc: Value) -> Versioned<Value> {
     Versioned {

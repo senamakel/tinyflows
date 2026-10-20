@@ -4,7 +4,7 @@ use super::{ADMISSION, CAS_ATTEMPTS, CronDocuments, JOBS, storage_error};
 use anyhow::{Result, anyhow, bail};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tinystoragedrivers_core::{
+use tinyflows_storage::{
     Capability, DocumentStoreExt, ErrorKind, Precondition, Query, Versioned, WriteOp, WriteResult,
 };
 
@@ -192,8 +192,7 @@ impl CronDocuments {
         doc: Value,
         created_ms: i64,
     ) -> Result<()> {
-        let mut options =
-            tinystoragedrivers_core::WriteOptions::new().schema(super::SCHEMA_VERSION);
+        let mut options = tinyflows_storage::WriteOptions::new().schema(super::SCHEMA_VERSION);
         if created_ms > 0 {
             options = options.created_ms(created_ms);
         }
@@ -305,18 +304,18 @@ impl CronDocuments {
             _ => false,
         };
         if !owns {
-            return Err(storage_error(
-                tinystoragedrivers_core::StorageError::conflict("cron job incarnation changed"),
-            ));
+            return Err(storage_error(tinyflows_storage::StorageError::conflict(
+                "cron job incarnation changed",
+            )));
         }
         let current = self.docs.get(JOBS, id).await.map_err(storage_error)?;
         let precondition = match (previous, current.as_ref()) {
             (None, None) => Precondition::Absent,
             (Some(old), Some(current)) if old.doc == current.doc => current.unchanged(),
             _ => {
-                return Err(storage_error(
-                    tinystoragedrivers_core::StorageError::conflict("cron job changed"),
-                ));
+                return Err(storage_error(tinyflows_storage::StorageError::conflict(
+                    "cron job changed",
+                )));
             }
         };
         let op = match next {
@@ -355,6 +354,6 @@ impl CronDocuments {
 pub(super) fn conflict(error: &anyhow::Error) -> bool {
     // `storage_error` retains the storage error as an anyhow source below.
     error
-        .downcast_ref::<tinystoragedrivers_core::StorageError>()
+        .downcast_ref::<tinyflows_storage::StorageError>()
         .is_some_and(|error| error.kind() == ErrorKind::Conflict)
 }

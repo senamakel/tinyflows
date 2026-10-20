@@ -6,7 +6,8 @@ use super::*;
 use crate::checkpoint_layout::{checkpoint_id_key, subgraph_key, thread_id_key};
 use serde_json::json;
 use tinyflows::graph::ids::NodeId;
-use tinystoragedrivers_core::{MemoryStorage, Precondition, Scope, StorageBackend, StorageError};
+use tinyflows_storage::{Precondition, Scope, StorageBackend, StorageError};
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 fn docs(storage: &MemoryStorage, scope: &str) -> Arc<dyn DocumentStore> {
     Arc::clone(

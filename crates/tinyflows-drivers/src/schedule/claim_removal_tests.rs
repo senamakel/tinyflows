@@ -4,7 +4,7 @@ use super::{
     test_support::{daily, docs_in},
 };
 use chrono::Duration;
-use tinystoragedrivers_core::MemoryStorage;
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 #[tokio::test]
 async fn completed_receipt_cannot_remove_a_recreated_job() {

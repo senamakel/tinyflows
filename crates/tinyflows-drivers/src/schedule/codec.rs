@@ -14,7 +14,7 @@ use serde_json::{Map, Value, json};
 use tinyflows_schedule::{
     CronJob, CronRun, DeliveryConfig, DeliveryStatus, JobOrigin, JobType, Schedule, SessionTarget,
 };
-use tinystoragedrivers_core::Versioned;
+use tinyflows_storage::Versioned;
 
 /// The string field `field` of `doc`.
 pub(super) fn text<'a>(doc: &'a Value, field: &str) -> Option<&'a str> {

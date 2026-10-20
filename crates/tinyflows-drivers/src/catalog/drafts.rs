@@ -9,7 +9,7 @@
 use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
 use tinyflows_catalog::{DraftOrigin, FlowDraft};
-use tinystoragedrivers_core::{DocumentStoreExt, Precondition, Query, Sort, Versioned};
+use tinyflows_storage::{DocumentStoreExt, Precondition, Query, Sort, Versioned};
 
 use super::{
     DRAFTS, FlowCatalogDocuments, compare_and_swap, instant_ms, monotonic_ms, new_id, next_stamp,

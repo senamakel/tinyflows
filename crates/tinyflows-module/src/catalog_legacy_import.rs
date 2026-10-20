@@ -6,7 +6,7 @@ use serde_json::Value;
 use tinybus::{Connection, Error};
 use tinyflows_bus::catalog::{ImportLegacyBatchRequest, ImportLegacyBatchResponse};
 use tinyflows_drivers::{DriverCheckpointer, catalog::FlowCatalogDocuments};
-use tinystoragedrivers_core::DocumentStore;
+use tinyflows_storage::DocumentStore;
 
 fn failure(error: impl std::fmt::Display) -> Error {
     Error::failed(error.to_string())
@@ -39,7 +39,7 @@ pub(super) async fn import(
     let docs = Arc::clone(&port) as Arc<dyn DocumentStore>;
     let catalog = FlowCatalogDocuments::new(Arc::clone(&docs));
     let checkpointer = DriverCheckpointer::<Value>::new(docs);
-    tinyflows_import::apply_legacy_batch(&request.records, &catalog, Some(&checkpointer))
+    super::catalog_legacy_batch::apply_legacy_batch(&request.records, &catalog, Some(&checkpointer))
         .await
         .map_err(failure)
 }

@@ -1,23 +1,26 @@
 use std::sync::Arc;
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 use serde_json::{Value, json};
 use tinyflows::store::WorkflowStore;
-use tinystoragedrivers_core::{
-    DocumentStore, DocumentStoreExt, MemoryStorage, MigrateOptions, Precondition, Query, Registry,
-    Scope, ScopeClass, ScopedStorage, StorageBackend,
+use tinyflows_storage::{
+    DocumentStore, DocumentStoreExt, MigrateOptions, Precondition, Query, Scope, ScopeClass,
+    Storage, StorageBackend,
 };
 
 use super::*;
 
-fn scoped() -> ScopedStorage {
-    MemoryStorage::new().for_scope(&Scope::local()).unwrap()
+fn scoped() -> Storage {
+    MemoryStorage::new()
+        .for_scope(&Scope::new("local").expect("valid scope"))
+        .unwrap()
 }
 
-fn docs(storage: &ScopedStorage) -> Arc<dyn DocumentStore> {
+fn docs(storage: &Storage) -> Arc<dyn DocumentStore> {
     Arc::clone(storage.documents())
 }
 
-async fn seed(storage: &ScopedStorage, collection: &str, id: &str, body: Value) {
+async fn seed(storage: &Storage, collection: &str, id: &str, body: Value) {
     storage
         .documents()
         .put(collection, id, body, Precondition::None)
@@ -25,10 +28,9 @@ async fn seed(storage: &ScopedStorage, collection: &str, id: &str, body: Value) 
         .unwrap();
 }
 
-async fn migrate(storage: &ScopedStorage) {
-    Registry::compose([crate::storage_schema()])
-        .unwrap()
-        .migrate(storage, &MigrateOptions::new())
+async fn migrate(storage: &Storage) {
+    crate::storage_schema()
+        .migrate(storage.documents(), &MigrateOptions::new())
         .await
         .unwrap();
 }
@@ -43,7 +45,11 @@ fn v1_record(id: &str, description: &str) -> String {
 fn the_schema_names_every_workflow_store_collection() {
     let schema = crate::storage_schema();
     assert_eq!(schema.owner.as_str(), "flows");
-    let names: Vec<&str> = schema.items.iter().map(|item| item.name()).collect();
+    let names: Vec<String> = schema
+        .items
+        .iter()
+        .map(|(item, _, _)| item.name.clone())
+        .collect();
     for name in [
         "flows.workflows",
         "flows.workflow_revisions",
@@ -52,10 +58,23 @@ fn the_schema_names_every_workflow_store_collection() {
         "flows.workflow_proposals",
         "flows.workflow_quarantine",
     ] {
-        assert!(names.contains(&name), "{name} missing from {names:?}");
+        assert!(
+            names.iter().any(|actual| actual == name),
+            "{name} missing from {names:?}"
+        );
     }
-    assert!(schema.items.iter().all(|i| i.scope() == ScopeClass::Tenant));
-    Registry::compose([schema]).unwrap();
+    assert!(
+        schema
+            .items
+            .iter()
+            .all(|(_, _, scope)| *scope == ScopeClass::Tenant)
+    );
+    assert!(
+        schema
+            .collections()
+            .iter()
+            .any(|item| item.name == "tsd.migrations")
+    );
 }
 
 #[tokio::test]
@@ -111,7 +130,7 @@ async fn a_hashed_v1_id_is_re_keyed_from_the_record_id() {
 
     migrate(&storage).await;
 
-    let key = tinystoragedrivers_core::Key::of([long.as_str()]).unwrap();
+    let key = tinyflows_storage::Key::of([long.as_str()]).unwrap();
     assert!(
         docs(&storage)
             .get("flows.workflows", key.as_str())

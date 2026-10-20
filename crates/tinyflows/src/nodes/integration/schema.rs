@@ -43,12 +43,12 @@ fn validate_at(path: &str, value: &Value, schema: &Value, errors: &mut Vec<Strin
     };
 
     // `enum`: the value must be one of the listed values (by JSON equality).
-    if let Some(Value::Array(allowed)) = obj.get("enum") {
-        if !allowed.iter().any(|a| a == value) {
-            errors.push(format!(
-                "{path}: value is not one of the allowed `enum` values"
-            ));
-        }
+    if let Some(Value::Array(allowed)) = obj.get("enum")
+        && !allowed.iter().any(|a| a == value)
+    {
+        errors.push(format!(
+            "{path}: value is not one of the allowed `enum` values"
+        ));
     }
 
     // `type`: a single type name or an array of acceptable type names.
@@ -88,11 +88,11 @@ fn validate_at(path: &str, value: &Value, schema: &Value, errors: &mut Vec<Strin
     }
 
     // Array constraints: a single `items` subschema applied to each element.
-    if let Value::Array(arr) = value {
-        if let Some(items_schema) = obj.get("items") {
-            for (i, child) in arr.iter().enumerate() {
-                validate_at(&format!("{path}[{i}]"), child, items_schema, errors);
-            }
+    if let Value::Array(arr) = value
+        && let Some(items_schema) = obj.get("items")
+    {
+        for (i, child) in arr.iter().enumerate() {
+            validate_at(&format!("{path}[{i}]"), child, items_schema, errors);
         }
     }
 }

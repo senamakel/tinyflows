@@ -96,18 +96,18 @@ pub fn cancel_build_turn_scoped(thread_id: &str, request_id: Option<&str>) -> bo
         );
         return false;
     };
-    if let Some(rid) = request_id {
-        if turn.request_id.as_deref() != Some(rid) {
-            tracing::debug!(
-                target: "flows",
-                thread_id = %thread_id,
-                request_id = %rid,
-                active_request_id = turn.request_id.as_deref().unwrap_or("<none>"),
-                "[flows] build_registry: cancel ignored — request_id mismatch \
-                 (superseded/unrelated request)"
-            );
-            return false;
-        }
+    if let Some(rid) = request_id
+        && turn.request_id.as_deref() != Some(rid)
+    {
+        tracing::debug!(
+            target: "flows",
+            thread_id = %thread_id,
+            request_id = %rid,
+            active_request_id = turn.request_id.as_deref().unwrap_or("<none>"),
+            "[flows] build_registry: cancel ignored — request_id mismatch \
+             (superseded/unrelated request)"
+        );
+        return false;
     }
     turn.token.cancel();
     tracing::info!(

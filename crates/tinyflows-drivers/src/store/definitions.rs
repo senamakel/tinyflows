@@ -3,7 +3,7 @@
 
 use serde_json::Value;
 use tinyflows::store::types::{WorkflowError, WorkflowId, WorkflowRecord, WorkflowSummary};
-use tinystoragedrivers_core::{DocumentStoreExt, ErrorKind, Precondition, Query, Sort, Versioned};
+use tinyflows_storage::{DocumentStoreExt, ErrorKind, Precondition, Query, Sort, Versioned};
 
 use super::codec::{definition_body, definition_from_body};
 use super::{CAS_ATTEMPTS, DEFINITIONS, Inner, doc_id, put_doc, storage};

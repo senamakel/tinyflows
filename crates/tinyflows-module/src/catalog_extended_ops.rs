@@ -17,7 +17,7 @@ use tinyflows_catalog::{
     SuggestionStatus as StoredSuggestionStatus,
 };
 use tinyflows_drivers::catalog::FlowCatalogDocuments;
-use tinystoragedrivers_core::DocumentStore;
+use tinyflows_storage::DocumentStore;
 
 async fn store(
     connection: &Connection,

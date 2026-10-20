@@ -40,18 +40,19 @@
 //! increment or share an id. First-write-wins edges (`$setOnInsert` in Mongo)
 //! are insert-only writes.
 //!
-//! [`extend_storage_schema`] declares the collections and their v1 -> v2
-//! steps; [`import_legacy_adaptive_counters`] carries the v1 sequences.
+//! [`storage_schema`] declares the collections and their v1 -> v2 steps;
+//! `Storage::from_documents` runs those steps and carries the v1 sequences
+//! through [`import_legacy_adaptive_counters`] before returning the stores.
 
 mod convert;
 mod ledger;
 mod migrate;
 mod vault;
 
-use tinystoragedrivers_core::{CollectionSpec, IndexSpec, StorageError};
+use tinyflows_storage::{CollectionSpec, IndexSpec, StorageError};
 
 pub use ledger::DriverLedger;
-pub use migrate::{extend_storage_schema, import_legacy_adaptive_counters};
+pub use migrate::{collections, import_legacy_adaptive_counters, storage_schema};
 pub use vault::DriverVault;
 
 /// Compare-and-swap attempts before a contended counter update gives up.
@@ -75,7 +76,7 @@ pub(crate) const WORKFLOWS: &str = "flows.adaptive_workflows";
 pub(crate) const SCHEMA_VERSION: u32 = 2;
 
 /// Every collection the stores use, with its indexes.
-pub(crate) fn collections() -> Vec<CollectionSpec> {
+pub(crate) fn indexed_collection_specs() -> Vec<CollectionSpec> {
     vec![
         CollectionSpec::new(ROWS).index(IndexSpec::new(
             "by_episode",
@@ -96,12 +97,12 @@ pub(crate) fn collections() -> Vec<CollectionSpec> {
 /// A document id for `parts` (`Key::of`: escaped so no two tuples collide,
 /// hashed when it would exceed the driver's id limit).
 fn key(parts: &[&str]) -> Result<String, StorageError> {
-    tinystoragedrivers_core::Key::of(parts.iter().copied()).map(|key| key.as_str().to_owned())
+    tinyflows_storage::Key::of(parts.iter().copied()).map(|key| key.as_str().to_owned())
 }
 
 /// Whether `error` means another writer got there first.
 fn is_race(error: &StorageError) -> bool {
-    error.kind() == tinystoragedrivers_core::ErrorKind::Conflict
+    error.kind() == tinyflows_storage::ErrorKind::Conflict
 }
 
 #[cfg(test)]

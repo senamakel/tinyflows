@@ -8,7 +8,7 @@
 //! corrupt record stays corrupt (and visible) instead of being lost.
 
 use serde_json::{Map, Value};
-use tinystoragedrivers_core::{Schema, ScopeClass, SourceRecord, Step, TargetRecord};
+use tinyflows_storage::{Schema, ScopeClass, SourceRecord, Step, TargetRecord};
 
 use super::{
     DEFINITIONS, DRAFTS, FlowCatalogDocuments, REVISIONS, RUNS, SCHEMA_VERSION, SUGGESTIONS,

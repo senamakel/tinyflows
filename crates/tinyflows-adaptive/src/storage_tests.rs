@@ -1,4 +1,6 @@
 use super::*;
+#[cfg(feature = "storage-drivers")]
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 #[test]
 fn memory_has_to_be_asked_for_by_name() {
@@ -64,13 +66,13 @@ async fn one_call_scopes_both_halves() {
 #[cfg(feature = "storage-drivers")]
 #[tokio::test]
 async fn one_document_handle_holds_both_halves_and_survives_reopening() {
-    use tinystoragedrivers_core::{MemoryStorage, Scope, StorageBackend};
+    use tinyflows_storage::{Scope, StorageBackend};
     let scoped = MemoryStorage::new()
-        .for_scope(&Scope::local())
+        .for_scope(&Scope::new("local").expect("valid scope"))
         .expect("scope");
     let docs = scoped.documents().clone();
 
-    let storage = Storage::from_documents(docs.clone());
+    let storage = Storage::from_documents(docs.clone()).await.expect("open");
     let tenant = storage.for_tenant("user-7");
     assert_eq!(tenant.ledger().scope(), Some("user-7"));
     assert_eq!(tenant.vault().scope(), Some("user-7"));
@@ -86,10 +88,74 @@ async fn one_document_handle_holds_both_halves_and_survives_reopening() {
         .expect("put");
 
     // A new `Storage` over the same handle sees both halves, still scoped.
-    let again = Storage::from_documents(docs);
+    let again = Storage::from_documents(docs).await.expect("reopen");
     let tenant = again.for_tenant("user-7");
     assert_eq!(tenant.ledger().rows("ep-1").await.expect("rows").len(), 1);
     assert_eq!(tenant.vault().load().await.expect("load").len(), 1);
     let other = again.for_tenant("user-8");
     assert!(other.vault().load().await.expect("load").is_empty());
+}
+
+#[cfg(feature = "storage-drivers")]
+#[tokio::test]
+async fn opening_documents_migrates_adaptive_records_and_imports_counters() {
+    use serde_json::json;
+    use tinyflows_storage::{DocumentStoreExt, Precondition, StorageBackend};
+
+    let scoped = MemoryStorage::new()
+        .for_scope(&tinyflows_storage::Scope::new("local").expect("scope"))
+        .expect("bind scope");
+    let docs = scoped.documents().clone();
+    docs.put(
+        "adaptive_rows",
+        "ldg_00000007",
+        json!({
+            "episode": "episode-1",
+            "scope_key": "tenant-1",
+            "seq": 7,
+            "record": json!({
+                "id": "ldg_00000007",
+                "episode": "episode-1",
+                "attempt": 1,
+                "approach_sig": "sig",
+                "approach_desc": "approach",
+                "workflow_id": "workflow-1",
+                "outcome": "completed",
+                "cause": "",
+                "cost_usd": 0.0,
+                "at": "2026-01-01T00:00:00Z",
+                "satisfied": true,
+                "advanced": false
+            }).to_string()
+        }),
+        Precondition::None,
+    )
+    .await
+    .expect("seed legacy row");
+    docs.put(
+        "adaptive_counters",
+        "adaptive_rows",
+        json!({ "seq": 9 }),
+        Precondition::None,
+    )
+    .await
+    .expect("seed legacy sequence");
+
+    // Production open owns both schema migration and counter import.
+    let storage = Storage::from_documents(docs.clone()).await.expect("open");
+    let tenant = storage.for_tenant("tenant-1");
+    let migrated = tenant.ledger().rows("episode-1").await.expect("rows");
+    assert_eq!(migrated.len(), 1);
+    assert_eq!(migrated[0].id, "ldg_00000007");
+    assert_eq!(migrated[0].at, "2026-01-01T00:00:00Z");
+
+    let next = crate::ledger::conformance::row("episode-2", 10, "next");
+    let id = tenant.ledger().append(&next).await.expect("append");
+    assert_eq!(id, "ldg_00000010", "the old counter remains monotonic");
+    assert!(
+        docs.query_all("adaptive_counters", &tinyflows_storage::Query::default())
+            .await
+            .expect("old counters")
+            .is_empty()
+    );
 }

@@ -6,7 +6,7 @@ use super::test_support::{FaultDocuments, daily, docs_in};
 use chrono::Duration;
 use std::sync::{Arc, atomic::AtomicBool};
 use tinyflows_schedule::CronJobPatch;
-use tinystoragedrivers_core::MemoryStorage;
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 fn fault_store(
     backend: &MemoryStorage,

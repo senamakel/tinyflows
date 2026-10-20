@@ -7,7 +7,7 @@
 use serde_json::{Value, json};
 use tinyflows::store::prune_notes;
 use tinyflows::store::types::{WorkflowError, WorkflowNote};
-use tinystoragedrivers_core::{Key, Precondition, Versioned};
+use tinyflows_storage::{Key, Precondition, Versioned};
 
 use super::codec::{journal_body, journal_from_body};
 use super::definitions::is_race;

@@ -3,9 +3,9 @@
 //! write at once.
 
 use std::sync::{Arc, Barrier};
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 use tinyflows::store::WorkflowStore;
-use tinystoragedrivers_core::MemoryStorage;
 
 use super::test_support::{record, store, store_over};
 

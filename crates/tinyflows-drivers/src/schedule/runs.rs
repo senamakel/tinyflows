@@ -7,7 +7,7 @@ use serde_json::Value;
 use tinyflows_schedule::{
     CronJob, CronRun, DeliveryStatus, Schedule, next_run_for_schedule, truncate_cron_output,
 };
-use tinystoragedrivers_core::{
+use tinyflows_storage::{
     Counters, DocumentStoreExt, ErrorKind, Filter, Precondition, Query, Sort, Versioned,
 };
 
@@ -225,7 +225,7 @@ impl CronDocuments {
                 &run_id(seq),
                 doc,
                 Precondition::Absent,
-                tinystoragedrivers_core::WriteOptions::new().schema(SCHEMA_VERSION),
+                tinyflows_storage::WriteOptions::new().schema(SCHEMA_VERSION),
             )
             .await
             .map_err(storage_error)

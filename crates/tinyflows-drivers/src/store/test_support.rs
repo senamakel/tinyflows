@@ -1,11 +1,12 @@
 //! Fixtures the store tests share.
 
 use std::sync::Arc;
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 use serde_json::json;
 use tinyflows::store::parse_workflow;
 use tinyflows::store::types::WorkflowRecord;
-use tinystoragedrivers_core::{DocumentStore, MemoryStorage, Scope, StorageBackend};
+use tinyflows_storage::{DocumentStore, Scope, StorageBackend};
 
 use super::DriverWorkflowStore;
 
@@ -99,23 +100,23 @@ impl Faulty {
     }
 }
 
-#[tinystoragedrivers_core::async_trait]
+#[tinyflows_storage::async_trait]
 impl DocumentStore for Faulty {
-    fn capabilities(&self) -> tinystoragedrivers_core::Capabilities {
+    fn capabilities(&self) -> tinyflows_storage::Capabilities {
         if self.transactions {
             self.inner.capabilities()
         } else {
             self.inner
                 .capabilities()
-                .without(tinystoragedrivers_core::Capability::Transactions)
-                .without(tinystoragedrivers_core::Capability::ValidatedBatch)
+                .without(tinyflows_storage::Capability::Transactions)
+                .without(tinyflows_storage::Capability::ValidatedBatch)
         }
     }
 
     async fn ensure_collection(
         &self,
-        spec: &tinystoragedrivers_core::CollectionSpec,
-    ) -> tinystoragedrivers_core::Result<()> {
+        spec: &tinyflows_storage::CollectionSpec,
+    ) -> tinyflows_storage::Result<()> {
         self.inner.ensure_collection(spec).await
     }
 
@@ -123,9 +124,7 @@ impl DocumentStore for Faulty {
         &self,
         collection: &str,
         id: &str,
-    ) -> tinystoragedrivers_core::Result<
-        Option<tinystoragedrivers_core::Versioned<serde_json::Value>>,
-    > {
+    ) -> tinyflows_storage::Result<Option<tinyflows_storage::Versioned<serde_json::Value>>> {
         self.inner.get(collection, id).await
     }
 
@@ -134,11 +133,11 @@ impl DocumentStore for Faulty {
         collection: &str,
         id: &str,
         doc: serde_json::Value,
-        precondition: tinystoragedrivers_core::Precondition,
-    ) -> tinystoragedrivers_core::Result<tinystoragedrivers_core::Version> {
+        precondition: tinyflows_storage::Precondition,
+    ) -> tinyflows_storage::Result<tinyflows_storage::Version> {
         if collection == self.collection && self.fail_puts.load(std::sync::atomic::Ordering::SeqCst)
         {
-            return Err(tinystoragedrivers_core::StorageError::backend(
+            return Err(tinyflows_storage::StorageError::backend(
                 "injected write failure",
             ));
         }
@@ -150,12 +149,12 @@ impl DocumentStore for Faulty {
         collection: &str,
         id: &str,
         doc: serde_json::Value,
-        precondition: tinystoragedrivers_core::Precondition,
-        options: tinystoragedrivers_core::WriteOptions,
-    ) -> tinystoragedrivers_core::Result<tinystoragedrivers_core::Version> {
+        precondition: tinyflows_storage::Precondition,
+        options: tinyflows_storage::WriteOptions,
+    ) -> tinyflows_storage::Result<tinyflows_storage::Version> {
         if collection == self.collection && self.fail_puts.load(std::sync::atomic::Ordering::SeqCst)
         {
-            return Err(tinystoragedrivers_core::StorageError::backend(
+            return Err(tinyflows_storage::StorageError::backend(
                 "injected write failure",
             ));
         }
@@ -168,17 +167,17 @@ impl DocumentStore for Faulty {
         &self,
         collection: &str,
         id: &str,
-        precondition: tinystoragedrivers_core::Precondition,
-    ) -> tinystoragedrivers_core::Result<bool> {
+        precondition: tinyflows_storage::Precondition,
+    ) -> tinyflows_storage::Result<bool> {
         self.inner.delete(collection, id, precondition).await
     }
 
     async fn query(
         &self,
         collection: &str,
-        query: &tinystoragedrivers_core::Query,
-    ) -> tinystoragedrivers_core::Result<
-        tinystoragedrivers_core::Page<tinystoragedrivers_core::Versioned<serde_json::Value>>,
+        query: &tinyflows_storage::Query,
+    ) -> tinyflows_storage::Result<
+        tinyflows_storage::Page<tinyflows_storage::Versioned<serde_json::Value>>,
     > {
         self.inner.query(collection, query).await
     }
@@ -186,41 +185,39 @@ impl DocumentStore for Faulty {
     async fn count(
         &self,
         collection: &str,
-        filter: &tinystoragedrivers_core::Filter,
-    ) -> tinystoragedrivers_core::Result<u64> {
+        filter: &tinyflows_storage::Filter,
+    ) -> tinyflows_storage::Result<u64> {
         self.inner.count(collection, filter).await
     }
 
     async fn delete_where(
         &self,
         collection: &str,
-        filter: &tinystoragedrivers_core::Filter,
-    ) -> tinystoragedrivers_core::Result<u64> {
+        filter: &tinyflows_storage::Filter,
+    ) -> tinyflows_storage::Result<u64> {
         self.inner.delete_where(collection, filter).await
     }
 
     async fn claim(
         &self,
         collection: &str,
-        filter: &tinystoragedrivers_core::Filter,
-        sort: &[tinystoragedrivers_core::Sort],
+        filter: &tinyflows_storage::Filter,
+        sort: &[tinyflows_storage::Sort],
         patch: &serde_json::Value,
-    ) -> tinystoragedrivers_core::Result<
-        Option<tinystoragedrivers_core::Versioned<serde_json::Value>>,
-    > {
+    ) -> tinyflows_storage::Result<Option<tinyflows_storage::Versioned<serde_json::Value>>> {
         self.inner.claim(collection, filter, sort, patch).await
     }
 
-    async fn drop_collection(&self, collection: &str) -> tinystoragedrivers_core::Result<()> {
+    async fn drop_collection(&self, collection: &str) -> tinyflows_storage::Result<()> {
         self.inner.drop_collection(collection).await
     }
 
     async fn atomic_batch(
         &self,
-        ops: Vec<tinystoragedrivers_core::WriteOp>,
-    ) -> tinystoragedrivers_core::Result<Vec<tinystoragedrivers_core::WriteResult>> {
+        ops: Vec<tinyflows_storage::WriteOp>,
+    ) -> tinyflows_storage::Result<Vec<tinyflows_storage::WriteResult>> {
         if self.fail_batches.load(std::sync::atomic::Ordering::SeqCst) {
-            return Err(tinystoragedrivers_core::StorageError::backend(
+            return Err(tinyflows_storage::StorageError::backend(
                 "injected batch failure",
             ));
         }
@@ -229,11 +226,11 @@ impl DocumentStore for Faulty {
 
     async fn atomic_batch_checked(
         &self,
-        checks: Vec<tinystoragedrivers_core::ReadCheck>,
-        ops: Vec<tinystoragedrivers_core::WriteOp>,
-    ) -> tinystoragedrivers_core::Result<Vec<tinystoragedrivers_core::WriteResult>> {
+        checks: Vec<tinyflows_storage::ReadCheck>,
+        ops: Vec<tinyflows_storage::WriteOp>,
+    ) -> tinyflows_storage::Result<Vec<tinyflows_storage::WriteResult>> {
         if self.fail_batches.load(std::sync::atomic::Ordering::SeqCst) {
-            return Err(tinystoragedrivers_core::StorageError::backend(
+            return Err(tinyflows_storage::StorageError::backend(
                 "injected batch failure",
             ));
         }

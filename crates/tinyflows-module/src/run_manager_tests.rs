@@ -1,7 +1,8 @@
 use super::*;
 use tinyflows_bus::catalog::CallbackAddress;
 use tinyflows_drivers::catalog::FlowCatalogDocuments;
-use tinystoragedrivers_core::{MemoryStorage, Scope, StorageBackend};
+use tinyflows_storage::{Scope, StorageBackend};
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 fn storage(owner: &str) -> tinyflows_bus::catalog::CatalogStorage {
     tinyflows_bus::catalog::CatalogStorage {
@@ -14,7 +15,9 @@ fn storage(owner: &str) -> tinyflows_bus::catalog::CatalogStorage {
 
 #[tokio::test]
 async fn terminal_event_seals_cloned_progress_sinks() {
-    let backend = MemoryStorage::new().for_scope(&Scope::local()).unwrap();
+    let backend = MemoryStorage::new()
+        .for_scope(&Scope::new("local").expect("valid scope"))
+        .unwrap();
     let catalog = FlowCatalogDocuments::new(backend.documents().clone());
     let run_id = format!("sealed-{}", uuid::Uuid::new_v4());
     let graph = tinyflows::migrate::deserialize_graph(serde_json::json!({
@@ -95,7 +98,9 @@ fn duplicate_registration_keeps_the_original_cancellation_owner() {
 
 #[tokio::test]
 async fn admission_waiter_rechecks_after_rollback_and_after_success() {
-    let backend = MemoryStorage::new().for_scope(&Scope::local()).unwrap();
+    let backend = MemoryStorage::new()
+        .for_scope(&Scope::new("local").expect("valid scope"))
+        .unwrap();
     let catalog = FlowCatalogDocuments::new(backend.documents().clone());
     let run_id = format!("admission-{}", uuid::Uuid::new_v4());
     let storage = storage("alice");

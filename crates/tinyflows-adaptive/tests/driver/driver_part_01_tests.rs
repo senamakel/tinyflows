@@ -74,9 +74,10 @@ async fn a_ledger_and_a_vault_of_different_kinds_drive_the_same_loop() {
     // either beside the other. Nothing in the loop knows which it got.
     #[cfg(feature = "storage-drivers")]
     {
-        use tinystoragedrivers_core::{MemoryStorage, Scope, StorageBackend};
+        use tinyflows_storage::{Scope, StorageBackend};
+        use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
         let scoped = MemoryStorage::new()
-            .for_scope(&Scope::local())
+            .for_scope(&Scope::new("local").expect("valid scope"))
             .expect("scope");
         let ledger = tinyflows_adaptive::drivers::DriverLedger::new(scoped.documents().clone());
         drive_mixed(&ledger).await;
@@ -293,4 +294,3 @@ impl LlmProvider for RepairFlow {
         })
     }
 }
-

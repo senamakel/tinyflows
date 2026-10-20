@@ -1,11 +1,12 @@
 use super::*;
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 use std::future::Future as _;
 use std::task::Poll;
 
 use tinyflows::caps::StateStore as _;
 use tinyflows_bus::catalog::{CallbackAddress, CatalogStorage};
-use tinystoragedrivers_core::{MemoryStorage, Scope, StorageBackend};
+use tinyflows_storage::{Scope, StorageBackend};
 
 fn storage(path: &str) -> CatalogStorage {
     CatalogStorage {
@@ -32,7 +33,9 @@ fn graph_with_dedup() -> WorkflowGraph {
 }
 
 async fn catalog() -> FlowCatalogDocuments {
-    let backend = MemoryStorage::new().for_scope(&Scope::local()).unwrap();
+    let backend = MemoryStorage::new()
+        .for_scope(&Scope::new("local").expect("valid scope"))
+        .unwrap();
     let catalog = FlowCatalogDocuments::new(backend.documents().clone());
     catalog.ensure().await.unwrap();
     catalog

@@ -11,7 +11,7 @@ use tinyflows_schedule::{
     SessionTarget, next_run_for_schedule, schedule_cron_expression, validate_agent_schedule,
     validate_schedule,
 };
-use tinystoragedrivers_core::{DocumentStoreExt, Filter, Query, Sort, Versioned, WriteResult};
+use tinyflows_storage::{DocumentStoreExt, Filter, Query, Sort, Versioned, WriteResult};
 use uuid::Uuid;
 
 use super::codec::{INCARNATION, doc_to_job, incarnation, job_to_doc, set_next_run, text};

@@ -19,12 +19,12 @@
 //!   an import into a scope with history never overwrites it. The counter is
 //!   always left beyond every number used.
 //!
-//! The reading half (opening `jobs.db`) lives in the unpublished
-//! `tinyflows-import` crate.
+//! Hosts own any file discovery; these methods only write through the
+//! caller-provided storage port.
 
 use anyhow::{Context, Result};
 use tinyflows_schedule::{CronJob, CronRun, JobType};
-use tinystoragedrivers_core::{Counters, ErrorKind, Filter, Precondition, Query, WriteOptions};
+use tinyflows_storage::{Counters, ErrorKind, Filter, Precondition, Query, WriteOptions};
 
 use super::codec::{INCARNATION, run_id, run_to_doc};
 use super::jobs::{flow_job_id, new_job_doc, runs_of};
@@ -165,7 +165,7 @@ impl CronDocuments {
 /// Whether `error` is the storage refusing to write an id that is taken.
 fn is_taken(error: &anyhow::Error) -> bool {
     error
-        .downcast_ref::<tinystoragedrivers_core::StorageError>()
+        .downcast_ref::<tinyflows_storage::StorageError>()
         .is_some_and(|error| matches!(error.kind(), ErrorKind::Conflict | ErrorKind::AlreadyExists))
 }
 

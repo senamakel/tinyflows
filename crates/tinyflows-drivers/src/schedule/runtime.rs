@@ -8,7 +8,7 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 use tinyflows_schedule::{CronJob, Schedule, runtime::Completion, truncate_cron_output};
-use tinystoragedrivers_core::Versioned;
+use tinyflows_storage::Versioned;
 fn decode(stored: &Versioned<Value>) -> Result<CronJob> {
     doc_to_job(stored)
 }

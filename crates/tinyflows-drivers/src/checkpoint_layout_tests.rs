@@ -8,12 +8,13 @@ use crate::checkpoint::DriverCheckpointer;
 use serde_json::json;
 use std::sync::Arc;
 use tinyflows::graph::{Checkpoint, CheckpointConfig, Checkpointer, PendingWrite};
-use tinystoragedrivers_core::{DocumentStore, MemoryStorage, Precondition, Scope, StorageBackend};
+use tinyflows_storage::{DocumentStore, Precondition, Scope, StorageBackend};
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 fn docs() -> Arc<dyn DocumentStore> {
     Arc::clone(
         MemoryStorage::new()
-            .for_scope(&Scope::local())
+            .for_scope(&Scope::new("local").expect("valid scope"))
             .unwrap()
             .documents(),
     )
@@ -50,7 +51,7 @@ async fn documents_migrated_by_tinyagents_step_are_read_back() {
         json!({"ns": "flows", "thread": "t", "subgraph": "", "seq": 0,
                "checkpoint_id": "c1", "checkpoint": record("t", "c1", &[])}),
         Precondition::Absent,
-        tinystoragedrivers_core::WriteOptions::new().schema(4),
+        tinyflows_storage::WriteOptions::new().schema(4),
     )
     .await
     .unwrap();
@@ -60,7 +61,7 @@ async fn documents_migrated_by_tinyagents_step_are_read_back() {
         json!({"ns": "flows", "thread": "t", "subgraph": "n/sub", "seq": 1,
                "checkpoint_id": "c1", "checkpoint": record("t", "c1", &["sub"])}),
         Precondition::Absent,
-        tinystoragedrivers_core::WriteOptions::new().schema(4),
+        tinyflows_storage::WriteOptions::new().schema(4),
     )
     .await
     .unwrap();

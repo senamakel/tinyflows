@@ -4,6 +4,7 @@
 use super::test_support::{block_on, store};
 use tinyflows::store::types::{RunExecutor, RunStatus, WorkflowError};
 use tinyflows::store::{WorkflowStore, new_run_record, require_run};
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 #[test]
 fn runs_are_listed_newest_first_and_scoped_to_their_workflow() {
@@ -126,7 +127,7 @@ fn an_executor_and_a_cancel_request_survive_a_write_and_read() {
 #[test]
 fn an_unreadable_run_document_is_skipped_by_listings_and_named_by_a_direct_read() {
     use serde_json::json;
-    use tinystoragedrivers_core::{MemoryStorage, Precondition};
+    use tinyflows_storage::Precondition;
     let storage = MemoryStorage::new();
     let docs = super::test_support::docs_in(&storage, "local");
     let store = super::DriverWorkflowStore::new(docs.clone());

@@ -1,31 +1,28 @@
 # Storage crate split (decision)
 
-Status: decided 2026-10-13. Tracks tinyhumansai/openhuman#7754 and #7522.
+Status: updated 2026-10-20. Tracks tinyhumansai/openhuman#7754, #7522 and #8131.
 
 ## Decision
 
 `tinyflows-drivers` is **not** folded into the published `tinyflows` crate.
-The split stays until `tinystoragedrivers-core` is on crates.io. Nothing else
-about tinyflows storage is open: the crates depend on the storage ports only
-(`tinystoragedrivers-core`; `tinyflows-import` also takes the SQLite driver's
-native handle to read legacy files).
+The adapters depend on the stable public `tinystoragedrivers-api` and
+`tinystoragedrivers-types` contracts through the internal `tinyflows-storage`
+helper crate. `tinyflows-import` was retired after the v0.8.9 migration
+transition; file and SQLite discovery is host-owned and no longer lives in
+the TinyFlows runtime.
 
 ## Why
 
-- `tinystoragedrivers-core` is `publish = false` and is not on crates.io. It is
-  named by git tag (`v0.7.0`).
-- `cargo publish` rejects a manifest with a git-only dependency, optional or
-  not. The released `tinyflows` package therefore cannot name the ports.
-- Moving the adapters into `tinyflows` behind a feature would not help: the
-  dependency is still declared in the published manifest.
+- The published `tinyflows` engine remains separate from its optional driver
+  adapters, and does not gain a dependency on the private workspace helper.
+- The helper crate keeps adapter-owned storage behavior separate while using
+  the published storage vocabulary.
 
 ## What would change this
 
-Publishing `tinystoragedrivers-core` (a version-only dependency from
-`tinyflows`). Then `tinyflows-drivers` becomes a `storage` feature of
-`tinyflows`, `tinyflows-catalog` and `tinyflows-schedule` follow, and
-`tinyflows-drivers` is deleted. That is a tinystoragedrivers release decision,
-not a tinyflows change.
+No further storage crate reshaping is planned. Hosts open and select the
+backend, while TinyFlows receives scoped ports and declares only its owned
+collections.
 
 ## Guard
 

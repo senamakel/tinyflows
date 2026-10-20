@@ -1,4 +1,4 @@
-//! Every contract-v3 pure member, called through the bus like a host would.
+// Every contract-v3 pure member, called through the bus like a host would.
 use super::tests::{connections, document_callbacks};
 use super::*;
 use serde_json::json;
@@ -203,9 +203,9 @@ async fn store_admission_cap_and_import_operations_are_served() {
         "/test/Documents".try_into().unwrap(),
         document_callbacks::Documents {
             docs: {
-                use tinystoragedrivers_core::StorageBackend;
-                tinystoragedrivers_core::MemoryStorage::new()
-                    .for_scope(&tinystoragedrivers_core::Scope::local())
+                use tinyflows_storage::StorageBackend;
+                tinystoragedrivers_testkit::MemoryBackend::new()
+                    .for_scope(&tinyflows_storage::Scope::new("local").expect("valid scope"))
                     .unwrap()
                     .documents()
                     .clone()

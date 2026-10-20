@@ -8,7 +8,7 @@ use tinyflows::compiler;
 use tinyflows::engine::Checkpointer as _;
 use tinyflows_bus::runs::{FlowRunTrigger, ResumeRun, ResumeRunResponse, RunContext, RunEvent};
 use tinyflows_drivers::{DriverCheckpointer, catalog::FlowCatalogDocuments};
-use tinystoragedrivers_core::DocumentStore;
+use tinyflows_storage::DocumentStore;
 
 use super::actor::ActorRunRequest;
 use super::preparation::Prepared;

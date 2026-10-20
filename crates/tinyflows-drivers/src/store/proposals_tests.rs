@@ -5,11 +5,12 @@
 //! when the graph moved underneath it.
 
 use std::sync::atomic::Ordering;
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 use serde_json::json;
 use tinyflows::store::types::{ProposalStatus, WorkflowError, WorkflowProposal, fingerprint};
 use tinyflows::store::{WorkflowStore, mint_proposal_id, require_proposal};
-use tinystoragedrivers_core::{DocumentStoreExt, MemoryStorage, Precondition};
+use tinyflows_storage::{DocumentStoreExt, Precondition};
 
 use super::test_support::{Faulty, block_on, docs_in, record, store, store_over};
 use super::{DEFINITIONS, DriverWorkflowStore, PROPOSALS};
@@ -279,7 +280,7 @@ fn an_edit_that_lands_between_the_check_and_the_write_refuses_the_proposal() {
         "the graph moved, so the observation is stale"
     );
     assert!(
-        block_on(docs.query_all(PROPOSALS, &tinystoragedrivers_core::Query::all()))
+        block_on(docs.query_all(PROPOSALS, &tinyflows_storage::Query::all()))
             .unwrap()
             .is_empty()
     );

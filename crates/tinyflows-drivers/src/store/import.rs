@@ -9,15 +9,14 @@
 //! that has since been written to, without clobbering anything. The return
 //! value says whether this call wrote the record.
 //!
-//! The reading half (opening the legacy files) lives in the unpublished
-//! `tinyflows-import` crate, which is where the file formats are known.
+//! Hosts own any file discovery and source-format decoding.
 
 use serde_json::Value;
 use tinyflows::store::types::{
     RunRecord, WorkflowError, WorkflowNote, WorkflowProposal, WorkflowRecord, WorkflowRevision,
 };
 use tinyflows::store::{prune_notes, validate_graph};
-use tinystoragedrivers_core::{DocumentStore, Precondition};
+use tinyflows_storage::{DocumentStore, Precondition};
 
 use super::definitions::{is_race, to_doc as definition_doc};
 use super::history::to_doc as revision_doc;
