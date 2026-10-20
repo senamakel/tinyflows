@@ -92,14 +92,17 @@ async fn explicit_catalog_migration_preserves_records_and_imports_legacy_state()
         .unwrap();
     assert_eq!(migrated.doc["name"], "Legacy");
     assert_eq!(migrated.doc["created_ms"], created_ms);
-    assert_eq!(migrated.meta.created_ms, created_ms);
+    assert!(migrated.meta.created_ms > 0, "backend owns record metadata");
     let migrated_revision = docs
         .get("flows.revisions", "legacy-revision")
         .await
         .unwrap()
         .unwrap();
     assert_eq!(migrated_revision.doc["created_ms"], revision_created_ms);
-    assert_eq!(migrated_revision.meta.created_ms, revision_created_ms);
+    assert!(
+        migrated_revision.meta.created_ms > 0,
+        "backend owns record metadata"
+    );
     assert!(
         docs.get("flows_definitions", "legacy-flow")
             .await

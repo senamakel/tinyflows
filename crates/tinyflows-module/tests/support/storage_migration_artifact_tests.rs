@@ -184,7 +184,8 @@ async fn published_module_migrates_legacy_schedule_records_through_owned_bus_cal
         chrono::DateTime::parse_from_rfc3339(legacy["doc"]["created_at"].as_str().unwrap())
             .unwrap()
             .timestamp_millis();
-    assert_eq!(migrated.meta.created_ms, legacy_created_ms);
+    assert_eq!(migrated.doc["created_ms"], legacy_created_ms);
+    assert!(migrated.meta.created_ms > 0, "backend owns record metadata");
     let jobs = CronDocuments::new(docs).list_jobs().await.unwrap();
     assert_eq!(jobs.len(), 1, "the legacy job is visible after migration");
     assert_eq!(jobs[0].id, legacy_id);
@@ -401,7 +402,10 @@ async fn published_module_migrates_legacy_catalog_records_through_owned_bus_call
         .unwrap()
         .unwrap();
     assert_eq!(migrated_revision.doc["created_ms"], revision_created_ms);
-    assert_eq!(migrated_revision.meta.created_ms, revision_created_ms);
+    assert!(
+        migrated_revision.meta.created_ms > 0,
+        "backend owns record metadata"
+    );
     let catalog_state = tinyflows_storage::Key::of(["flows", "kv:legacy-flow", "k"]).unwrap();
     let state = tinyflows_storage::Key::of(["flows", "state", "state-key"]).unwrap();
     assert_eq!(

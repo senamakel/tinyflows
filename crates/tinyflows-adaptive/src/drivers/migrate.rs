@@ -97,6 +97,7 @@ fn key(parts: &[&str], fallback: &str) -> String {
 
 fn carried(collection: &str, source: &SourceRecord) -> TargetRecord {
     TargetRecord::new(collection, source.id.clone(), source.body.clone())
+        .preserve_expiry_from(source)
 }
 
 fn row(source: &SourceRecord) -> Option<TargetRecord> {
@@ -104,7 +105,7 @@ fn row(source: &SourceRecord) -> Option<TargetRecord> {
         return Some(carried(ROWS, source));
     };
     let body = row_body(rec, text(source, "scope_key"), seq(source));
-    Some(TargetRecord::new(ROWS, source.id.clone(), body))
+    Some(TargetRecord::new(ROWS, source.id.clone(), body).preserve_expiry_from(source))
 }
 
 fn lesson(source: &SourceRecord) -> Option<TargetRecord> {
@@ -117,7 +118,7 @@ fn lesson(source: &SourceRecord) -> Option<TargetRecord> {
         }
     }
     let body = lesson_body(rec, text(source, "scope_key"), seq(source));
-    Some(TargetRecord::new(LESSONS, source.id.clone(), body))
+    Some(TargetRecord::new(LESSONS, source.id.clone(), body).preserve_expiry_from(source))
 }
 
 fn evidence(source: &SourceRecord) -> Option<TargetRecord> {
@@ -125,11 +126,14 @@ fn evidence(source: &SourceRecord) -> Option<TargetRecord> {
     if lesson.is_empty() || row.is_empty() {
         return Some(carried(EVIDENCE, source));
     }
-    Some(TargetRecord::new(
-        EVIDENCE,
-        key(&[lesson, row], &source.id),
-        source.body.clone(),
-    ))
+    Some(
+        TargetRecord::new(
+            EVIDENCE,
+            key(&[lesson, row], &source.id),
+            source.body.clone(),
+        )
+        .preserve_expiry_from(source),
+    )
 }
 
 fn score(source: &SourceRecord) -> Option<TargetRecord> {
@@ -137,11 +141,14 @@ fn score(source: &SourceRecord) -> Option<TargetRecord> {
     if workflow.is_empty() {
         return Some(carried(SCORES, source));
     }
-    Some(TargetRecord::new(
-        SCORES,
-        key(&[scope, workflow], &source.id),
-        source.body.clone(),
-    ))
+    Some(
+        TargetRecord::new(
+            SCORES,
+            key(&[scope, workflow], &source.id),
+            source.body.clone(),
+        )
+        .preserve_expiry_from(source),
+    )
 }
 
 fn variant(source: &SourceRecord) -> Option<TargetRecord> {
@@ -149,11 +156,14 @@ fn variant(source: &SourceRecord) -> Option<TargetRecord> {
     if variant.is_empty() {
         return Some(carried(VARIANTS, source));
     }
-    Some(TargetRecord::new(
-        VARIANTS,
-        key(&[scope, variant], &source.id),
-        source.body.clone(),
-    ))
+    Some(
+        TargetRecord::new(
+            VARIANTS,
+            key(&[scope, variant], &source.id),
+            source.body.clone(),
+        )
+        .preserve_expiry_from(source),
+    )
 }
 
 fn episode(source: &SourceRecord) -> Option<TargetRecord> {
@@ -167,11 +177,10 @@ fn episode(source: &SourceRecord) -> Option<TargetRecord> {
         .unwrap_or_default()
         .to_owned();
     let body = episode_body(rec, scope);
-    Some(TargetRecord::new(
-        EPISODES,
-        key(&[scope, &id], &source.id),
-        body,
-    ))
+    Some(
+        TargetRecord::new(EPISODES, key(&[scope, &id], &source.id), body)
+            .preserve_expiry_from(source),
+    )
 }
 
 fn steps(source: &SourceRecord) -> Option<TargetRecord> {
@@ -184,11 +193,14 @@ fn steps(source: &SourceRecord) -> Option<TargetRecord> {
         seq(source),
     );
     let body = step_body(rec, scope, row_id, n);
-    Some(TargetRecord::new(
-        STEPS,
-        key(&[scope, row_id, &format!("{n:08}")], &source.id),
-        body,
-    ))
+    Some(
+        TargetRecord::new(
+            STEPS,
+            key(&[scope, row_id, &format!("{n:08}")], &source.id),
+            body,
+        )
+        .preserve_expiry_from(source),
+    )
 }
 
 fn workflow(source: &SourceRecord) -> Option<TargetRecord> {
@@ -202,11 +214,10 @@ fn workflow(source: &SourceRecord) -> Option<TargetRecord> {
         .unwrap_or_default()
         .to_owned();
     let target_key = key(&[scope, &id], &source.id);
-    Some(TargetRecord::new(
-        WORKFLOWS,
-        target_key,
-        workflow_body(rec, scope),
-    ))
+    Some(
+        TargetRecord::new(WORKFLOWS, target_key, workflow_body(rec, scope))
+            .preserve_expiry_from(source),
+    )
 }
 
 /// Move the v1 id sequences (`adaptive_counters`: `{seq}` per sequence name)

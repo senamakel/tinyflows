@@ -232,11 +232,12 @@ async fn renamed_migration_targets_keep_their_source_absolute_expiry() {
         .expect("read renamed target")
         .expect("renamed target exists");
     assert_eq!(target.meta.expires_ms, Some(expiry));
-    assert!(docs
-        .get("legacy.items", "old-id")
-        .await
-        .expect("read source")
-        .is_none());
+    assert!(
+        docs.get("legacy.items", "old-id")
+            .await
+            .expect("read source")
+            .is_none()
+    );
 }
 
 #[tokio::test]

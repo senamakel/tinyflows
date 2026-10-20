@@ -82,7 +82,8 @@ fn key(id: &str, fallback: &str) -> String {
 
 /// The record carried unchanged under its v1 id.
 fn carried(collection: &str, source: &SourceRecord) -> TargetRecord {
-    TargetRecord::new(collection, source.id.clone(), source.body.clone()).preserve_expiry_from(source)
+    TargetRecord::new(collection, source.id.clone(), source.body.clone())
+        .preserve_expiry_from(source)
 }
 
 fn str_field<'a>(map: &'a Map<String, Value>, field: &str) -> Option<&'a str> {
@@ -97,12 +98,14 @@ fn definition(source: &SourceRecord) -> Option<TargetRecord> {
         return Some(carried(DEFINITIONS, source));
     };
     record.remove("source_path");
-    Some(TargetRecord::new(
-        DEFINITIONS,
-        key(&id, &source.id),
-        to_stored(Value::Object(record)),
+    Some(
+        TargetRecord::new(
+            DEFINITIONS,
+            key(&id, &source.id),
+            to_stored(Value::Object(record)),
+        )
+        .preserve_expiry_from(source),
     )
-    .preserve_expiry_from(source))
 }
 
 fn revision(source: &SourceRecord) -> Option<TargetRecord> {
@@ -130,12 +133,10 @@ fn revision(source: &SourceRecord) -> Option<TargetRecord> {
     };
     body.insert("workflow_id".into(), json!(workflow_id));
     body.insert("superseded_ms".into(), json!(superseded));
-    Some(TargetRecord::new(
-        REVISIONS,
-        source.id.clone(),
-        Value::Object(body),
+    Some(
+        TargetRecord::new(REVISIONS, source.id.clone(), Value::Object(body))
+            .preserve_expiry_from(source),
     )
-    .preserve_expiry_from(source))
 }
 
 fn run(source: &SourceRecord) -> Option<TargetRecord> {
@@ -159,12 +160,10 @@ fn run(source: &SourceRecord) -> Option<TargetRecord> {
         return None;
     };
     body.insert("settled".into(), json!(settled));
-    Some(TargetRecord::new(
-        RUNS,
-        key(&id, &source.id),
-        Value::Object(body),
+    Some(
+        TargetRecord::new(RUNS, key(&id, &source.id), Value::Object(body))
+            .preserve_expiry_from(source),
     )
-    .preserve_expiry_from(source))
 }
 
 fn journal(source: &SourceRecord) -> Option<TargetRecord> {
@@ -178,12 +177,14 @@ fn journal(source: &SourceRecord) -> Option<TargetRecord> {
         return Some(carried(NOTES, source));
     };
     let notes: Vec<Value> = notes.into_iter().map(to_stored).collect();
-    Some(TargetRecord::new(
-        NOTES,
-        key(workflow_id, &source.id),
-        json!({ "workflow_id": workflow_id, "notes": notes }),
+    Some(
+        TargetRecord::new(
+            NOTES,
+            key(workflow_id, &source.id),
+            json!({ "workflow_id": workflow_id, "notes": notes }),
+        )
+        .preserve_expiry_from(source),
     )
-    .preserve_expiry_from(source))
 }
 
 fn proposal(source: &SourceRecord) -> Option<TargetRecord> {
@@ -193,12 +194,14 @@ fn proposal(source: &SourceRecord) -> Option<TargetRecord> {
     let Some(id) = str_field(&proposal, "id").map(str::to_owned) else {
         return Some(carried(PROPOSALS, source));
     };
-    Some(TargetRecord::new(
-        PROPOSALS,
-        key(&id, &source.id),
-        to_stored(Value::Object(proposal)),
+    Some(
+        TargetRecord::new(
+            PROPOSALS,
+            key(&id, &source.id),
+            to_stored(Value::Object(proposal)),
+        )
+        .preserve_expiry_from(source),
     )
-    .preserve_expiry_from(source))
 }
 
 fn quarantine(source: &SourceRecord) -> Option<TargetRecord> {

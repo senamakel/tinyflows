@@ -165,6 +165,13 @@ pub(super) fn set_last_run(
     doc.insert("last_output".into(), json!(output));
 }
 
+/// The creation identity used for run fencing and duplicate ranking.
+/// Migrated jobs carry their original creation time in the body because the
+/// module document port cannot write host-owned metadata.
+pub(super) fn job_created_ms(doc: &Value, metadata_created_ms: i64) -> Result<i64> {
+    Ok(integer(doc, "created_ms")?.unwrap_or(metadata_created_ms))
+}
+
 /// The job a stored document holds. Imported jobs retain their original
 /// creation time in the body because module document ports cannot set the
 /// host-owned record metadata; ordinary jobs still use backend metadata.
@@ -217,7 +224,7 @@ pub(super) fn doc_to_job(stored: &Versioned<Value>) -> Result<CronJob> {
         enabled: flag("enabled")?,
         delivery,
         delete_after_run: flag("delete_after_run")?,
-        created_at: from_ms(integer(doc, "created_ms")?.unwrap_or(stored.meta.created_ms))?,
+        created_at: from_ms(job_created_ms(doc, stored.meta.created_ms)?)?,
         next_run: from_ms(
             integer(doc, "next_run_ms")?
                 .ok_or_else(|| anyhow!("cron store: document has no `next_run_ms`"))?,

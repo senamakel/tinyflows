@@ -167,12 +167,9 @@ fn job(source: &SourceRecord) -> Option<TargetRecord> {
         .or_else(|| body.get("created_ms").and_then(Value::as_i64))
         .unwrap_or(source.meta.created_ms);
     out.insert("created_ms".into(), created.into());
-    Some(TargetRecord::new(
-        JOBS,
-        source.id.clone(),
-        Value::Object(out),
+    Some(
+        TargetRecord::new(JOBS, source.id.clone(), Value::Object(out)).preserve_expiry_from(source),
     )
-    .preserve_expiry_from(source))
 }
 
 fn run(source: &SourceRecord) -> Option<TargetRecord> {
@@ -203,12 +200,9 @@ fn run(source: &SourceRecord) -> Option<TargetRecord> {
         "finished_ms".into(),
         ms("finished_at", "finished_ns")?.into(),
     );
-    Some(TargetRecord::new(
-        RUNS,
-        source.id.clone(),
-        Value::Object(out),
+    Some(
+        TargetRecord::new(RUNS, source.id.clone(), Value::Object(out)).preserve_expiry_from(source),
     )
-    .preserve_expiry_from(source))
 }
 
 /// `cron_counters` holds two documents: the run counter and the admission
@@ -237,12 +231,14 @@ fn counter_record(source: &SourceRecord) -> Option<TargetRecord> {
                     .preserve_expiry_from(source),
             )
         }
-        "runs" => Some(TargetRecord::new(
-            ADMISSION,
-            STAGED_COUNTER,
-            json!({ "next": source.body.get("next")?.as_i64()? }),
-        )
-        .preserve_expiry_from(source)),
+        "runs" => Some(
+            TargetRecord::new(
+                ADMISSION,
+                STAGED_COUNTER,
+                json!({ "next": source.body.get("next")?.as_i64()? }),
+            )
+            .preserve_expiry_from(source),
+        ),
         _ => None,
     }
 }

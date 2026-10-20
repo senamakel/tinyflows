@@ -149,10 +149,7 @@ async fn v1_catalog_records_migrate_to_bare_ms_bodies_and_read_back() {
     assert_eq!(def.doc["graph"], graph(), "the graph string is parsed");
     assert_eq!(def.doc["created_ms"], 1_772_600_767_250_i64);
     assert_eq!(def.doc["last_run_ms"], 1_772_600_767_250_i64);
-    assert_eq!(
-        def.meta.created_ms, 1_772_600_767_250_i64,
-        "history keeps its time"
-    );
+    assert!(def.meta.created_ms > 0, "backend owns record metadata");
     for gone in [
         "created_ns",
         "created_at",
