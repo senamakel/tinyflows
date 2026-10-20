@@ -266,17 +266,18 @@ impl Schema {
                         ));
                     }
                     let output_schema = self.target_schema(step, &target)?;
-                    let source_row = (source == step.item && target.collection == step.item)
-                        .then(|| page.items.iter().find(|row| row.id == target.id));
-                    let source_row = source_row.flatten();
-                    let precondition = source_row.map_or(Precondition::Absent, |row| {
+                    let origin_row = page.items.iter().find(|row| row.id == target.id);
+                    let same_row = (source == step.item && target.collection == step.item)
+                        .then_some(origin_row)
+                        .flatten();
+                    let precondition = same_row.map_or(Precondition::Absent, |row| {
                         Precondition::Version(row.version)
                     });
                     let mut options = WriteOptions::new();
                     options = options.schema(output_schema);
                     let expected_expiry = target
                         .expires_ms
-                        .or_else(|| source_row.and_then(|row| row.meta.expires_ms));
+                        .or_else(|| origin_row.and_then(|row| row.meta.expires_ms));
                     if let Some(expires_ms) = expected_expiry {
                         options = options.expires_ms(expires_ms);
                     }
@@ -301,7 +302,7 @@ impl Schema {
                             let identical = existing.is_some_and(|row| {
                                 row.doc == target.body
                                     && row.meta.schema == output_schema
-                                    && source_row.is_none_or(|source| {
+                                    && same_row.is_none_or(|source| {
                                         row.meta.created_ms == source.meta.created_ms
                                     })
                                     && row.meta.expires_ms == expected_expiry
