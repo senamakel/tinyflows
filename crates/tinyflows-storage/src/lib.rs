@@ -3,7 +3,7 @@
 //! These helpers contain record and migration behavior owned by TinyFlows;
 //! backend selection stays with the host.
 
-pub use tinystoragedrivers_api::{DocumentStore, DocumentStoreExt, async_trait};
+pub use tinystoragedrivers_api::{DocumentStore, DocumentStoreExt, Storage, StorageBackend, async_trait};
 pub use tinystoragedrivers_types::*;
 mod key;
 mod schema;

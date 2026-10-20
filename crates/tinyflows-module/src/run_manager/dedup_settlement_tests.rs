@@ -5,7 +5,7 @@ use std::task::Poll;
 
 use tinyflows::caps::StateStore as _;
 use tinyflows_bus::catalog::{CallbackAddress, CatalogStorage};
-use tinyflows_storage::{MemoryStorage, Scope, StorageBackend};
+use tinyflows_storage::{ Scope, StorageBackend};
 
 fn storage(path: &str) -> CatalogStorage {
     CatalogStorage {

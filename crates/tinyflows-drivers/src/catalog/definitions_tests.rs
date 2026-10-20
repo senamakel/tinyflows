@@ -130,7 +130,7 @@ async fn settled_run_updates_its_workflow_summary_only_for_the_winning_status() 
 #[tokio::test]
 async fn a_run_from_a_removed_flow_incarnation_cannot_stamp_its_replacement() {
     use crate::catalog::{DEFINITIONS, RUNS, test_support::docs_in};
-    use tinyflows_storage::{MemoryStorage, Precondition};
+    use tinyflows_storage::{ Precondition};
 
     let storage = MemoryStorage::new();
     let store = catalog_in(&storage, "incarnation-summary");

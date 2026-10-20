@@ -9,7 +9,7 @@ use tinyflows_schedule::CronJobPatch;
 use tinyflows_storage::MemoryStorage;
 
 fn fault_store(
-    backend: &MemoryStorage,
+    backend: &
     scope: &str,
     barrier: Option<Arc<tokio::sync::Barrier>>,
 ) -> (CronDocuments, Arc<FaultDocuments>) {

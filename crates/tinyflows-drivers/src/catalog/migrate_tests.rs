@@ -2,15 +2,15 @@ use super::*;
 use crate::catalog::FlowCatalogDocuments;
 use serde_json::json;
 use tinyflows_storage::{
-    DocumentStoreExt, MemoryStorage, MigrateOptions, Precondition, Query, Registry, Scope,
-    ScopedStorage, StorageBackend, WriteOptions,
+    DocumentStoreExt,  MigrateOptions, Precondition, Query, Registry, Scope,
+    Storage, StorageBackend, WriteOptions,
 };
 
-fn scoped() -> ScopedStorage {
+fn scoped() -> Storage {
     MemoryStorage::new().for_scope(&Scope::local()).unwrap()
 }
 
-async fn seed(storage: &ScopedStorage, collection: &str, id: &str, body: Value) {
+async fn seed(storage: &Storage, collection: &str, id: &str, body: Value) {
     storage
         .documents()
         .put(collection, id, body, Precondition::None)
@@ -19,7 +19,7 @@ async fn seed(storage: &ScopedStorage, collection: &str, id: &str, body: Value) 
 }
 
 async fn seed_with_created_ms(
-    storage: &ScopedStorage,
+    storage: &Storage,
     collection: &str,
     id: &str,
     body: Value,
@@ -38,7 +38,7 @@ async fn seed_with_created_ms(
         .unwrap();
 }
 
-async fn migrate(storage: &ScopedStorage) {
+async fn migrate(storage: &Storage) {
     let registry = Registry::compose([crate::catalog_storage_schema()]).unwrap();
     registry
         .migrate(storage, &MigrateOptions::new())

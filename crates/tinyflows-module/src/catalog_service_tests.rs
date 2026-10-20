@@ -10,7 +10,7 @@ use tinyflows_bus::catalog::{
     PutWorkflowRequest, PutWorkflowResponse,
 };
 use tinyflows_storage::{
-    CollectionSpec, DocumentStore, Key, MemoryStorage, Precondition, Scope, StorageBackend,
+    CollectionSpec, DocumentStore, Key,  Precondition, Scope, StorageBackend,
     WriteOptions,
 };
 

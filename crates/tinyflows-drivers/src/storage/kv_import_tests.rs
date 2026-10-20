@@ -1,12 +1,12 @@
 use super::*;
 use serde_json::json;
-use tinyflows_storage::{Kv, MemoryStorage, Scope, StorageBackend};
+use tinyflows_storage::{Kv,  Scope, StorageBackend};
 
-fn scoped() -> ScopedStorage {
+fn scoped() -> Storage {
     MemoryStorage::new().for_scope(&Scope::local()).unwrap()
 }
 
-async fn seed(storage: &ScopedStorage, collection: &str, id: &str, body: Value) {
+async fn seed(storage: &Storage, collection: &str, id: &str, body: Value) {
     storage
         .documents()
         .put(collection, id, body, Precondition::None)

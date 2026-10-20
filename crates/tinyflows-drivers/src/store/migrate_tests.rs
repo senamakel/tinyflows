@@ -3,21 +3,21 @@ use std::sync::Arc;
 use serde_json::{Value, json};
 use tinyflows::store::WorkflowStore;
 use tinyflows_storage::{
-    DocumentStore, DocumentStoreExt, MemoryStorage, MigrateOptions, Precondition, Query, Registry,
-    Scope, ScopeClass, ScopedStorage, StorageBackend,
+    DocumentStore, DocumentStoreExt,  MigrateOptions, Precondition, Query, Registry,
+    Scope, ScopeClass, Storage, StorageBackend,
 };
 
 use super::*;
 
-fn scoped() -> ScopedStorage {
+fn scoped() -> Storage {
     MemoryStorage::new().for_scope(&Scope::local()).unwrap()
 }
 
-fn docs(storage: &ScopedStorage) -> Arc<dyn DocumentStore> {
+fn docs(storage: &Storage) -> Arc<dyn DocumentStore> {
     Arc::clone(storage.documents())
 }
 
-async fn seed(storage: &ScopedStorage, collection: &str, id: &str, body: Value) {
+async fn seed(storage: &Storage, collection: &str, id: &str, body: Value) {
     storage
         .documents()
         .put(collection, id, body, Precondition::None)
@@ -25,7 +25,7 @@ async fn seed(storage: &ScopedStorage, collection: &str, id: &str, body: Value) 
         .unwrap();
 }
 
-async fn migrate(storage: &ScopedStorage) {
+async fn migrate(storage: &Storage) {
     Registry::compose([crate::storage_schema()])
         .unwrap()
         .migrate(storage, &MigrateOptions::new())

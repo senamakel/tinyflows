@@ -4,7 +4,7 @@ use super::test_support::{daily, docs_in, store};
 use super::*;
 use chrono::{Duration, Utc};
 use tinyflows_schedule::Schedule;
-use tinyflows_storage::{DocumentStoreExt, MemoryStorage, Query, primitives};
+use tinyflows_storage::{DocumentStoreExt,  Query, primitives};
 
 async fn lease_count(store: &CronDocuments) -> usize {
     store

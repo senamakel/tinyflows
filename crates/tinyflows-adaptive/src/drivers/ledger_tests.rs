@@ -3,7 +3,7 @@ use crate::drivers::key;
 use crate::execute::StepRecord;
 use crate::ledger::{Ledger, Score, conformance};
 use tinyflows_storage::Counters;
-use tinyflows_storage::{MemoryStorage, Scope, StorageBackend};
+use tinyflows_storage::{ Scope, StorageBackend};
 
 fn memory_docs() -> Arc<dyn DocumentStore> {
     Arc::clone(

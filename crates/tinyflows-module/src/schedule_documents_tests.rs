@@ -2,7 +2,7 @@ use super::*;
 
 use std::sync::Arc;
 use tinyflows_storage::{
-    Capability, ErrorKind, MemoryStorage, Scope, StorageBackend, WriteOp,
+    Capability, ErrorKind,  Scope, StorageBackend, WriteOp,
 };
 
 struct Callback(Arc<dyn DocumentStore>);

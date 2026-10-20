@@ -1,6 +1,6 @@
 use super::*;
 use std::sync::Arc;
-use tinyflows_storage::{DocumentStore, MemoryStorage, Precondition};
+use tinyflows_storage::{DocumentStore,  Precondition};
 
 use crate::catalog::test_support::{Interposed, docs_in, trigger_graph};
 

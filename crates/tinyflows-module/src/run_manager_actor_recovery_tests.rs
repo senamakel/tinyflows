@@ -12,7 +12,7 @@ use tinyflows_bus::runs::{
 };
 use tinyflows_catalog::FlowRunStep;
 use tinyflows_drivers::{DriverCheckpointer, catalog::FlowCatalogDocuments};
-use tinyflows_storage::{MemoryStorage, Scope, StorageBackend};
+use tinyflows_storage::{ Scope, StorageBackend};
 use tokio::sync::oneshot;
 
 #[tokio::test]

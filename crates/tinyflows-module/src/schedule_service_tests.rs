@@ -125,7 +125,7 @@ async fn separate_schedule_object_parses_delays_and_rejects_cross_tenant_deliver
 #[tokio::test]
 async fn run_job_now_is_a_typed_module_owned_admission_operation() {
     use tinyflows_bus::schedule::{ManualDelivery, RunJobNow, RunJobReply, StoreConfig};
-    use tinyflows_storage::{MemoryStorage, Scope, StorageBackend};
+    use tinyflows_storage::{ Scope, StorageBackend};
 
     let (_server, host, state) = connections().await;
     let backend = MemoryStorage::new();
@@ -222,7 +222,7 @@ async fn run_job_now_returns_typed_refusal_when_a_scheduled_claim_is_active() {
     use tinyflows_bus::schedule::{
         ManualDelivery, RunJobNow, RunJobRefusal, RunJobReply, StoreConfig,
     };
-    use tinyflows_storage::{MemoryStorage, Scope, StorageBackend};
+    use tinyflows_storage::{ Scope, StorageBackend};
 
     let (_server, host, _) = connections().await;
     let backend = MemoryStorage::new();
@@ -425,7 +425,7 @@ mod queue_tests;
 
 #[tokio::test]
 async fn module_document_store_retries_policy_migration_conflicts_without_losing_seeded_jobs() {
-    use tinyflows_storage::{MemoryStorage, Precondition, Scope, StorageBackend};
+    use tinyflows_storage::{ Precondition, Scope, StorageBackend};
     let (_server, host, _) = connections().await;
     let scoped = MemoryStorage::new().for_scope(&Scope::local()).unwrap();
     let docs = scoped.documents().clone();

@@ -8,7 +8,7 @@ use crate::checkpoint::DriverCheckpointer;
 use serde_json::json;
 use std::sync::Arc;
 use tinyflows::graph::{Checkpoint, CheckpointConfig, Checkpointer, PendingWrite};
-use tinyflows_storage::{DocumentStore, MemoryStorage, Precondition, Scope, StorageBackend};
+use tinyflows_storage::{DocumentStore,  Precondition, Scope, StorageBackend};
 
 fn docs() -> Arc<dyn DocumentStore> {
     Arc::clone(

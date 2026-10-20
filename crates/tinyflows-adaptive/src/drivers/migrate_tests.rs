@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use serde_json::{Value, json};
 use tinyflows_storage::{
-    Counters, DocumentStore, DocumentStoreExt, Key, MemoryStorage, MigrateOptions, Owner,
-    Precondition, Registry, Schema, Scope, ScopeClass, ScopedStorage, StorageBackend,
+    Counters, DocumentStore, DocumentStoreExt, Key,  MigrateOptions, Owner,
+    Precondition, Registry, Schema, Scope, ScopeClass, Storage, StorageBackend,
 };
 
 use super::*;
@@ -11,11 +11,11 @@ use crate::drivers::{DriverLedger, DriverVault};
 use crate::ledger::{Ledger, conformance};
 use crate::workflows::Vault;
 
-fn scoped() -> ScopedStorage {
+fn scoped() -> Storage {
     MemoryStorage::new().for_scope(&Scope::local()).unwrap()
 }
 
-fn docs(storage: &ScopedStorage) -> Arc<dyn DocumentStore> {
+fn docs(storage: &Storage) -> Arc<dyn DocumentStore> {
     Arc::clone(storage.documents())
 }
 
@@ -23,7 +23,7 @@ fn schema() -> Schema {
     extend_storage_schema(Schema::new(Owner::new("flows").unwrap()))
 }
 
-async fn seed(storage: &ScopedStorage, collection: &str, id: &str, body: Value) {
+async fn seed(storage: &Storage, collection: &str, id: &str, body: Value) {
     storage
         .documents()
         .put(collection, id, body, Precondition::None)
@@ -31,7 +31,7 @@ async fn seed(storage: &ScopedStorage, collection: &str, id: &str, body: Value) 
         .unwrap();
 }
 
-async fn migrate(storage: &ScopedStorage) {
+async fn migrate(storage: &Storage) {
     Registry::compose([schema()])
         .unwrap()
         .migrate(storage, &MigrateOptions::new())

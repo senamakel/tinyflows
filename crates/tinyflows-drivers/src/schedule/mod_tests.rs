@@ -3,7 +3,7 @@ use super::*;
 use super::test_support::{daily, docs_in, store};
 use chrono::Utc;
 use serde_json::json;
-use tinyflows_storage::{MemoryStorage, Precondition};
+use tinyflows_storage::{ Precondition};
 
 #[test]
 fn limits_default_like_the_sqlite_store_and_clamp_to_one() {

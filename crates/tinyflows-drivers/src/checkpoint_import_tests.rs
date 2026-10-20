@@ -2,7 +2,7 @@ use super::*;
 use serde_json::json;
 use std::sync::Arc;
 use tinyflows::graph::ids::NodeId;
-use tinyflows_storage::{MemoryStorage, Scope, StorageBackend};
+use tinyflows_storage::{ Scope, StorageBackend};
 #[cfg(feature = "catalog")]
 use tinyflows_storage::{Precondition, WriteOptions};
 

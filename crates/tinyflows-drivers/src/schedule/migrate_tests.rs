@@ -3,15 +3,15 @@ use chrono::TimeZone;
 use serde_json::json;
 use tinyflows_schedule::Schedule;
 use tinyflows_storage::{
-    DocumentStoreExt, MemoryStorage, MigrateOptions, Precondition, Query, Registry, Scope,
-    ScopedStorage, StorageBackend,
+    DocumentStoreExt,  MigrateOptions, Precondition, Query, Registry, Scope,
+    Storage, StorageBackend,
 };
 
-fn scoped() -> ScopedStorage {
+fn scoped() -> Storage {
     MemoryStorage::new().for_scope(&Scope::local()).unwrap()
 }
 
-async fn seed(storage: &ScopedStorage, collection: &str, id: &str, body: Value) {
+async fn seed(storage: &Storage, collection: &str, id: &str, body: Value) {
     storage
         .documents()
         .put(collection, id, body, Precondition::None)
@@ -19,7 +19,7 @@ async fn seed(storage: &ScopedStorage, collection: &str, id: &str, body: Value) 
         .unwrap();
 }
 
-async fn migrate(storage: &ScopedStorage) {
+async fn migrate(storage: &Storage) {
     Registry::compose([storage_schema()])
         .unwrap()
         .migrate(storage, &MigrateOptions::new())

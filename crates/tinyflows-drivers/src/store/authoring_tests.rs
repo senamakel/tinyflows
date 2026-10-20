@@ -32,7 +32,7 @@ fn document(id: &str) -> String {
     .to_string()
 }
 
-fn store() -> (MemoryStorage, Arc<dyn WorkflowStore>) {
+fn store() -> ( Arc<dyn WorkflowStore>) {
     let storage = MemoryStorage::new();
     let store: Arc<dyn WorkflowStore> = Arc::new(store_over(&storage, "local"));
     (storage, store)

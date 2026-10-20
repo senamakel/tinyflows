@@ -9,7 +9,7 @@ use std::sync::atomic::Ordering;
 use serde_json::json;
 use tinyflows::store::types::{ProposalStatus, WorkflowError, WorkflowProposal, fingerprint};
 use tinyflows::store::{WorkflowStore, mint_proposal_id, require_proposal};
-use tinyflows_storage::{DocumentStoreExt, MemoryStorage, Precondition};
+use tinyflows_storage::{DocumentStoreExt,  Precondition};
 
 use super::test_support::{Faulty, block_on, docs_in, record, store, store_over};
 use super::{DEFINITIONS, DriverWorkflowStore, PROPOSALS};
