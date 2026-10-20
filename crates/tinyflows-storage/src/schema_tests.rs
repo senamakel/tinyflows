@@ -188,6 +188,58 @@ async fn cross_collection_expiry_mismatch_preserves_the_source_record() {
 }
 
 #[tokio::test]
+async fn renamed_migration_targets_keep_their_source_absolute_expiry() {
+    let storage = MemoryBackend::new()
+        .for_scope(&Scope::new("local").expect("valid scope"))
+        .expect("memory scope");
+    let docs = Arc::clone(storage.documents());
+    docs.ensure_collection(&CollectionSpec::new("legacy.items"))
+        .await
+        .expect("legacy source collection");
+    let expiry = i64::MAX - 100;
+    docs.put_with(
+        "legacy.items",
+        "old-id",
+        json!({"value":"before"}),
+        Precondition::Absent,
+        WriteOptions::new().schema(1).expires_ms(expiry),
+    )
+    .await
+    .expect("seed source with finite absolute expiry");
+
+    let schema = Schema::new(Owner::new("flows").expect("valid owner"))
+        .collection("flows.items", 2, ScopeClass::Tenant)
+        .step(
+            Step::new("rename_items_v2", "flows.items", 1, 2, |rows| {
+                Ok(rows
+                    .into_iter()
+                    .map(|row| {
+                        TargetRecord::new("flows.items", "new-id", json!({"value":"after"}))
+                            .preserve_expiry_from(&row)
+                    })
+                    .collect())
+            })
+            .source("legacy.items"),
+        );
+    schema
+        .migrate(&docs, &MigrateOptions::default())
+        .await
+        .expect("renamed target migration succeeds");
+
+    let target = docs
+        .get("flows.items", "new-id")
+        .await
+        .expect("read renamed target")
+        .expect("renamed target exists");
+    assert_eq!(target.meta.expires_ms, Some(expiry));
+    assert!(docs
+        .get("legacy.items", "old-id")
+        .await
+        .expect("read source")
+        .is_none());
+}
+
+#[tokio::test]
 async fn owner_migration_rewrites_in_place_once_and_preserves_document_metadata() {
     let storage = MemoryBackend::new()
         .for_scope(&Scope::new("local").expect("valid scope"))

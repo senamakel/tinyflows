@@ -89,6 +89,14 @@ impl TargetRecord {
         self.expires_ms = Some(value);
         self
     }
+
+    /// Preserve the source record's absolute expiry when the migration
+    /// changes the destination id or collection.
+    #[must_use]
+    pub fn preserve_expiry_from(mut self, source: &SourceRecord) -> Self {
+        self.expires_ms = source.meta.expires_ms;
+        self
+    }
 }
 
 type StepFn = dyn Fn(Vec<SourceRecord>) -> Result<Vec<TargetRecord>> + Send + Sync;

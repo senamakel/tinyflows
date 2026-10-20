@@ -62,9 +62,10 @@ fn map(batch: Vec<SourceRecord>, collection: &str, convert: Convert) -> Vec<Targ
         .map(|source| {
             let Some(body) = convert(source) else {
                 tracing::warn!(collection, id = %source.id, "[flows-storage] carrying unconvertible v1 record");
-                return TargetRecord::new(collection, source.id.clone(), source.body.clone());
+                return TargetRecord::new(collection, source.id.clone(), source.body.clone())
+                    .preserve_expiry_from(source);
             };
-            TargetRecord::new(collection, source.id.clone(), body)
+            TargetRecord::new(collection, source.id.clone(), body).preserve_expiry_from(source)
         })
         .collect()
 }
