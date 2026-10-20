@@ -7,7 +7,7 @@
 use std::sync::Arc;
 
 use serde_json::{Map, Value, json};
-use tinystoragedrivers_core::{
+use tinyflows_storage::{
     Counters, DocumentStore, DocumentStoreExt, Filter, Precondition, Query, StorageError,
     Versioned, WriteOptions, primitives,
 };
@@ -54,7 +54,7 @@ pub(super) async fn put_doc(
     id: &str,
     doc: Value,
     precondition: Precondition,
-) -> std::result::Result<tinystoragedrivers_core::Version, StorageError> {
+) -> std::result::Result<tinyflows_storage::Version, StorageError> {
     docs.put_with(
         collection,
         id,

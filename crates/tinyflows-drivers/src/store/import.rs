@@ -17,7 +17,7 @@ use tinyflows::store::types::{
     RunRecord, WorkflowError, WorkflowNote, WorkflowProposal, WorkflowRecord, WorkflowRevision,
 };
 use tinyflows::store::{prune_notes, validate_graph};
-use tinystoragedrivers_core::{DocumentStore, Precondition};
+use tinyflows_storage::{DocumentStore, Precondition};
 
 use super::definitions::{is_race, to_doc as definition_doc};
 use super::history::to_doc as revision_doc;

@@ -1,6 +1,6 @@
 use super::*;
 use serde_json::json;
-use tinystoragedrivers_core::{Kv, MemoryStorage, Scope, StorageBackend};
+use tinyflows_storage::{Kv, MemoryStorage, Scope, StorageBackend};
 
 fn scoped() -> ScopedStorage {
     MemoryStorage::new().for_scope(&Scope::local()).unwrap()

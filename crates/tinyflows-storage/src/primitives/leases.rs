@@ -19,7 +19,7 @@ use super::LEASES;
 use super::repo::{Repo, RetryPolicy};
 use tinystoragedrivers_api::DocumentStore;
 use tinystoragedrivers_types::{Result, StorageError};
-use tinystoragedrivers_types::Key;
+use crate::Key;
 use crate::{Clock, system_clock};
 
 /// The stored body: `{holder, epoch, expires_ms}` plus the optional

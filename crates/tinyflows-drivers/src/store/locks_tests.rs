@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use serde_json::json;
 use tinyflows::store::WorkflowStore;
-use tinystoragedrivers_core::{Key, MemoryStorage, Precondition, primitives};
+use tinyflows_storage::{Key, MemoryStorage, Precondition, primitives};
 
 use super::DriverWorkflowStore;
 use super::locks::{LEASE_OWNER, lease_key};

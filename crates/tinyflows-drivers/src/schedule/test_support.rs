@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use tinyflows_schedule::{JobOrigin, Schedule};
-use tinystoragedrivers_core::{DocumentStore, MemoryStorage, Scope, StorageBackend};
+use tinyflows_storage::{DocumentStore, MemoryStorage, Scope, StorageBackend};
 
 use super::CronDocuments;
 
@@ -63,14 +63,14 @@ pub(super) struct Faults {
 }
 
 impl FaultDocuments {
-    fn lease_write_fault(&self, collection: &str) -> tinystoragedrivers_core::Result<()> {
+    fn lease_write_fault(&self, collection: &str) -> tinyflows_storage::Result<()> {
         if collection == "tsd.leases"
             && self
                 .faults
                 .lease_writes
                 .load(std::sync::atomic::Ordering::SeqCst)
         {
-            return Err(tinystoragedrivers_core::StorageError::unavailable(
+            return Err(tinyflows_storage::StorageError::unavailable(
                 "fixture refuses lease writes",
             ));
         }
@@ -79,27 +79,27 @@ impl FaultDocuments {
 }
 #[async_trait::async_trait]
 impl DocumentStore for FaultDocuments {
-    fn capabilities(&self) -> tinystoragedrivers_core::Capabilities {
+    fn capabilities(&self) -> tinyflows_storage::Capabilities {
         if self.transactions {
             self.inner.capabilities()
         } else {
             self.inner
                 .capabilities()
-                .without(tinystoragedrivers_core::Capability::Transactions)
+                .without(tinyflows_storage::Capability::Transactions)
         }
     }
     async fn ensure_collection(
         &self,
-        spec: &tinystoragedrivers_core::CollectionSpec,
-    ) -> tinystoragedrivers_core::Result<()> {
+        spec: &tinyflows_storage::CollectionSpec,
+    ) -> tinyflows_storage::Result<()> {
         self.inner.ensure_collection(spec).await
     }
     async fn get(
         &self,
         c: &str,
         id: &str,
-    ) -> tinystoragedrivers_core::Result<
-        Option<tinystoragedrivers_core::Versioned<serde_json::Value>>,
+    ) -> tinyflows_storage::Result<
+        Option<tinyflows_storage::Versioned<serde_json::Value>>,
     > {
         if c == "cron.jobs" {
             let read = self
@@ -113,7 +113,7 @@ impl DocumentStore for FaultDocuments {
                     .fail_job_read
                     .load(std::sync::atomic::Ordering::SeqCst)
             {
-                return Err(tinystoragedrivers_core::StorageError::unavailable(
+                return Err(tinyflows_storage::StorageError::unavailable(
                     "fixture refuses this job read",
                 ));
             }
@@ -125,8 +125,8 @@ impl DocumentStore for FaultDocuments {
         c: &str,
         id: &str,
         doc: serde_json::Value,
-        p: tinystoragedrivers_core::Precondition,
-    ) -> tinystoragedrivers_core::Result<tinystoragedrivers_core::Version> {
+        p: tinyflows_storage::Precondition,
+    ) -> tinyflows_storage::Result<tinyflows_storage::Version> {
         self.lease_write_fault(c)?;
         self.inner.put(c, id, doc, p).await
     }
@@ -135,9 +135,9 @@ impl DocumentStore for FaultDocuments {
         c: &str,
         id: &str,
         doc: serde_json::Value,
-        p: tinystoragedrivers_core::Precondition,
-        options: tinystoragedrivers_core::WriteOptions,
-    ) -> tinystoragedrivers_core::Result<tinystoragedrivers_core::Version> {
+        p: tinyflows_storage::Precondition,
+        options: tinyflows_storage::WriteOptions,
+    ) -> tinyflows_storage::Result<tinyflows_storage::Version> {
         self.lease_write_fault(c)?;
         self.inner.put_with(c, id, doc, p, options).await
     }
@@ -145,59 +145,59 @@ impl DocumentStore for FaultDocuments {
         &self,
         c: &str,
         id: &str,
-        p: tinystoragedrivers_core::Precondition,
-    ) -> tinystoragedrivers_core::Result<bool> {
+        p: tinyflows_storage::Precondition,
+    ) -> tinyflows_storage::Result<bool> {
         self.lease_write_fault(c)?;
         self.inner.delete(c, id, p).await
     }
     async fn query(
         &self,
         c: &str,
-        q: &tinystoragedrivers_core::Query,
-    ) -> tinystoragedrivers_core::Result<
-        tinystoragedrivers_core::Page<tinystoragedrivers_core::Versioned<serde_json::Value>>,
+        q: &tinyflows_storage::Query,
+    ) -> tinyflows_storage::Result<
+        tinyflows_storage::Page<tinyflows_storage::Versioned<serde_json::Value>>,
     > {
         self.inner.query(c, q).await
     }
     async fn count(
         &self,
         c: &str,
-        f: &tinystoragedrivers_core::Filter,
-    ) -> tinystoragedrivers_core::Result<u64> {
+        f: &tinyflows_storage::Filter,
+    ) -> tinyflows_storage::Result<u64> {
         self.inner.count(c, f).await
     }
     async fn delete_where(
         &self,
         c: &str,
-        f: &tinystoragedrivers_core::Filter,
-    ) -> tinystoragedrivers_core::Result<u64> {
+        f: &tinyflows_storage::Filter,
+    ) -> tinyflows_storage::Result<u64> {
         self.inner.delete_where(c, f).await
     }
     async fn claim(
         &self,
         c: &str,
-        f: &tinystoragedrivers_core::Filter,
-        s: &[tinystoragedrivers_core::Sort],
+        f: &tinyflows_storage::Filter,
+        s: &[tinyflows_storage::Sort],
         p: &serde_json::Value,
-    ) -> tinystoragedrivers_core::Result<
-        Option<tinystoragedrivers_core::Versioned<serde_json::Value>>,
+    ) -> tinyflows_storage::Result<
+        Option<tinyflows_storage::Versioned<serde_json::Value>>,
     > {
         self.inner.claim(c, f, s, p).await
     }
-    async fn drop_collection(&self, c: &str) -> tinystoragedrivers_core::Result<()> {
+    async fn drop_collection(&self, c: &str) -> tinyflows_storage::Result<()> {
         self.inner.drop_collection(c).await
     }
     async fn atomic_batch(
         &self,
-        ops: Vec<tinystoragedrivers_core::WriteOp>,
-    ) -> tinystoragedrivers_core::Result<Vec<tinystoragedrivers_core::WriteResult>> {
+        ops: Vec<tinyflows_storage::WriteOp>,
+    ) -> tinyflows_storage::Result<Vec<tinyflows_storage::WriteResult>> {
         let barrier = self.batch_barrier.lock().unwrap().take();
         if let Some(barrier) = barrier {
             barrier.wait().await;
         }
         if self.fail_batch.load(std::sync::atomic::Ordering::SeqCst) || !self.transactions {
-            return Err(tinystoragedrivers_core::StorageError::unsupported(
-                tinystoragedrivers_core::Capability::Transactions,
+            return Err(tinyflows_storage::StorageError::unsupported(
+                tinyflows_storage::Capability::Transactions,
                 "fixture refuses transaction",
             ));
         }

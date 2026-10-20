@@ -1,7 +1,7 @@
 use super::*;
 use tinyflows_bus::catalog::CallbackAddress;
 use tinyflows_drivers::catalog::FlowCatalogDocuments;
-use tinystoragedrivers_core::{MemoryStorage, Scope, StorageBackend};
+use tinyflows_storage::{MemoryStorage, Scope, StorageBackend};
 
 fn storage(owner: &str) -> tinyflows_bus::catalog::CatalogStorage {
     tinyflows_bus::catalog::CatalogStorage {

@@ -21,7 +21,7 @@
 //! moves it into `tsd.counters` once per scope after `Registry::migrate`.
 
 use serde_json::{Map, Value, json};
-use tinystoragedrivers_core::{
+use tinyflows_storage::{
     Counters, Migrations, Owner, Precondition, Result, Schema, ScopeClass, ScopedStorage,
     SourceRecord, Step, TargetRecord,
 };
@@ -253,7 +253,7 @@ pub async fn import_legacy_cron_counters(storage: &ScopedStorage) -> Result<bool
     if migrations.done(OWNER, COUNTERS_STEP).await? {
         return Ok(false);
     }
-    tinystoragedrivers_core::primitives::ensure(storage).await?;
+    tinyflows_storage::primitives::ensure(storage).await?;
     let docs = storage.documents();
     docs.ensure_collection(&CronDocuments::collections().remove(2))
         .await?;

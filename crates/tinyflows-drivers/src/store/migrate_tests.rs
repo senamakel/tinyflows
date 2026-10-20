@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use serde_json::{Value, json};
 use tinyflows::store::WorkflowStore;
-use tinystoragedrivers_core::{
+use tinyflows_storage::{
     DocumentStore, DocumentStoreExt, MemoryStorage, MigrateOptions, Precondition, Query, Registry,
     Scope, ScopeClass, ScopedStorage, StorageBackend,
 };
@@ -111,7 +111,7 @@ async fn a_hashed_v1_id_is_re_keyed_from_the_record_id() {
 
     migrate(&storage).await;
 
-    let key = tinystoragedrivers_core::Key::of([long.as_str()]).unwrap();
+    let key = tinyflows_storage::Key::of([long.as_str()]).unwrap();
     assert!(
         docs(&storage)
             .get("flows.workflows", key.as_str())

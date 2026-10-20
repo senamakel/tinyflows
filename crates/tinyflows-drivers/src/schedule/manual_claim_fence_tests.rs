@@ -4,7 +4,7 @@ use chrono::{Duration, Utc};
 use serde_json::Value;
 use std::sync::Arc;
 use tinyflows_schedule::Schedule;
-use tinystoragedrivers_core::{
+use tinyflows_storage::{
     Capabilities, CollectionSpec, DocumentStore, Filter, MemoryStorage, Page, Precondition, Query,
     Scope, Sort, StorageBackend, Version, Versioned, WriteOp, WriteResult,
 };
@@ -27,7 +27,7 @@ impl DocumentStore for HeldClaimWrite {
     async fn ensure_collection(
         &self,
         spec: &CollectionSpec,
-    ) -> tinystoragedrivers_core::Result<()> {
+    ) -> tinyflows_storage::Result<()> {
         self.inner.ensure_collection(spec).await
     }
 
@@ -35,7 +35,7 @@ impl DocumentStore for HeldClaimWrite {
         &self,
         collection: &str,
         id: &str,
-    ) -> tinystoragedrivers_core::Result<Option<Versioned<Value>>> {
+    ) -> tinyflows_storage::Result<Option<Versioned<Value>>> {
         self.inner.get(collection, id).await
     }
 
@@ -45,7 +45,7 @@ impl DocumentStore for HeldClaimWrite {
         id: &str,
         doc: Value,
         precondition: Precondition,
-    ) -> tinystoragedrivers_core::Result<Version> {
+    ) -> tinyflows_storage::Result<Version> {
         self.inner.put(collection, id, doc, precondition).await
     }
 
@@ -54,7 +54,7 @@ impl DocumentStore for HeldClaimWrite {
         collection: &str,
         id: &str,
         precondition: Precondition,
-    ) -> tinystoragedrivers_core::Result<bool> {
+    ) -> tinyflows_storage::Result<bool> {
         self.inner.delete(collection, id, precondition).await
     }
 
@@ -62,7 +62,7 @@ impl DocumentStore for HeldClaimWrite {
         &self,
         collection: &str,
         query: &Query,
-    ) -> tinystoragedrivers_core::Result<Page<Versioned<Value>>> {
+    ) -> tinyflows_storage::Result<Page<Versioned<Value>>> {
         self.inner.query(collection, query).await
     }
 
@@ -70,7 +70,7 @@ impl DocumentStore for HeldClaimWrite {
         &self,
         collection: &str,
         filter: &Filter,
-    ) -> tinystoragedrivers_core::Result<u64> {
+    ) -> tinyflows_storage::Result<u64> {
         self.inner.count(collection, filter).await
     }
 
@@ -78,7 +78,7 @@ impl DocumentStore for HeldClaimWrite {
         &self,
         collection: &str,
         filter: &Filter,
-    ) -> tinystoragedrivers_core::Result<u64> {
+    ) -> tinyflows_storage::Result<u64> {
         self.inner.delete_where(collection, filter).await
     }
 
@@ -88,14 +88,14 @@ impl DocumentStore for HeldClaimWrite {
         filter: &Filter,
         sort: &[Sort],
         patch: &Value,
-    ) -> tinystoragedrivers_core::Result<Option<Versioned<Value>>> {
+    ) -> tinyflows_storage::Result<Option<Versioned<Value>>> {
         self.inner.claim(collection, filter, sort, patch).await
     }
 
     async fn atomic_batch(
         &self,
         ops: Vec<WriteOp>,
-    ) -> tinystoragedrivers_core::Result<Vec<WriteResult>> {
+    ) -> tinyflows_storage::Result<Vec<WriteResult>> {
         let late_claim = ops.iter().any(|op| match op {
             WriteOp::Put {
                 collection, doc, ..
@@ -124,14 +124,14 @@ impl DocumentStore for HeldClaimWrite {
                 .lose_fence_reply
                 .swap(false, std::sync::atomic::Ordering::SeqCst)
         {
-            return Err(tinystoragedrivers_core::StorageError::backend(
+            return Err(tinyflows_storage::StorageError::backend(
                 "injected lost admission fence response",
             ));
         }
         Ok(result)
     }
 
-    async fn drop_collection(&self, collection: &str) -> tinystoragedrivers_core::Result<()> {
+    async fn drop_collection(&self, collection: &str) -> tinyflows_storage::Result<()> {
         self.inner.drop_collection(collection).await
     }
 }

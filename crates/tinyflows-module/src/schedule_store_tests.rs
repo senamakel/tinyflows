@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use std::time::Duration;
 use tinyflows_schedule::runtime::*;
 use tinyflows_schedule::{DeliveryStatus, Schedule};
-use tinystoragedrivers_core::{MemoryStorage, Scope, StorageBackend};
+use tinyflows_storage::{MemoryStorage, Scope, StorageBackend};
 use tokio::sync::Notify;
 
 struct Replacement(CronDocuments);

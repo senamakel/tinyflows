@@ -12,7 +12,7 @@
 //! is never overwritten by a stale v1 row.
 
 use serde_json::Value;
-use tinystoragedrivers_core::{
+use tinyflows_storage::{
     CollectionSpec, Cursor, ErrorKind, Filter, ID_FIELD, Key, Migrations, Precondition, Query,
     Result, ScopedStorage, Sort, primitives,
 };

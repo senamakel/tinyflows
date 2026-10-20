@@ -1,7 +1,7 @@
 use super::*;
 use serde_json::json;
 use std::collections::HashMap;
-use tinystoragedrivers_core::Precondition;
+use tinyflows_storage::Precondition;
 
 use crate::catalog::test_support::{catalog, trigger_graph};
 use crate::catalog::{FlowCatalogDocuments, RUNS};

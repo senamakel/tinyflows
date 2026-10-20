@@ -5,7 +5,7 @@ use serde_json::{Value, json};
 use std::sync::Arc;
 use tinyflows_bus::catalog::{self, CatalogStorage};
 use tinyflows_drivers::catalog::FlowCatalogDocuments;
-use tinystoragedrivers_core::{DocumentStore, MemoryStorage, Scope, StorageBackend};
+use tinyflows_storage::{DocumentStore, MemoryStorage, Scope, StorageBackend};
 
 struct DocumentsHost(Arc<dyn DocumentStore>);
 
@@ -72,7 +72,7 @@ fn decode<T: DeserializeOwned>(value: &Value) -> tinybus::Result<T> {
     serde_json::from_value(value.clone()).map_err(tinybus::Error::from)
 }
 
-fn reply<T: Serialize>(result: tinystoragedrivers_core::Result<T>) -> Value {
+fn reply<T: Serialize>(result: tinyflows_storage::Result<T>) -> Value {
     match result {
         Ok(value) => json!({"value": serde_json::to_value(value).unwrap()}),
         Err(error) => json!({"error":{

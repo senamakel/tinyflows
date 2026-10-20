@@ -182,7 +182,7 @@ impl Storage {
     #[cfg(feature = "storage-drivers")]
     #[must_use]
     pub fn from_documents(
-        docs: std::sync::Arc<dyn tinystoragedrivers_core::DocumentStore>,
+        docs: std::sync::Arc<dyn tinyflows_storage::DocumentStore>,
     ) -> Self {
         Self {
             ledger: AnyLedger::Driver(crate::drivers::DriverLedger::new(std::sync::Arc::clone(

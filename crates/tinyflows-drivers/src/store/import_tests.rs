@@ -4,7 +4,7 @@ use tinyflows::store::types::{
     WorkflowRevision,
 };
 use tinyflows::store::{MAX_NOTES, MAX_REVISIONS, WorkflowStore, mint_note_id, new_run_record};
-use tinystoragedrivers_core::MemoryStorage;
+use tinyflows_storage::MemoryStorage;
 
 use crate::store::test_support::{record, store, store_over};
 

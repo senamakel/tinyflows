@@ -8,7 +8,7 @@ use super::COUNTERS;
 use super::repo::{Repo, RetryPolicy};
 use tinystoragedrivers_api::DocumentStore;
 use tinystoragedrivers_types::{Result, StorageError};
-use tinystoragedrivers_types::Key;
+use crate::Key;
 
 /// The largest value every driver can store (`i64::MAX`).
 const MAX_VALUE: u64 = i64::MAX as u64;

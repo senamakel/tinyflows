@@ -2,9 +2,9 @@ use super::*;
 use serde_json::json;
 use std::sync::Arc;
 use tinyflows::graph::ids::NodeId;
-use tinystoragedrivers_core::{MemoryStorage, Scope, StorageBackend};
+use tinyflows_storage::{MemoryStorage, Scope, StorageBackend};
 #[cfg(feature = "catalog")]
-use tinystoragedrivers_core::{Precondition, WriteOptions};
+use tinyflows_storage::{Precondition, WriteOptions};
 
 #[tokio::test]
 async fn legacy_write_import_cas_preserves_existing_task_values() {

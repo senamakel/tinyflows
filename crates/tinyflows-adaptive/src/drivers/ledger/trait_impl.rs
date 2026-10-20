@@ -2,7 +2,7 @@
 
 use async_trait::async_trait;
 use serde_json::{Value, json};
-use tinystoragedrivers_core::{Filter, Precondition, Query, Sort};
+use tinyflows_storage::{Filter, Precondition, Query, Sort};
 
 /// A document id for `parts`, as a ledger error.
 fn key(parts: &[&str]) -> Result<String> {
@@ -106,7 +106,7 @@ impl Ledger for DriverLedger {
         }
         let query = Query::filter(
             self.visible()
-                .and(Filter::one_of(tinystoragedrivers_core::ID_FIELD, cited)),
+                .and(Filter::one_of(tinyflows_storage::ID_FIELD, cited)),
         )
         .sort(Sort::asc("seq"));
         self.all(ROWS, query)

@@ -8,7 +8,7 @@ use tinybus::Connection;
 use tinyflows_bus::catalog::{self, CatalogStorage};
 use tinyflows_bus::runs::RunControlRequest;
 use tinyflows_drivers::catalog::FlowCatalogDocuments;
-use tinystoragedrivers_core::{
+use tinyflows_storage::{
     Capabilities, CollectionSpec, DocumentStore, Filter, MemoryStorage, Page, Precondition, Query,
     Scope, Sort, StorageBackend, StorageError, Version, Versioned, WriteOptions,
 };
@@ -175,7 +175,7 @@ impl DocumentStore for FaultingDocuments {
     async fn ensure_collection(
         &self,
         spec: &CollectionSpec,
-    ) -> tinystoragedrivers_core::Result<()> {
+    ) -> tinyflows_storage::Result<()> {
         self.inner.ensure_collection(spec).await
     }
 
@@ -183,7 +183,7 @@ impl DocumentStore for FaultingDocuments {
         &self,
         collection: &str,
         id: &str,
-    ) -> tinystoragedrivers_core::Result<Option<Versioned<Value>>> {
+    ) -> tinyflows_storage::Result<Option<Versioned<Value>>> {
         self.inner.get(collection, id).await
     }
 
@@ -193,7 +193,7 @@ impl DocumentStore for FaultingDocuments {
         id: &str,
         doc: Value,
         precondition: Precondition,
-    ) -> tinystoragedrivers_core::Result<Version> {
+    ) -> tinyflows_storage::Result<Version> {
         self.put_with(collection, id, doc, precondition, WriteOptions::default())
             .await
     }
@@ -205,7 +205,7 @@ impl DocumentStore for FaultingDocuments {
         doc: Value,
         precondition: Precondition,
         options: WriteOptions,
-    ) -> tinystoragedrivers_core::Result<Version> {
+    ) -> tinyflows_storage::Result<Version> {
         if Self::outcome_event(collection, &doc) {
             match self.mode {
                 FaultMode::LimitOutcomeDocument(max_bytes)
@@ -315,7 +315,7 @@ impl DocumentStore for FaultingDocuments {
         collection: &str,
         id: &str,
         precondition: Precondition,
-    ) -> tinystoragedrivers_core::Result<bool> {
+    ) -> tinyflows_storage::Result<bool> {
         self.inner.delete(collection, id, precondition).await
     }
 
@@ -323,7 +323,7 @@ impl DocumentStore for FaultingDocuments {
         &self,
         collection: &str,
         query: &Query,
-    ) -> tinystoragedrivers_core::Result<Page<Versioned<Value>>> {
+    ) -> tinyflows_storage::Result<Page<Versioned<Value>>> {
         self.inner.query(collection, query).await
     }
 
@@ -331,7 +331,7 @@ impl DocumentStore for FaultingDocuments {
         &self,
         collection: &str,
         filter: &Filter,
-    ) -> tinystoragedrivers_core::Result<u64> {
+    ) -> tinyflows_storage::Result<u64> {
         self.inner.count(collection, filter).await
     }
 
@@ -339,7 +339,7 @@ impl DocumentStore for FaultingDocuments {
         &self,
         collection: &str,
         filter: &Filter,
-    ) -> tinystoragedrivers_core::Result<u64> {
+    ) -> tinyflows_storage::Result<u64> {
         self.inner.delete_where(collection, filter).await
     }
 
@@ -349,11 +349,11 @@ impl DocumentStore for FaultingDocuments {
         filter: &Filter,
         sort: &[Sort],
         patch: &Value,
-    ) -> tinystoragedrivers_core::Result<Option<Versioned<Value>>> {
+    ) -> tinyflows_storage::Result<Option<Versioned<Value>>> {
         self.inner.claim(collection, filter, sort, patch).await
     }
 
-    async fn drop_collection(&self, collection: &str) -> tinystoragedrivers_core::Result<()> {
+    async fn drop_collection(&self, collection: &str) -> tinyflows_storage::Result<()> {
         self.inner.drop_collection(collection).await
     }
 }
@@ -379,7 +379,7 @@ impl StorageReader {
     }
 }
 
-fn reply<T: serde::Serialize>(result: tinystoragedrivers_core::Result<T>) -> Value {
+fn reply<T: serde::Serialize>(result: tinyflows_storage::Result<T>) -> Value {
     match result {
         Ok(value) => json!({"value":serde_json::to_value(value).unwrap()}),
         Err(error) => json!({"error":{

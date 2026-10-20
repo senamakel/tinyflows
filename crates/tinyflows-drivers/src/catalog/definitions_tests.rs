@@ -1,7 +1,7 @@
 use super::*;
 use crate::catalog::test_support::{catalog, catalog_in, trigger_graph};
 use std::sync::Arc;
-use tinystoragedrivers_core::MemoryStorage;
+use tinyflows_storage::MemoryStorage;
 
 #[tokio::test]
 async fn create_get_list_delete_roundtrip() {
@@ -130,7 +130,7 @@ async fn settled_run_updates_its_workflow_summary_only_for_the_winning_status() 
 #[tokio::test]
 async fn a_run_from_a_removed_flow_incarnation_cannot_stamp_its_replacement() {
     use crate::catalog::{DEFINITIONS, RUNS, test_support::docs_in};
-    use tinystoragedrivers_core::{MemoryStorage, Precondition};
+    use tinyflows_storage::{MemoryStorage, Precondition};
 
     let storage = MemoryStorage::new();
     let store = catalog_in(&storage, "incarnation-summary");

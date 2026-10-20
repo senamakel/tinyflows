@@ -70,7 +70,7 @@ use std::sync::Arc;
 pub(crate) use crate::ids::new_id;
 use anyhow::{Result, anyhow};
 use serde_json::Value;
-use tinystoragedrivers_core::{
+use tinyflows_storage::{
     CollectionSpec, DocumentStore, IndexSpec, StorageError, Versioned, primitives,
 };
 
@@ -241,7 +241,7 @@ async fn compare_job(
             .await
         {
             Ok(results) => {
-                let Some(tinystoragedrivers_core::WriteResult::Put { version }) = results.first()
+                let Some(tinyflows_storage::WriteResult::Put { version }) = results.first()
                 else {
                     anyhow::bail!("cron store: invalid atomic write result");
                 };

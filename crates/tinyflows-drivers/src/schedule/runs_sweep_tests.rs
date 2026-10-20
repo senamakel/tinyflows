@@ -104,7 +104,7 @@ async fn removing_a_legacy_job_spares_a_replacements_runs() {
         .put(JOBS, &job.id, doc.clone(), legacy.unchanged())
         .await
         .unwrap();
-    let legacy = tinystoragedrivers_core::Versioned {
+    let legacy = tinyflows_storage::Versioned {
         id: job.id.clone(),
         version,
         doc,

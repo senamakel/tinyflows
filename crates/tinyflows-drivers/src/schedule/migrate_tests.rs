@@ -2,7 +2,7 @@ use super::*;
 use chrono::TimeZone;
 use serde_json::json;
 use tinyflows_schedule::Schedule;
-use tinystoragedrivers_core::{
+use tinyflows_storage::{
     DocumentStoreExt, MemoryStorage, MigrateOptions, Precondition, Query, Registry, Scope,
     ScopedStorage, StorageBackend,
 };

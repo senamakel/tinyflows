@@ -20,7 +20,7 @@
 //! visible (readers report it) instead of being lost.
 
 use serde_json::{Map, Value};
-use tinystoragedrivers_core::{
+use tinyflows_storage::{
     Cursor, Filter, ID_FIELD, Key, Migrations, Query, Result, Schema, ScopeClass, ScopedStorage,
     Sort, SourceRecord, Step, TargetRecord, primitives,
 };
@@ -231,9 +231,9 @@ pub async fn import_legacy_adaptive_counters(storage: &ScopedStorage) -> Result<
     }
     primitives::ensure(storage).await?;
     let docs = storage.documents();
-    docs.ensure_collection(&tinystoragedrivers_core::CollectionSpec::new(COUNTERS))
+    docs.ensure_collection(&tinyflows_storage::CollectionSpec::new(COUNTERS))
         .await?;
-    let counters = tinystoragedrivers_core::Counters::new(docs);
+    let counters = tinyflows_storage::Counters::new(docs);
     let mut carried = 0_u64;
     let mut cursor: Option<Cursor> = None;
     loop {

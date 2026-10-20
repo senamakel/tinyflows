@@ -9,7 +9,7 @@ use tinyflows_bus::catalog::{
     DocDeleteRequest, DocDeleteWhereRequest, DocEnsureRequest, DocGetRequest, DocPutRequest,
     DocQueryRequest, STORAGE_INTERFACE, storage,
 };
-use tinystoragedrivers_core::{
+use tinyflows_storage::{
     Capabilities, Capability, CollectionSpec, DocumentStore, Filter, Page, Precondition, Query,
     Result, Sort, StorageError, Version, Versioned, WriteOp, WriteOptions, WriteResult,
 };
@@ -66,7 +66,7 @@ fn storage_error(error: CatalogStorageFailure) -> StorageError {
         "not_found" => StorageError::not_found(error.message),
         "invalid_input" => StorageError::invalid_input(error.message),
         "serialization" => StorageError::new(
-            tinystoragedrivers_core::ErrorKind::Serialization,
+            tinyflows_storage::ErrorKind::Serialization,
             error.message,
         ),
         "unavailable" => StorageError::unavailable(error.message),

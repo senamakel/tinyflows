@@ -6,7 +6,7 @@ use tinybus::Connection;
 use tinyflows_bus::catalog::CatalogStorage;
 use tinyflows_drivers::catalog::FlowCatalogDocuments;
 use tinyflows_drivers::{catalog_storage_schema, document_only_scope, import_legacy_kv};
-use tinystoragedrivers_core::{MigrateOptions, Registry, Scope};
+use tinyflows_storage::{MigrateOptions, Registry, Scope};
 
 pub(super) async fn migrate(connection: Connection, storage: CatalogStorage) -> Result<()> {
     let mut documents =

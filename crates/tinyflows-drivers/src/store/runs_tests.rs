@@ -126,7 +126,7 @@ fn an_executor_and_a_cancel_request_survive_a_write_and_read() {
 #[test]
 fn an_unreadable_run_document_is_skipped_by_listings_and_named_by_a_direct_read() {
     use serde_json::json;
-    use tinystoragedrivers_core::{MemoryStorage, Precondition};
+    use tinyflows_storage::{MemoryStorage, Precondition};
     let storage = MemoryStorage::new();
     let docs = super::test_support::docs_in(&storage, "local");
     let store = super::DriverWorkflowStore::new(docs.clone());

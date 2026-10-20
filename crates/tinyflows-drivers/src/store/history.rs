@@ -4,7 +4,7 @@
 use serde_json::Value;
 use tinyflows::store::types::{WorkflowError, WorkflowRecord, WorkflowRevision};
 use tinyflows::store::{MAX_REVISIONS, mint_revision_id};
-use tinystoragedrivers_core::{DocumentStoreExt, Filter, Precondition, Query, Sort, Versioned};
+use tinyflows_storage::{DocumentStoreExt, Filter, Precondition, Query, Sort, Versioned};
 
 use super::codec::{revision_body, revision_record};
 use super::{Inner, REVISIONS, now_ms, put_doc, stamp, storage};

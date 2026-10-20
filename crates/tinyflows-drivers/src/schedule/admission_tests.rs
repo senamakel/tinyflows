@@ -4,7 +4,7 @@ use super::{
     test_support::{daily, docs_in},
 };
 use tinyflows_schedule::CronJobPatch;
-use tinystoragedrivers_core::MemoryStorage;
+use tinyflows_storage::MemoryStorage;
 
 #[tokio::test]
 async fn an_existing_unlimited_handle_cannot_bypass_installed_policy() {
@@ -168,7 +168,7 @@ async fn transaction_refusal_and_completion_failure_leave_jobs_unchanged() {
 async fn malformed_admission_and_capability_downgrades_fail_closed() {
     use super::test_support::FaultDocuments;
     use std::sync::{Arc, atomic::AtomicBool};
-    use tinystoragedrivers_core::Precondition;
+    use tinyflows_storage::Precondition;
     let backend = MemoryStorage::new();
     let a = CronDocuments::new(docs_in(&backend, "downgrade"));
     a.set_max_active_jobs(Some(1)).await.unwrap();
@@ -302,7 +302,7 @@ async fn admission_wire_form_lists_members_with_their_job_ids() {
 
 #[tokio::test]
 async fn policy_installation_reconciles_legacy_rows_written_before_adoption() {
-    use tinystoragedrivers_core::Precondition;
+    use tinyflows_storage::Precondition;
     let a = super::test_support::store();
     let first = a.add_shell_job(None, daily(), "upgraded").await.unwrap();
     // An older writer during a rolling upgrade did not know the ledger.

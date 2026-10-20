@@ -13,7 +13,7 @@ use tinyflows_schedule::{
     CronJob,
     runtime::{Completion, RunRecord},
 };
-use tinystoragedrivers_core::{MigrateOptions, Registry, Scope};
+use tinyflows_storage::{MigrateOptions, Registry, Scope};
 
 /// The module's schedule store: `CronDocuments` over the host's document port.
 pub(super) struct Store(CronDocuments);

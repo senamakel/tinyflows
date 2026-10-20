@@ -2233,12 +2233,15 @@ name = "tinyflows-storage"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "data-encoding",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
  "tinystoragedrivers-api",
  "tinystoragedrivers-testkit",
  "tinystoragedrivers-types",
  "tokio",
+ "ulid",
 ]
 
 [[package]]

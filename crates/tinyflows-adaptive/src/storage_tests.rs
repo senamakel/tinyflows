@@ -64,7 +64,7 @@ async fn one_call_scopes_both_halves() {
 #[cfg(feature = "storage-drivers")]
 #[tokio::test]
 async fn one_document_handle_holds_both_halves_and_survives_reopening() {
-    use tinystoragedrivers_core::{MemoryStorage, Scope, StorageBackend};
+    use tinyflows_storage::{MemoryStorage, Scope, StorageBackend};
     let scoped = MemoryStorage::new()
         .for_scope(&Scope::local())
         .expect("scope");

@@ -21,7 +21,7 @@ use tinyflows_bus::{
     runs::{self, CapsHost, caps as members},
 };
 use tinyflows_drivers::catalog::{FlowCatalogDocuments, FlowStateDocuments};
-use tinystoragedrivers_core::DocumentStore;
+use tinyflows_storage::DocumentStore;
 
 #[path = "caps/task_executor.rs"]
 mod task_executor;

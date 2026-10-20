@@ -14,7 +14,7 @@ use tinyflows::{
 };
 use tinyflows_bus::{catalog::CatalogStorage, runs::StartRun};
 use tinyflows_drivers::{DriverCheckpointer, catalog::FlowCatalogDocuments};
-use tinystoragedrivers_core::DocumentStore;
+use tinyflows_storage::DocumentStore;
 
 use super::super::catalog_documents::Documents;
 

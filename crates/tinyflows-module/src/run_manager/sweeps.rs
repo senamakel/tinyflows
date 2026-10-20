@@ -9,7 +9,7 @@ use tinyflows_bus::runs::{
     BootSweep, BootSweepResponse, ExpireParked, ExpireParkedResponse, RunEvent,
 };
 use tinyflows_drivers::{DriverCheckpointer, catalog::FlowCatalogDocuments};
-use tinystoragedrivers_core::DocumentStore;
+use tinyflows_storage::DocumentStore;
 
 use super::dedup_settlement::{DedupSettlementScope, from_snapshot};
 use super::preparation::catalog;

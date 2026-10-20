@@ -6,7 +6,7 @@ use serde_json::Value;
 use tinybus::{Connection, Error};
 use tinyflows_bus::catalog::{ImportLegacyBatchRequest, ImportLegacyBatchResponse};
 use tinyflows_drivers::{DriverCheckpointer, catalog::FlowCatalogDocuments};
-use tinystoragedrivers_core::DocumentStore;
+use tinyflows_storage::DocumentStore;
 
 fn failure(error: impl std::fmt::Display) -> Error {
     Error::failed(error.to_string())

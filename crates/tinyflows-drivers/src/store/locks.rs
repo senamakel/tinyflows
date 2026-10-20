@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 
 use tinyflows::store::ProposalDecisionGuard;
 use tinyflows::store::types::WorkflowError;
-use tinystoragedrivers_core::{Key, Leases};
+use tinyflows_storage::{Key, Leases};
 
 use super::{DriverWorkflowStore, Inner, doc_id, storage};
 

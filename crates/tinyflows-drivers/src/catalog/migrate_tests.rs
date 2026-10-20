@@ -1,7 +1,7 @@
 use super::*;
 use crate::catalog::FlowCatalogDocuments;
 use serde_json::json;
-use tinystoragedrivers_core::{
+use tinyflows_storage::{
     DocumentStoreExt, MemoryStorage, MigrateOptions, Precondition, Query, Registry, Scope,
     ScopedStorage, StorageBackend, WriteOptions,
 };

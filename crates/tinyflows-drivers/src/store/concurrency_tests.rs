@@ -5,7 +5,7 @@
 use std::sync::{Arc, Barrier};
 
 use tinyflows::store::WorkflowStore;
-use tinystoragedrivers_core::MemoryStorage;
+use tinyflows_storage::MemoryStorage;
 
 use super::test_support::{record, store, store_over};
 

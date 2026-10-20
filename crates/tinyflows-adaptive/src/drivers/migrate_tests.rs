@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use serde_json::{Value, json};
-use tinystoragedrivers_core::{
+use tinyflows_storage::{
     Counters, DocumentStore, DocumentStoreExt, Key, MemoryStorage, MigrateOptions, Owner,
     Precondition, Registry, Schema, Scope, ScopeClass, ScopedStorage, StorageBackend,
 };
@@ -222,7 +222,7 @@ async fn migrating_twice_changes_nothing() {
     let all = docs(&storage)
         .query_all(
             "flows.adaptive_variants",
-            &tinystoragedrivers_core::Query::all(),
+            &tinyflows_storage::Query::all(),
         )
         .await
         .unwrap();

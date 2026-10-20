@@ -24,7 +24,7 @@ mod kv_import;
 
 use std::sync::Arc;
 
-use tinystoragedrivers_core::{
+use tinyflows_storage::{
     DocumentStore, MemoryStorage, Owner, Schema, Scope, ScopedStorage, StorageBackend,
 };
 
@@ -78,7 +78,7 @@ pub fn catalog_storage_schema() -> Schema {
 pub fn document_only_scope(
     scope: Scope,
     documents: Arc<dyn DocumentStore>,
-) -> tinystoragedrivers_core::Result<ScopedStorage> {
+) -> tinyflows_storage::Result<ScopedStorage> {
     let memory = MemoryStorage::new().for_scope(&scope)?;
     Ok(ScopedStorage::new(
         scope,

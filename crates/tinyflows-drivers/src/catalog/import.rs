@@ -17,7 +17,7 @@ use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
 use std::sync::Arc;
 use tinyflows_catalog::{Flow, FlowDraft, FlowRevision, FlowRun, FlowSuggestion};
-use tinystoragedrivers_core::{DocumentStore, ErrorKind, Precondition};
+use tinyflows_storage::{DocumentStore, ErrorKind, Precondition};
 
 use super::definitions::to_doc as flow_doc;
 use super::drafts::{check_id, to_doc as draft_doc};

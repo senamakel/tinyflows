@@ -1,7 +1,7 @@
 use super::*;
 
 use std::sync::Arc;
-use tinystoragedrivers_core::{
+use tinyflows_storage::{
     Capability, ErrorKind, MemoryStorage, Scope, StorageBackend, WriteOp,
 };
 

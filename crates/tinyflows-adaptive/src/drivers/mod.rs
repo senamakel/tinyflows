@@ -48,7 +48,7 @@ mod ledger;
 mod migrate;
 mod vault;
 
-use tinystoragedrivers_core::{CollectionSpec, IndexSpec, StorageError};
+use tinyflows_storage::{CollectionSpec, IndexSpec, StorageError};
 
 pub use ledger::DriverLedger;
 pub use migrate::{extend_storage_schema, import_legacy_adaptive_counters};
@@ -96,12 +96,12 @@ pub(crate) fn collections() -> Vec<CollectionSpec> {
 /// A document id for `parts` (`Key::of`: escaped so no two tuples collide,
 /// hashed when it would exceed the driver's id limit).
 fn key(parts: &[&str]) -> Result<String, StorageError> {
-    tinystoragedrivers_core::Key::of(parts.iter().copied()).map(|key| key.as_str().to_owned())
+    tinyflows_storage::Key::of(parts.iter().copied()).map(|key| key.as_str().to_owned())
 }
 
 /// Whether `error` means another writer got there first.
 fn is_race(error: &StorageError) -> bool {
-    error.kind() == tinystoragedrivers_core::ErrorKind::Conflict
+    error.kind() == tinyflows_storage::ErrorKind::Conflict
 }
 
 #[cfg(test)]
