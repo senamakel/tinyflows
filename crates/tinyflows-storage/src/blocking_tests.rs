@@ -31,7 +31,7 @@ fn a_future_cannot_reenter_its_own_bridge() {
     let bridge = Blocking::new().expect("bridge starts");
     let inner = bridge.clone();
     let error = bridge
-        .run(async move { inner.run(async { () }) })
+        .run(async move { inner.run(async {}) })
         .expect("outer bridge call completes")
         .expect_err("reentry would deadlock");
     assert_eq!(error.kind(), tinystoragedrivers_types::ErrorKind::Backend);
