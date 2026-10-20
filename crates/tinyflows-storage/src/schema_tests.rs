@@ -103,6 +103,93 @@ async fn schema_migration_uses_metadata_supported_by_the_real_tsd_busproxy() {
         .is_none());
 }
 
+async fn cross_collection_expiry_migration(target_expiry_ms: i64) -> (Arc<dyn DocumentStore>, Schema) {
+    let storage = MemoryBackend::new()
+        .for_scope(&Scope::new("local").expect("valid scope"))
+        .expect("memory scope");
+    let docs = Arc::clone(storage.documents());
+    docs.ensure_collection(&CollectionSpec::new("legacy.items"))
+        .await
+        .expect("legacy collection");
+    docs.ensure_collection(&CollectionSpec::new("flows.archive"))
+        .await
+        .expect("archive collection");
+    docs.put_with(
+        "legacy.items",
+        "same-id",
+        json!({"value":"before"}),
+        Precondition::Absent,
+        WriteOptions::new().schema(1).expires_ms(i64::MAX),
+    )
+    .await
+    .expect("seed source with absolute expiry");
+    docs.put_with(
+        "flows.archive",
+        "same-id",
+        json!({"value":"after"}),
+        Precondition::Absent,
+        WriteOptions::new()
+            .schema(9)
+            .expires_ms(target_expiry_ms),
+    )
+    .await
+    .expect("seed target as if first migration write committed");
+    let schema = Schema::new(Owner::new("flows").expect("valid owner"))
+        .collection("flows.items", 2, ScopeClass::Tenant)
+        .collection("flows.archive", 9, ScopeClass::Tenant)
+        .step(
+            Step::new("archive_v2", "flows.items", 1, 2, |rows| {
+                Ok(rows
+                    .into_iter()
+                    .map(|row| {
+                        TargetRecord::new("flows.archive", row.id, json!({"value":"after"}))
+                    })
+                    .collect())
+            })
+            .source("legacy.items"),
+        );
+    (docs, schema)
+}
+
+#[tokio::test]
+async fn cross_collection_retry_accepts_exact_body_schema_and_source_expiry() {
+    let (docs, schema) = cross_collection_expiry_migration(i64::MAX).await;
+    schema
+        .migrate(&docs, &MigrateOptions::default())
+        .await
+        .expect("a lost acknowledgement can retry the identical target write");
+
+    let target = docs
+        .get("flows.archive", "same-id")
+        .await
+        .expect("read target")
+        .expect("target remains");
+    assert_eq!(target.doc, json!({"value":"after"}));
+    assert_eq!(target.meta.schema, 9);
+    assert_eq!(target.meta.expires_ms, Some(i64::MAX));
+    assert!(docs
+        .get("legacy.items", "same-id")
+        .await
+        .expect("read source")
+        .is_none());
+}
+
+#[tokio::test]
+async fn cross_collection_expiry_mismatch_preserves_the_source_record() {
+    let (docs, schema) = cross_collection_expiry_migration(i64::MAX - 1).await;
+    let error = schema
+        .migrate(&docs, &MigrateOptions::default())
+        .await
+        .expect_err("a target with a different expiry is not an identical retry");
+    assert_eq!(error.kind(), ErrorKind::Conflict);
+    let source = docs
+        .get("legacy.items", "same-id")
+        .await
+        .expect("read source")
+        .expect("source remains until target equivalence is proven");
+    assert_eq!(source.meta.expires_ms, Some(i64::MAX));
+}
+
 #[tokio::test]
 async fn owner_migration_rewrites_in_place_once_and_preserves_document_metadata() {
     let storage = MemoryBackend::new()

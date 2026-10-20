@@ -22,4 +22,4 @@ data-encoding = "2"
 [dev-dependencies]
 tinystoragedrivers-testkit = { git = "https://github.com/senamakel/tinystoragedrivers", version = "2.0.1", tag = "v2.0.1" }
 tinystoragedrivers-busproxy = { git = "https://github.com/senamakel/tinystoragedrivers", version = "2.0.1", tag = "v2.0.1" }
-tinybus-sdk = { package = "tinybus", git = "https://github.com/senamakel/tinybus", rev = "c7560289fd6f58b57622234f6d72ff9545cb38c9", default-features = false, features = ["modules"] }
+tinybus-sdk = { package = "tinybus", git = "https://github.com/tinyhumansai/tinybus", rev = "d5b949be8ea56eb5a17289a09aa28e8c09bd88b7", default-features = false }
