@@ -206,7 +206,7 @@ async fn store_admission_cap_and_import_operations_are_served() {
             docs: {
                 use tinyflows_storage::StorageBackend;
                 tinystoragedrivers_testkit::MemoryBackend::new()
-                    .for_scope(&tinyflows_storage::Scope::local())
+                    .for_scope(&tinyflows_storage::Scope::new("local").expect("valid scope"))
                     .unwrap()
                     .documents()
                     .clone()

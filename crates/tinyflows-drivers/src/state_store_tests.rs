@@ -1,9 +1,9 @@
-use super::*;
 use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
+use super::*;
 use serde_json::json;
 use tinyflows_storage::{ Scope, StorageBackend};
 
-fn docs(storage: & scope: &str) -> Arc<dyn DocumentStore> {
+fn docs(storage: &MemoryStorage, scope: &str) -> Arc<dyn DocumentStore> {
     Arc::clone(
         storage
             .for_scope(&Scope::new(scope).unwrap())

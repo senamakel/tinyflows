@@ -4,14 +4,14 @@ use std::sync::Arc;
 use serde_json::{Value, json};
 use tinyflows::store::WorkflowStore;
 use tinyflows_storage::{
-    DocumentStore, DocumentStoreExt,  MigrateOptions, Precondition, Query, Registry,
+    DocumentStore, DocumentStoreExt, MigrateOptions, Precondition, Query,
     Scope, ScopeClass, Storage, StorageBackend,
 };
 
 use super::*;
 
 fn scoped() -> Storage {
-    MemoryStorage::new().for_scope(&Scope::local()).unwrap()
+    MemoryStorage::new().for_scope(&Scope::new("local").expect("valid scope")).unwrap()
 }
 
 fn docs(storage: &Storage) -> Arc<dyn DocumentStore> {
@@ -27,9 +27,8 @@ async fn seed(storage: &Storage, collection: &str, id: &str, body: Value) {
 }
 
 async fn migrate(storage: &Storage) {
-    Registry::compose([crate::storage_schema()])
-        .unwrap()
-        .migrate(storage, &MigrateOptions::new())
+    crate::storage_schema()
+        .migrate(storage.documents(), &MigrateOptions::new())
         .await
         .unwrap();
 }
@@ -44,7 +43,7 @@ fn v1_record(id: &str, description: &str) -> String {
 fn the_schema_names_every_workflow_store_collection() {
     let schema = crate::storage_schema();
     assert_eq!(schema.owner.as_str(), "flows");
-    let names: Vec<&str> = schema.items.iter().map(|item| item.name()).collect();
+    let names: Vec<String> = schema.items.iter().map(|(item, _, _)| item.name.clone()).collect();
     for name in [
         "flows.workflows",
         "flows.workflow_revisions",
@@ -53,10 +52,10 @@ fn the_schema_names_every_workflow_store_collection() {
         "flows.workflow_proposals",
         "flows.workflow_quarantine",
     ] {
-        assert!(names.contains(&name), "{name} missing from {names:?}");
+        assert!(names.iter().any(|actual| actual == name), "{name} missing from {names:?}");
     }
-    assert!(schema.items.iter().all(|i| i.scope() == ScopeClass::Tenant));
-    Registry::compose([schema]).unwrap();
+    assert!(schema.items.iter().all(|(_, _, scope)| *scope == ScopeClass::Tenant));
+    assert!(schema.collections().iter().any(|item| item.name == "tsd.migrations"));
 }
 
 #[tokio::test]

@@ -1,10 +1,10 @@
-use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use std::sync::Arc;
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 use serde_json::{Value, json};
 use tinyflows_storage::{
-    Counters, DocumentStore, DocumentStoreExt, Key,  MigrateOptions, Owner,
-    Precondition, Registry, Schema, Scope, ScopeClass, Storage, StorageBackend,
+    Counters, DocumentStore, DocumentStoreExt, Key, MigrateOptions, Precondition, Scope,
+    ScopeClass, Storage, StorageBackend,
 };
 
 use super::*;
@@ -13,15 +13,17 @@ use crate::ledger::{Ledger, conformance};
 use crate::workflows::Vault;
 
 fn scoped() -> Storage {
-    MemoryStorage::new().for_scope(&Scope::local()).unwrap()
+    MemoryStorage::new()
+        .for_scope(&Scope::new("local").expect("valid scope"))
+        .unwrap()
 }
 
 fn docs(storage: &Storage) -> Arc<dyn DocumentStore> {
     Arc::clone(storage.documents())
 }
 
-fn schema() -> Schema {
-    extend_storage_schema(Schema::new(Owner::new("flows").unwrap()))
+fn schema() -> tinyflows_storage::Schema {
+    storage_schema()
 }
 
 async fn seed(storage: &Storage, collection: &str, id: &str, body: Value) {
@@ -33,9 +35,8 @@ async fn seed(storage: &Storage, collection: &str, id: &str, body: Value) {
 }
 
 async fn migrate(storage: &Storage) {
-    Registry::compose([schema()])
-        .unwrap()
-        .migrate(storage, &MigrateOptions::new())
+    schema()
+        .migrate(storage.documents(), &MigrateOptions::new())
         .await
         .unwrap();
 }
@@ -43,7 +44,11 @@ async fn migrate(storage: &Storage) {
 #[test]
 fn the_schema_declares_the_eight_adaptive_collections_and_the_vault() {
     let schema = schema();
-    let names: Vec<&str> = schema.items.iter().map(|item| item.name()).collect();
+    let names: Vec<String> = schema
+        .items
+        .iter()
+        .map(|(item, _, _)| item.name.clone())
+        .collect();
     for name in [
         "flows.adaptive_rows",
         "flows.adaptive_lessons",
@@ -56,8 +61,18 @@ fn the_schema_declares_the_eight_adaptive_collections_and_the_vault() {
     ] {
         assert!(names.contains(&name), "{name} missing from {names:?}");
     }
-    assert!(schema.items.iter().all(|i| i.scope() == ScopeClass::Tenant));
-    Registry::compose([schema]).unwrap();
+    assert!(
+        schema
+            .items
+            .iter()
+            .all(|(_, _, scope)| *scope == ScopeClass::Tenant)
+    );
+    assert!(
+        schema
+            .collections()
+            .iter()
+            .any(|item| item.name == "tsd.migrations")
+    );
 }
 
 #[tokio::test]
@@ -221,10 +236,7 @@ async fn migrating_twice_changes_nothing() {
     migrate(&storage).await;
     migrate(&storage).await;
     let all = docs(&storage)
-        .query_all(
-            "flows.adaptive_variants",
-            &tinyflows_storage::Query::all(),
-        )
+        .query_all("flows.adaptive_variants", &tinyflows_storage::Query::all())
         .await
         .unwrap();
     assert_eq!(all.len(), 1);

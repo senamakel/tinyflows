@@ -1,6 +1,6 @@
-use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 //! A run lifecycle driven through two catalog handles on one backend.
 
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use super::*;
 use crate::catalog::test_support::trigger_graph;
 use tinyflows::nodes::control_flow::dedup::{committed_key, tentative_key};
@@ -195,3 +195,4 @@ async fn parked_finish_does_not_settle_a_run_claimed_for_resume() {
         "running"
     );
 }
+

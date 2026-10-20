@@ -1,15 +1,15 @@
-use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 //! Behaviour of the storage-driver checkpointer, run against a driver document
 //! store: the checkpointer contract every durable backend is held to, plus the
 //! isolation and key-encoding guarantees the driver layout adds.
 
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use super::*;
 use crate::checkpoint_layout::{checkpoint_id_key, subgraph_key, thread_id_key};
 use serde_json::json;
 use tinyflows::graph::ids::NodeId;
 use tinyflows_storage::{ Precondition, Scope, StorageBackend, StorageError};
 
-fn docs(storage: & scope: &str) -> Arc<dyn DocumentStore> {
+fn docs(storage: &MemoryStorage, scope: &str) -> Arc<dyn DocumentStore> {
     Arc::clone(
         storage
             .for_scope(&Scope::new(scope).unwrap())
@@ -530,3 +530,4 @@ async fn get_thread_reads_in_insertion_order() {
     assert_eq!(records[1].state, json!(2));
     assert!(cp.get_thread("missing").await.unwrap().is_empty());
 }
+

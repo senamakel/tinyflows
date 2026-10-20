@@ -33,7 +33,7 @@ fn graph_with_dedup() -> WorkflowGraph {
 }
 
 async fn catalog() -> FlowCatalogDocuments {
-    let backend = MemoryStorage::new().for_scope(&Scope::local()).unwrap();
+    let backend = MemoryStorage::new().for_scope(&Scope::new("local").expect("valid scope")).unwrap();
     let catalog = FlowCatalogDocuments::new(backend.documents().clone());
     catalog.ensure().await.unwrap();
     catalog

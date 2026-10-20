@@ -1,9 +1,9 @@
-use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 //! Revision snapshotting, undo, and rollback: saving over a workflow snapshots
 //! what it replaced, undo restores (and is itself undoable), a named rollback
 //! restores exactly that revision, and history never leaks into the ordinary
 //! workflow listing.
 
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use super::test_support::{record, store, store_over};
 use tinyflows::store::types::WorkflowError;
 use tinyflows::store::{MAX_REVISIONS, WorkflowStore, require, rollback, undo_last};
@@ -211,3 +211,4 @@ fn history_does_not_show_up_in_the_workflow_listing() {
     assert_eq!(store.list().unwrap().len(), 1);
     assert_eq!(require(&store, "greet").unwrap().description, "again");
 }
+

@@ -1,12 +1,12 @@
-use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 //! Fixtures the store tests share.
 
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use std::sync::Arc;
 
 use serde_json::json;
 use tinyflows::store::parse_workflow;
 use tinyflows::store::types::WorkflowRecord;
-use tinyflows_storage::{DocumentStore, MemoryStorage, Scope, StorageBackend};
+use tinyflows_storage::{DocumentStore, Scope, StorageBackend};
 
 use super::DriverWorkflowStore;
 
@@ -241,3 +241,4 @@ impl DocumentStore for Faulty {
         self.inner.atomic_batch_checked(checks, ops).await
     }
 }
+

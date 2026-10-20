@@ -18,7 +18,7 @@
 //! `tsd.counters` belongs to `tsd`, so a document step cannot write it. The
 //! step that reads `cron_counters` therefore files the run counter as
 //! `cron.admission/runs_counter` (`{next}`), and [`import_legacy_cron_counters`]
-//! moves it into `tsd.counters` once per scope after `Registry::migrate`.
+//! moves it into `tsd.counters` once per scope after this schema migration.
 
 use serde_json::{Map, Value, json};
 use std::sync::Arc;
@@ -35,8 +35,7 @@ const STAGED_COUNTER: &str = "runs_counter";
 const COUNTERS_STEP: &str = "counters_import";
 
 /// The `cron` owner's declarations (`cron.jobs`, `cron.runs`,
-/// `cron.admission`) and their v1 -> v2 steps. The host composes it with
-/// `Registry::compose` and runs `Registry::migrate` per scope.
+/// `cron.admission`) and their v1 -> v2 steps.
 #[must_use]
 #[allow(clippy::expect_used, reason = "`cron` is a valid owner name")]
 pub fn storage_schema() -> Schema {
@@ -255,7 +254,6 @@ pub async fn import_legacy_cron_counters(docs: &Arc<dyn DocumentStore>) -> Resul
         return Ok(false);
     }
     tinyflows_storage::primitives::ensure(docs).await?;
-    docs.ensure_collection(&tinyflows_storage::CollectionSpec::new("cron.migrations")).await?;
     docs.ensure_collection(&CronDocuments::collections().remove(2))
         .await?;
     let mut carried = false;

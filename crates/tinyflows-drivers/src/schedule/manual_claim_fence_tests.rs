@@ -1,5 +1,5 @@
-use super::*;
 use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
+use super::*;
 use async_trait::async_trait;
 use chrono::{Duration, Utc};
 use serde_json::Value;
@@ -140,7 +140,7 @@ impl DocumentStore for HeldClaimWrite {
 #[tokio::test]
 async fn admission_fence_rejects_claim_transaction_that_commits_after_reconciliation() {
     let backend = MemoryStorage::new();
-    let scoped = backend.for_scope(&Scope::local()).unwrap();
+    let scoped = backend.for_scope(&Scope::new("local").expect("valid scope")).unwrap();
     let held_docs = Arc::new(HeldClaimWrite {
         inner: scoped.documents().clone(),
         entered: Notify::new(),
@@ -208,7 +208,7 @@ async fn admission_fence_rejects_claim_transaction_that_commits_after_reconcilia
 #[tokio::test]
 async fn reconciliation_does_not_fence_changed_snapshots_and_lost_fence_reply_is_idempotent() {
     let backend = MemoryStorage::new();
-    let scoped = backend.for_scope(&Scope::local()).unwrap();
+    let scoped = backend.for_scope(&Scope::new("local").expect("valid scope")).unwrap();
     let held_docs = Arc::new(HeldClaimWrite {
         inner: scoped.documents().clone(),
         entered: Notify::new(),

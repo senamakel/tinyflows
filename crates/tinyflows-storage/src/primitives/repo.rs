@@ -82,13 +82,13 @@ impl Default for RetryPolicy {
 /// ```
 /// # tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async {
 /// use serde::{Deserialize, Serialize};
-/// use tinystoragedrivers_core::primitives::Repo;
-/// use tinystoragedrivers_core::{MemoryStorage, Scope, StorageBackend};
+/// use tinyflows_storage::{DocumentStore, Repo, Scope, StorageBackend, StorageError};
+/// use tinystoragedrivers_testkit::MemoryBackend;
 ///
 /// #[derive(Serialize, Deserialize, PartialEq, Debug)]
 /// struct Job { runs: u32 }
 ///
-/// let storage = MemoryStorage::new().for_scope(&Scope::local())?;
+/// let storage = MemoryBackend::new().for_scope(&Scope::new("local")?)?;
 /// let jobs = Repo::<Job>::new(storage.documents(), "cron.jobs")?;
 /// jobs.update("nightly", |job| Ok(Some(Job { runs: job.map_or(1, |j| j.runs + 1) }))).await?;
 /// let (job, _version) = jobs
@@ -96,7 +96,7 @@ impl Default for RetryPolicy {
 ///     .await?
 ///     .unwrap();
 /// assert_eq!(job.runs, 2);
-/// # Ok::<(), tinystoragedrivers_core::StorageError>(())
+/// # Ok::<(), StorageError>(())
 /// # }).unwrap();
 /// ```
 pub struct Repo<T> {

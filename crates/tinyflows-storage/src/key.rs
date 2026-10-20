@@ -32,7 +32,7 @@
 //! escaped text hash alike and none can alias another.
 //!
 //! ```
-//! use tinystoragedrivers_core::Key;
+//! use tinyflows_storage::{Key, StorageError};
 //!
 //! let key = Key::of(["job", "a/b"])?;
 //! assert_eq!(key.as_str(), "job/a%2Fb");
@@ -41,7 +41,7 @@
 //! let long = Key::of(["x".repeat(600)])?;
 //! assert!(long.is_hashed());
 //! assert_eq!(long.split(), None);
-//! # Ok::<(), tinystoragedrivers_core::StorageError>(())
+//! # Ok::<(), StorageError>(())
 //! ```
 
 use std::fmt;
@@ -213,5 +213,5 @@ impl<'de> Deserialize<'de> for Key {
 }
 
 #[cfg(test)]
-#[path = "mod_tests.rs"]
+#[path = "key_tests.rs"]
 mod tests;

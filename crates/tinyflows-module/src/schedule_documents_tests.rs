@@ -37,7 +37,7 @@ async fn document_bridge_preserves_atomic_writes_conflicts_and_collection_scope(
     let connection = Connection::connect(bus.connect().await.unwrap())
         .await
         .unwrap();
-    let scoped = MemoryStorage::new().for_scope(&Scope::local()).unwrap();
+    let scoped = MemoryStorage::new().for_scope(&Scope::new("local").expect("valid scope")).unwrap();
     let storage = scoped.documents().clone();
     storage
         .ensure_collection(&CollectionSpec::new("cron.jobs"))

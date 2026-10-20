@@ -383,7 +383,7 @@ async fn module_job_storage_preserves_policy_updates_and_run_history() {
             docs: {
                 use tinyflows_storage::StorageBackend;
                 tinystoragedrivers_testkit::MemoryBackend::new()
-                    .for_scope(&tinyflows_storage::Scope::local())
+                    .for_scope(&tinyflows_storage::Scope::new("local").expect("valid scope"))
                     .unwrap()
                     .documents()
                     .clone()
@@ -428,7 +428,7 @@ mod queue_tests;
 async fn module_document_store_retries_policy_migration_conflicts_without_losing_seeded_jobs() {
     use tinyflows_storage::{ Precondition, Scope, StorageBackend};
     let (_server, host, _) = connections().await;
-    let scoped = MemoryStorage::new().for_scope(&Scope::local()).unwrap();
+    let scoped = MemoryStorage::new().for_scope(&Scope::new("local").expect("valid scope")).unwrap();
     let docs = scoped.documents().clone();
     host.serve_at(
         "/test/Documents".try_into().unwrap(),

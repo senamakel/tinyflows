@@ -2,11 +2,11 @@
 name = "tinyflows-adaptive"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.88"
 license = "GPL-3.0-or-later"
 description = "An adaptive loop over the tinyflows engine: select or author a workflow, run it, judge it, learn."
-# Names `tinystoragedrivers-core` by git tag, which crates.io cannot resolve
-# (docs/storage-crate-split.md); never published.
+# Source the public storage ports and TinyFlows-owned helpers from the host's
+# storage alpha tag; the host chooses the engine.
 publish = false
 
 [dependencies]
@@ -19,8 +19,8 @@ thiserror = "2"
 # tag so a host that vendors tinystoragedrivers once can `[patch]` it; chrono
 # turns the RFC 3339 instants of the records into the stored `*_ms`; tokio's
 # `OnceCell` for one-time collection setup.
-tinystoragedrivers-api = { git = "https://github.com/senamakel/tinystoragedrivers", tag = "v2.0.0-alpha.1", optional = true }
-tinystoragedrivers-types = { git = "https://github.com/senamakel/tinystoragedrivers", tag = "v2.0.0-alpha.1", optional = true }
+tinystoragedrivers-api = { git = "https://github.com/senamakel/tinystoragedrivers", version = "2.0.0", tag = "v2.0.0", optional = true }
+tinystoragedrivers-types = { git = "https://github.com/senamakel/tinystoragedrivers", version = "2.0.0", tag = "v2.0.0", optional = true }
 tinyflows-storage = { path = "../tinyflows-storage", optional = true }
 chrono = { version = "0.4", default-features = false, features = ["std"], optional = true }
 tracing = { version = "0.1", default-features = false, features = ["std"], optional = true }
@@ -41,9 +41,9 @@ tinyflows = { path = "../tinyflows", features = ["store", "mock"] }
 # The engine's `WorkflowStore` on an in-memory storage backend, for tests and
 # the eval example.
 tinyflows-drivers = { path = "../tinyflows-drivers", default-features = false, features = ["store"] }
-tinystoragedrivers-api = { git = "https://github.com/senamakel/tinystoragedrivers", tag = "v2.0.0-alpha.1" }
-tinystoragedrivers-types = { git = "https://github.com/senamakel/tinystoragedrivers", tag = "v2.0.0-alpha.1" }
-tinystoragedrivers-testkit = { git = "https://github.com/senamakel/tinystoragedrivers", tag = "v2.0.0-alpha.1" }
+tinystoragedrivers-api = { git = "https://github.com/senamakel/tinystoragedrivers", version = "2.0.0", tag = "v2.0.0" }
+tinystoragedrivers-types = { git = "https://github.com/senamakel/tinystoragedrivers", version = "2.0.0", tag = "v2.0.0" }
+tinystoragedrivers-testkit = { git = "https://github.com/senamakel/tinystoragedrivers", version = "2.0.0", tag = "v2.0.0" }
 tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread", "sync", "time"] }
 
 [lints.rust]

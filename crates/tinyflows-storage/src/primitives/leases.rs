@@ -7,7 +7,7 @@
 //! once it ran out. It deliberately does not. A takeover must read the expired
 //! record to learn its `epoch` and write `epoch + 1`; if the record vanished,
 //! the next holder would restart at epoch 1 and a stale holder's
-//! [`Fence`] over epoch 1 would hold again. So the record stays, its
+//! a fence token over epoch 1 would hold again. So the record stays, its
 //! `expires_ms` field says when the lease lapses, and `epoch` only ever moves
 //! forward.
 
@@ -475,7 +475,7 @@ impl Leases {
     /// the old record and writes `epoch + 1`, so a stale holder's fence at the
     /// old epoch stays dead. The delete is conditional on holder and epoch, so
     /// it can only remove the very tenure the caller knows: any takeover bumps
-    /// the epoch, and a record that moved on is not touched. A [`Fence`] on a
+    /// the epoch, and a record that moved on is not touched. A holder's fence token on a
     /// removed record refuses every write (a missing fence document is a
     /// failed check), so the tenure that was dropped is fenced out for good.
     ///

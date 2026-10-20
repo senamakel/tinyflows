@@ -1,14 +1,14 @@
-use super::*;
 use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
+use super::*;
 use crate::catalog::FlowCatalogDocuments;
 use serde_json::json;
 use tinyflows_storage::{
-    DocumentStoreExt,  MigrateOptions, Precondition, Query, Registry, Scope,
+    DocumentStoreExt, MigrateOptions, Precondition, Query, Scope,
     Storage, StorageBackend, WriteOptions,
 };
 
 fn scoped() -> Storage {
-    MemoryStorage::new().for_scope(&Scope::local()).unwrap()
+    MemoryStorage::new().for_scope(&Scope::new("local").expect("valid scope")).unwrap()
 }
 
 async fn seed(storage: &Storage, collection: &str, id: &str, body: Value) {
@@ -40,9 +40,8 @@ async fn seed_with_created_ms(
 }
 
 async fn migrate(storage: &Storage) {
-    let registry = Registry::compose([crate::catalog_storage_schema()]).unwrap();
-    registry
-        .migrate(storage, &MigrateOptions::new())
+    crate::catalog_storage_schema()
+        .migrate(storage.documents(), &MigrateOptions::new())
         .await
         .unwrap();
 }
@@ -55,7 +54,7 @@ fn graph() -> Value {
 fn the_schema_composes_and_names_every_catalog_collection() {
     let schema = crate::catalog_storage_schema();
     assert_eq!(schema.owner.as_str(), "flows");
-    let names: Vec<&str> = schema.items.iter().map(|item| item.name()).collect();
+    let names: Vec<String> = schema.items.iter().map(|(item, _, _)| item.name.clone()).collect();
     for name in [
         "flows.definitions",
         "flows.revisions",
@@ -63,16 +62,16 @@ fn the_schema_composes_and_names_every_catalog_collection() {
         "flows.suggestions",
         "flows.drafts",
     ] {
-        assert!(names.contains(&name), "{name}");
+        assert!(names.iter().any(|actual| actual == name), "{name}");
     }
-    assert!(schema.items.iter().all(|i| i.scope() == ScopeClass::Tenant));
+    assert!(schema.items.iter().all(|(_, _, scope)| *scope == ScopeClass::Tenant));
     assert!(
         !schema
             .items
             .iter()
-            .any(|item| item.name() == "flows.workflows")
+            .any(|(item, _, _)| item.name == "flows.workflows")
     );
-    Registry::compose([schema]).unwrap();
+    assert!(schema.collections().iter().any(|item| item.name == "tsd.migrations"));
 }
 
 #[tokio::test]

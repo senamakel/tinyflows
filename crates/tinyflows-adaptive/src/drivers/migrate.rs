@@ -1,7 +1,6 @@
 //! The adaptive stores' schema v2 declarations, their v1 -> v2 steps and the
-//! counter importer. Owner `flows` (scope class Tenant): an owner is declared
-//! once, so a host passes `tinyflows_drivers::storage_schema()` through
-//! [`extend_storage_schema`].
+//! counter importer. The adaptive crate declares and migrates its own records
+//! under owner `flows`, preserving the existing `flows.adaptive_*` namespace.
 //!
 //! | v1 | v2 |
 //! |---|---|
@@ -22,24 +21,25 @@
 use serde_json::{Map, Value};
 use std::sync::Arc;
 use tinyflows_storage::{
-    Cursor, DocumentStore, Filter, ID_FIELD, Key, Migrations, Query, Result, Schema, ScopeClass,
-    Sort, SourceRecord, Step, TargetRecord, primitives,
+    Cursor, DocumentStore, Filter, ID_FIELD, Key, Migrations, Owner, Query, Result, Schema,
+    ScopeClass, Sort, SourceRecord, Step, TargetRecord, primitives,
 };
 
 use super::convert::{episode_body, lesson_body, row_body, step_body, workflow_body};
 use super::{
     COUNTER_OWNER, COUNTERS, EPISODES, EVIDENCE, LESSONS, ROWS, SCHEMA_VERSION, SCORES, STEPS,
-    VARIANTS, WORKFLOWS, collections,
+    VARIANTS, WORKFLOWS, indexed_collection_specs,
 };
 
 const COUNTERS_STEP: &str = "adaptive_counters_import";
 const PAGE: usize = 200;
 
-/// Declares the adaptive collections on `schema` (owner `flows`) with their
-/// v1 -> v2 steps.
+/// Adaptive-owned `flows.adaptive_*` declarations and their v1 -> v2 steps.
 #[must_use]
-pub fn extend_storage_schema(mut schema: Schema) -> Schema {
-    for spec in collections() {
+#[allow(clippy::expect_used, reason = "flows is a fixed valid owner name")]
+pub fn storage_schema() -> Schema {
+    let mut schema = Schema::new(Owner::new("flows").expect("valid flows owner"));
+    for spec in indexed_collection_specs() {
         schema = schema.collection_with(SCHEMA_VERSION, spec, ScopeClass::Tenant);
     }
     schema
@@ -51,6 +51,12 @@ pub fn extend_storage_schema(mut schema: Schema) -> Schema {
         .step(step("adaptive_episodes_v2", EPISODES, episode))
         .step(step("adaptive_steps_v2", STEPS, steps))
         .step(step("adaptive_workflows_v2", WORKFLOWS, workflow))
+}
+
+/// Pure adaptive collection declarations for host bootstrap and documentation.
+#[must_use]
+pub fn collections() -> Vec<tinyflows_storage::CollectionSpec> {
+    storage_schema().collections()
 }
 
 type Convert = fn(&SourceRecord) -> Option<TargetRecord>;
@@ -218,7 +224,7 @@ fn workflow(source: &SourceRecord) -> Option<TargetRecord> {
 /// v1 stopped. Returns how many sequences were carried.
 ///
 /// `tsd.counters` belongs to `tsd`, so a document step cannot write it: the
-/// host calls this once per scope after `Registry::migrate`. A completed
+/// host calls this once per scope after `storage_schema().migrate`. A completed
 /// import is skipped; with nothing to carry it only records completion.
 ///
 /// # Errors
@@ -226,12 +232,11 @@ fn workflow(source: &SourceRecord) -> Option<TargetRecord> {
 /// The first storage error; the import resumes on the next call because
 /// nothing is removed before the counters are raised.
 pub async fn import_legacy_adaptive_counters(docs: &Arc<dyn DocumentStore>) -> Result<u64> {
-    let migrations = Migrations::new(docs, "adaptive");
+    let migrations = Migrations::new(docs, COUNTER_OWNER);
     if migrations.done(COUNTER_OWNER, COUNTERS_STEP).await? {
         return Ok(0);
     }
     primitives::ensure(docs).await?;
-    docs.ensure_collection(&tinyflows_storage::CollectionSpec::new("adaptive.migrations")).await?;
     docs.ensure_collection(&tinyflows_storage::CollectionSpec::new(COUNTERS))
         .await?;
     let counters = tinyflows_storage::Counters::new(docs);

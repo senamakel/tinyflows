@@ -1,8 +1,8 @@
-use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 //! The journal on documents: ordering, scoping, supersession, the cap, and what
 //! happens when things go wrong: a journal that cannot be parsed, an id that is
 //! not usable, concurrent appenders.
 
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use serde_json::json;
 use tinyflows::store::types::{NoteKind, NoteSource, WorkflowError, WorkflowNote};
 use tinyflows::store::{MAX_NOTES, WorkflowStore, current_notes, mint_note_id};
@@ -287,3 +287,4 @@ fn a_note_round_trips_every_field() {
     store.append_note(&written).unwrap();
     assert_eq!(store.list_notes("sweep").unwrap().remove(0), written);
 }
+

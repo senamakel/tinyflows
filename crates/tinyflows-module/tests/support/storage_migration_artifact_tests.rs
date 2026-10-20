@@ -114,7 +114,7 @@ async fn published_module_migrates_legacy_schedule_records_through_owned_bus_cal
     broker.attach(Arc::new(transport));
     let connection = Connection::connect(Box::new(client)).await.unwrap();
 
-    let scoped = MemoryStorage::new().for_scope(&Scope::local()).unwrap();
+    let scoped = MemoryStorage::new().for_scope(&Scope::new("local").expect("valid scope")).unwrap();
     let docs = scoped.documents().clone();
     docs.ensure_collection(&tinystoragedrivers_core::CollectionSpec::new("cron_jobs"))
         .await
@@ -199,7 +199,7 @@ async fn published_module_migrates_legacy_catalog_records_through_owned_bus_call
     let (client, transport) = MemoryTransport::pair();
     broker.attach(Arc::new(transport));
     let connection = Connection::connect(Box::new(client)).await.unwrap();
-    let scoped = MemoryStorage::new().for_scope(&Scope::local()).unwrap();
+    let scoped = MemoryStorage::new().for_scope(&Scope::new("local").expect("valid scope")).unwrap();
     let docs = scoped.documents().clone();
     for collection in [
         "flows_definitions",

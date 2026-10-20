@@ -57,3 +57,7 @@ pub mod primitives {
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "schema_tests.rs"]
+mod tests;

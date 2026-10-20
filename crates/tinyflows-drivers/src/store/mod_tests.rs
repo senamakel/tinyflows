@@ -1,8 +1,8 @@
-use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 //! Save/delete round-tripping: the graph and host fields survive a save, the
 //! `defaults` block round-trips, an uncompilable graph is refused, ids are
 //! guarded, and the host policy judges reads as well as writes.
 
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use std::sync::Arc;
 
 use serde_json::json;
@@ -337,3 +337,4 @@ fn debug_names_the_store_without_dumping_the_handle() {
 fn the_journal_cap_is_the_engines() {
     assert_eq!(JOURNAL_CAP, tinyflows::store::MAX_NOTES);
 }
+

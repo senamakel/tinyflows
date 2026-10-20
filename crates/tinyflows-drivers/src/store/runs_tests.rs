@@ -1,7 +1,7 @@
-use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 //! Run-record listing: newest first, scoped to their workflow, and a run that
 //! was never recorded is a distinct error rather than a silent `None`.
 
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use super::test_support::{block_on, store};
 use tinyflows::store::types::{RunExecutor, RunStatus, WorkflowError};
 use tinyflows::store::{WorkflowStore, new_run_record, require_run};
@@ -154,3 +154,4 @@ fn an_unreadable_run_document_is_skipped_by_listings_and_named_by_a_direct_read(
         WorkflowError::Malformed(_)
     ));
 }
+

@@ -34,16 +34,18 @@ thread_local! {
 /// stops the thread once in-flight work finishes.
 ///
 /// ```
-/// use tinystoragedrivers_core::{Blocking, MemoryStorage, Precondition, Scope, StorageBackend};
+/// use tinyflows_storage::{Blocking, Precondition, Scope, StorageBackend, StorageError};
+/// use tinystoragedrivers_testkit::MemoryBackend;
 /// use serde_json::json;
 ///
 /// let bridge = Blocking::new()?;
-/// let docs = MemoryStorage::new().for_scope(&Scope::local())?.documents().clone();
+/// let storage = MemoryBackend::new().for_scope(&Scope::new("local")?)?;
+/// let docs = storage.documents();
 /// let version = bridge.run(async move {
 ///     docs.put("settings", "theme", json!({"dark": true}), Precondition::None).await
 /// })??;
 /// assert_eq!(version.0, 1);
-/// # Ok::<(), tinystoragedrivers_core::StorageError>(())
+/// # Ok::<(), StorageError>(())
 /// ```
 #[derive(Clone)]
 pub struct Blocking {
@@ -155,5 +157,5 @@ fn startup_error(what: &'static str) -> impl FnOnce(std::io::Error) -> StorageEr
 }
 
 #[cfg(test)]
-#[path = "mod_tests.rs"]
+#[path = "blocking_tests.rs"]
 mod tests;

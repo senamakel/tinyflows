@@ -15,14 +15,14 @@
 //! - Key-value state and counters live in `tsd.kv` / `tsd.counters`; a document
 //!   step cannot write another owner's collections, so [`import_legacy_kv`] and
 //!   [`import_legacy_cron_counters`] move them (host calls them once per scope
-//!   after `Registry::migrate`).
+//!   after the cron schema migration.
 //!
-//! A host composes `Registry::compose([storage_schema(), cron_storage_schema(),
-//! ...])` and runs `Registry::migrate` per scope.
+//! Each owner runs its own schema migration against the scoped document handle
+//! it is given; hosts use [`collections()`] for backend bootstrap.
 
 mod kv_import;
 
-use tinyflows_storage::{CollectionSpec, Owner, Schema, ScopeClass};
+use tinyflows_storage::{CollectionSpec, Owner, Schema};
 
 pub use kv_import::{
     CATALOG_NAMESPACE_PREFIX, KV_OWNER, STATE_NAMESPACE, catalog_namespace, import_legacy_kv,
@@ -38,9 +38,8 @@ fn flows_schema() -> Schema {
 }
 
 /// The `flows` owner's declarations and v1 -> v2 steps for the features this
-/// build has. `tinyflows-adaptive` extends the result with its collections
-/// (`tinyflows_adaptive::drivers::extend_storage_schema`): an owner may be
-/// declared only once, so the host passes one schema through both.
+/// build has. Adaptive declares and runs its own schema for its separate
+/// `flows.adaptive_*` collections.
 #[must_use]
 pub fn storage_schema() -> Schema {
     #[allow(unused_mut)]

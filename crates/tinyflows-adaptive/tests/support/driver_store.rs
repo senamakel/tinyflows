@@ -16,7 +16,7 @@ use tinystoragedrivers_core::{MemoryStorage, Scope, StorageBackend};
 /// An empty store over its own in-memory backend.
 pub fn empty() -> DriverWorkflowStore {
     let scoped = MemoryStorage::new()
-        .for_scope(&Scope::local())
+        .for_scope(&Scope::new("local").expect("valid scope"))
         .expect("a local scope");
     DriverWorkflowStore::new(scoped.documents().clone())
 }

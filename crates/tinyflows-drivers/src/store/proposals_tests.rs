@@ -1,10 +1,10 @@
-use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 //! Proposals on documents. A proposal is the one artifact in this feature that
 //! can change a saved graph, so what is asserted here is mostly about *not*
 //! doing that by accident: a listing that cannot leak another workflow's
 //! proposals, a decision that replaces rather than adds, a save that refuses
 //! when the graph moved underneath it.
 
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use std::sync::atomic::Ordering;
 
 use serde_json::json;
@@ -285,3 +285,4 @@ fn an_edit_that_lands_between_the_check_and_the_write_refuses_the_proposal() {
             .is_empty()
     );
 }
+

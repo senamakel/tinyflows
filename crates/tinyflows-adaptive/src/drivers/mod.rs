@@ -40,7 +40,7 @@
 //! increment or share an id. First-write-wins edges (`$setOnInsert` in Mongo)
 //! are insert-only writes.
 //!
-//! [`extend_storage_schema`] declares the collections and their v1 -> v2
+//! [`storage_schema`] declares the collections and their v1 -> v2
 //! steps; [`import_legacy_adaptive_counters`] carries the v1 sequences.
 
 mod convert;
@@ -51,7 +51,7 @@ mod vault;
 use tinyflows_storage::{CollectionSpec, IndexSpec, StorageError};
 
 pub use ledger::DriverLedger;
-pub use migrate::{extend_storage_schema, import_legacy_adaptive_counters};
+pub use migrate::{collections, import_legacy_adaptive_counters, storage_schema};
 pub use vault::DriverVault;
 
 /// Compare-and-swap attempts before a contended counter update gives up.
@@ -75,7 +75,7 @@ pub(crate) const WORKFLOWS: &str = "flows.adaptive_workflows";
 pub(crate) const SCHEMA_VERSION: u32 = 2;
 
 /// Every collection the stores use, with its indexes.
-pub(crate) fn collections() -> Vec<CollectionSpec> {
+pub(crate) fn indexed_collection_specs() -> Vec<CollectionSpec> {
     vec![
         CollectionSpec::new(ROWS).index(IndexSpec::new(
             "by_episode",

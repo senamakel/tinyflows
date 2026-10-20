@@ -39,7 +39,7 @@ async fn compiled_module_serves_manual_worker_lifecycle_through_schedule_abi() {
         .await
         .unwrap();
 
-    let scoped = MemoryStorage::new().for_scope(&Scope::local()).unwrap();
+    let scoped = MemoryStorage::new().for_scope(&Scope::new("local").expect("valid scope")).unwrap();
     let documents = CronDocuments::new(scoped.documents().clone());
     let job = documents
         .add_shell_job(

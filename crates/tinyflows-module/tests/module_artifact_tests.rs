@@ -360,7 +360,7 @@ async fn compiled_module_serves_validation_without_linking_engine_into_client() 
     // Persist through the actual cdylib. The host forwards document I/O only;
     // schema, policy and schedule behavior is module-owned.
     use tinystoragedrivers_core::{MemoryStorage, Scope, StorageBackend};
-    let scoped = MemoryStorage::new().for_scope(&Scope::local()).unwrap();
+    let scoped = MemoryStorage::new().for_scope(&Scope::new("local").expect("valid scope")).unwrap();
     let docs = scoped.documents().clone();
     let conflict_once = Arc::new(std::sync::atomic::AtomicBool::new(true));
     let atomic_calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));

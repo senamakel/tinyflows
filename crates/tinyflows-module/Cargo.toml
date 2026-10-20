@@ -14,10 +14,10 @@ crate-type = ["rlib", "cdylib"]
 [dependencies]
 tinyflows-drivers = { path = "../tinyflows-drivers", default-features = false, features = ["catalog", "engine", "schedule"] }
 tinyflows-catalog = { path = "../tinyflows-catalog" }
-tinystoragedrivers-api = { git = "https://github.com/senamakel/tinystoragedrivers", tag = "v2.0.0-alpha.1" }
-tinystoragedrivers-types = { git = "https://github.com/senamakel/tinystoragedrivers", tag = "v2.0.0-alpha.1" }
+tinystoragedrivers-api = { git = "https://github.com/senamakel/tinystoragedrivers", version = "2.0.0", tag = "v2.0.0" }
+tinystoragedrivers-types = { git = "https://github.com/senamakel/tinystoragedrivers", version = "2.0.0", tag = "v2.0.0" }
 tinyflows-storage = { path = "../tinyflows-storage" }
-tinystoragedrivers-busproxy = { git = "https://github.com/senamakel/tinystoragedrivers", tag = "v2.0.0-alpha.1" }
+tinystoragedrivers-busproxy = { git = "https://github.com/senamakel/tinystoragedrivers", version = "2.0.0", tag = "v2.0.0" }
 tinyflows-schedule = { path = "../tinyflows-schedule" }
 anyhow = "1"
 chrono.workspace = true
@@ -43,4 +43,4 @@ static-link = []
 [dev-dependencies]
 tempfile = "3"
 tokio = { workspace = true, features = ["test-util"] }
-tinystoragedrivers-testkit = { git = "https://github.com/senamakel/tinystoragedrivers", tag = "v2.0.0-alpha.1" }
+tinystoragedrivers-testkit = { git = "https://github.com/senamakel/tinystoragedrivers", version = "2.0.0", tag = "v2.0.0" }

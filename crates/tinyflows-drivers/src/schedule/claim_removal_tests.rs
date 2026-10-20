@@ -1,5 +1,5 @@
-use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 //! A completed receipt removes only its own unchanged incarnation.
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use super::{
     CronDocuments,
     test_support::{daily, docs_in},
@@ -139,3 +139,4 @@ async fn later_acquisition_or_edit_invalidates_the_completed_receipt() {
     assert!(!a.remove_completed_claim(&fresh).await.unwrap());
     assert_eq!(a.list_jobs().await.unwrap().len(), 1);
 }
+

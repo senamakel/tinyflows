@@ -76,7 +76,7 @@ async fn a_ledger_and_a_vault_of_different_kinds_drive_the_same_loop() {
     {
         use tinystoragedrivers_core::{MemoryStorage, Scope, StorageBackend};
         let scoped = MemoryStorage::new()
-            .for_scope(&Scope::local())
+            .for_scope(&Scope::new("local").expect("valid scope"))
             .expect("scope");
         let ledger = tinyflows_adaptive::drivers::DriverLedger::new(scoped.documents().clone());
         drive_mixed(&ledger).await;

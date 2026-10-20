@@ -1,6 +1,6 @@
-use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 //! Occurrence leases are compacted once the job has moved past them, without
 //! weakening the fencing of stale workers.
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use super::test_support::{daily, docs_in, store};
 use super::*;
 use chrono::{Duration, Utc};
@@ -148,3 +148,4 @@ async fn a_manual_claim_keeps_its_lease_because_the_schedule_did_not_move() {
         "the occurrence is still ahead of the job, so its lease record stays"
     );
 }
+

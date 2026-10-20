@@ -1,10 +1,10 @@
-use super::*;
 use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
+use super::*;
 use serde_json::json;
-use tinyflows_storage::{Kv,  Scope, StorageBackend};
+use tinyflows_storage::{Kv, Scope, Storage, StorageBackend};
 
 fn scoped() -> Storage {
-    MemoryStorage::new().for_scope(&Scope::local()).unwrap()
+    MemoryStorage::new().for_scope(&Scope::new("local").expect("valid scope")).unwrap()
 }
 
 async fn seed(storage: &Storage, collection: &str, id: &str, body: Value) {
@@ -41,7 +41,7 @@ async fn both_v1_collections_move_into_tsd_kv_with_values_unwrapped() {
     )
     .await;
 
-    assert_eq!(import_legacy_kv(&storage).await.unwrap(), 2);
+    assert_eq!(import_legacy_kv(storage.documents()).await.unwrap(), 2);
 
     let catalog = Kv::ns(storage.documents(), "flows", "kv:ns").unwrap();
     assert_eq!(
@@ -81,13 +81,13 @@ async fn the_import_runs_once_and_keeps_newer_v2_values() {
     let state = Kv::ns(storage.documents(), "flows", "state").unwrap();
     state.put("k", &"new").await.unwrap();
 
-    assert_eq!(import_legacy_kv(&storage).await.unwrap(), 0);
+    assert_eq!(import_legacy_kv(storage.documents()).await.unwrap(), 0);
     assert_eq!(
         state.get::<String>("k").await.unwrap().as_deref(),
         Some("new")
     );
     assert!(
-        Migrations::new(&storage)
+        Migrations::new(storage.documents(), KV_OWNER)
             .done("flows", "kv_import")
             .await
             .unwrap()
@@ -101,7 +101,7 @@ async fn the_import_runs_once_and_keeps_newer_v2_values() {
     )
     .await;
     assert_eq!(
-        import_legacy_kv(&storage).await.unwrap(),
+        import_legacy_kv(storage.documents()).await.unwrap(),
         0,
         "a finished import is not repeated"
     );

@@ -1,5 +1,5 @@
-use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 //! Shared admission policy fences both configured and existing handles.
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use super::{
     CronDocuments,
     test_support::{daily, docs_in},
@@ -324,3 +324,4 @@ async fn policy_installation_reconciles_legacy_rows_written_before_adoption() {
     a.remove_job(&legacy.id).await.unwrap();
     a.add_shell_job(None, daily(), "new slot").await.unwrap();
 }
+

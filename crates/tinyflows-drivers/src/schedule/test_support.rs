@@ -1,10 +1,10 @@
-use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 //! Fixtures the schedule tests share.
 
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use std::sync::Arc;
 
 use tinyflows_schedule::{JobOrigin, Schedule};
-use tinyflows_storage::{DocumentStore, MemoryStorage, Scope, StorageBackend};
+use tinyflows_storage::{DocumentStore, Scope, StorageBackend};
 
 use super::CronDocuments;
 
@@ -205,3 +205,4 @@ impl DocumentStore for FaultDocuments {
         self.inner.atomic_batch(ops).await
     }
 }
+

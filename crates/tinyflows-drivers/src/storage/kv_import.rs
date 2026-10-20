@@ -2,7 +2,7 @@
 //!
 //! A document step may only write its own owner's collections and `tsd.kv`
 //! belongs to `tsd`, so the move is an importer the host calls once per scope
-//! after `Registry::migrate` (the pattern `tinyagents-harness` uses):
+//! after the driver's own schema migration:
 //! [`import_legacy_kv`] copies `flows_kv` (the catalog's namespaced state,
 //! `{namespace, key, value_json}`) and `flows_state` (`DriverStateStore`,
 //! `{key, value}`), removes them and records completion in `tsd.migrations`.
@@ -111,7 +111,6 @@ pub async fn import_legacy_kv(docs: &Arc<dyn DocumentStore>) -> Result<u64> {
         return Ok(0);
     }
     primitives::ensure(docs).await?;
-    docs.ensure_collection(&CollectionSpec::new("flows.migrations")).await?;
     let written = copy(docs, "flows_kv", convert_catalog).await?
         + copy(docs, "flows_state", convert_state).await?;
     migrations.mark_done(KV_OWNER, STEP).await?;

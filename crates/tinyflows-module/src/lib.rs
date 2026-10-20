@@ -12,6 +12,8 @@ mod catalog_authoring;
 mod catalog_documents;
 mod catalog_extended_ops;
 mod catalog_legacy_import;
+mod catalog_legacy_batch;
+mod catalog_legacy_checkpoint;
 mod catalog_migrations;
 mod catalog_service;
 mod catalog_service_summary;

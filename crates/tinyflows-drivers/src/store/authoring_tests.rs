@@ -1,9 +1,9 @@
-use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 //! Tests for patch-based workflow editing.
 //!
 //! The theme is that a bad edit costs an error message, never the saved
 //! workflow.
 
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use std::sync::Arc;
 
 use serde_json::json;
@@ -32,7 +32,7 @@ fn document(id: &str) -> String {
     .to_string()
 }
 
-fn store() -> ( Arc<dyn WorkflowStore>) {
+fn store() -> (MemoryStorage, Arc<dyn WorkflowStore>) {
     let storage = MemoryStorage::new();
     let store: Arc<dyn WorkflowStore> = Arc::new(store_over(&storage, "local"));
     (storage, store)
@@ -322,3 +322,4 @@ fn editing_a_workflow_that_does_not_exist_says_so() {
 
     assert!(matches!(err, WorkflowError::NotFound(_)), "got {err:?}");
 }
+

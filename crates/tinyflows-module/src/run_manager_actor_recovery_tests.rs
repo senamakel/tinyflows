@@ -249,7 +249,7 @@ struct RunningFixture {
 }
 
 async fn running_fixture() -> RunningFixture {
-    let backend = MemoryStorage::new().for_scope(&Scope::local()).unwrap();
+    let backend = MemoryStorage::new().for_scope(&Scope::new("local").expect("valid scope")).unwrap();
     let docs = Arc::clone(backend.documents());
     let catalog = FlowCatalogDocuments::new(Arc::clone(&docs));
     let graph_json = json!({

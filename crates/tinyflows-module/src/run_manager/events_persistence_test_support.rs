@@ -23,7 +23,7 @@ pub(super) struct TestSetup {
 }
 
 pub(super) async fn setup(mode: FaultMode, status: &str) -> TestSetup {
-    let scoped = MemoryStorage::new().for_scope(&Scope::local()).unwrap();
+    let scoped = MemoryStorage::new().for_scope(&Scope::new("local").expect("valid scope")).unwrap();
     let docs = Arc::new(FaultingDocuments {
         inner: scoped.documents().clone(),
         mode,

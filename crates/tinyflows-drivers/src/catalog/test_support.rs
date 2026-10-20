@@ -1,10 +1,10 @@
-use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 //! Fixtures shared by the catalog tests.
 
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use std::sync::Arc;
 
 use tinyflows::model::{Node, NodeKind, WorkflowGraph};
-use tinyflows_storage::{DocumentStore, MemoryStorage, Scope, StorageBackend};
+use tinyflows_storage::{DocumentStore, Scope, StorageBackend};
 
 use super::FlowCatalogDocuments;
 
@@ -208,3 +208,4 @@ impl DocumentStore for Interposed {
         self.inner.drop_collection(collection).await
     }
 }
+

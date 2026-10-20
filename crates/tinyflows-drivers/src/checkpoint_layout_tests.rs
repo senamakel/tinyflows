@@ -1,10 +1,10 @@
-use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 //! Pins the checkpointer's documents to the layout `tinyagents-graph` stores
 //! for namespace `flows`. The fixtures are copied from tinyagents' own tests
 //! (`checkpoint/drivers_tests.rs`, `storage/mod_tests.rs` on its epic branch)
 //! and from the document shape its `checkpoints_flows_v2` step produces, so a
 //! drift on either side fails here.
 
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use crate::checkpoint::DriverCheckpointer;
 use serde_json::json;
 use std::sync::Arc;
@@ -14,7 +14,7 @@ use tinyflows_storage::{DocumentStore,  Precondition, Scope, StorageBackend};
 fn docs() -> Arc<dyn DocumentStore> {
     Arc::clone(
         MemoryStorage::new()
-            .for_scope(&Scope::local())
+            .for_scope(&Scope::new("local").expect("valid scope"))
             .unwrap()
             .documents(),
     )
@@ -173,3 +173,4 @@ async fn written_documents_have_exactly_the_tinyagents_fields_and_ids() {
     assert_eq!(writes.doc["checkpoint_id"], "c1");
     assert_eq!(writes.doc["ns"], "flows");
 }
+

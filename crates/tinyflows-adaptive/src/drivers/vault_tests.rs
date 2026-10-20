@@ -1,5 +1,5 @@
-use super::*;
 use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
+use super::*;
 use crate::workflows::conformance;
 use serde_json::json;
 use tinyflows_storage::DocumentStoreExt;
@@ -8,7 +8,7 @@ use tinyflows_storage::{ Scope, StorageBackend};
 fn memory_docs() -> Arc<dyn DocumentStore> {
     Arc::clone(
         MemoryStorage::new()
-            .for_scope(&Scope::local())
+            .for_scope(&Scope::new("local").expect("valid scope"))
             .unwrap()
             .documents(),
     )
