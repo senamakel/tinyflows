@@ -104,13 +104,7 @@ fn row(source: &SourceRecord) -> Option<TargetRecord> {
         return Some(carried(ROWS, source));
     };
     let body = row_body(rec, text(source, "scope_key"), seq(source));
-    let at = body.get("at_ms").and_then(Value::as_i64).unwrap_or(0);
-    let target = TargetRecord::new(ROWS, source.id.clone(), body);
-    Some(if at > 0 {
-        target.created_ms(at)
-    } else {
-        target
-    })
+    Some(TargetRecord::new(ROWS, source.id.clone(), body))
 }
 
 fn lesson(source: &SourceRecord) -> Option<TargetRecord> {
@@ -173,13 +167,7 @@ fn episode(source: &SourceRecord) -> Option<TargetRecord> {
         .unwrap_or_default()
         .to_owned();
     let body = episode_body(rec, scope);
-    let started = body.get("started_ms").and_then(Value::as_i64).unwrap_or(0);
-    let target = TargetRecord::new(EPISODES, key(&[scope, &id], &source.id), body);
-    Some(if started > 0 {
-        target.created_ms(started)
-    } else {
-        target
-    })
+    Some(TargetRecord::new(EPISODES, key(&[scope, &id], &source.id), body))
 }
 
 fn steps(source: &SourceRecord) -> Option<TargetRecord> {

@@ -51,7 +51,7 @@ pub(crate) fn extend_schema(mut schema: Schema) -> Schema {
         )
 }
 
-type Convert = fn(&SourceRecord) -> Option<(Value, Option<i64>)>;
+type Convert = fn(&SourceRecord) -> Option<Value>;
 
 /// Converts each record. One that does not convert (a missing JSON field, a
 /// body that is not an object) is carried unchanged under its v1 id, so it
@@ -60,16 +60,11 @@ fn map(batch: Vec<SourceRecord>, collection: &str, convert: Convert) -> Vec<Targ
     batch
         .iter()
         .map(|source| {
-            let Some((body, created_ms)) = convert(source) else {
+            let Some(body) = convert(source) else {
                 tracing::warn!(collection, id = %source.id, "[flows-storage] carrying unconvertible v1 record");
                 return TargetRecord::new(collection, source.id.clone(), source.body.clone());
             };
-            let record = TargetRecord::new(collection, source.id.clone(), body);
-            match created_ms {
-                // Zero and negative values are valid dates, not an unknown-metadata sentinel.
-                Some(ms) => record.created_ms(ms),
-                None => record,
-            }
+            TargetRecord::new(collection, source.id.clone(), body)
         })
         .collect()
 }
@@ -100,7 +95,7 @@ fn carry(body: &Value, out: &mut Map<String, Value>, fields: &[&str]) {
     }
 }
 
-fn definition(source: &SourceRecord) -> Option<(Value, Option<i64>)> {
+fn definition(source: &SourceRecord) -> Option<Value> {
     let body = &source.body;
     let mut out = Map::new();
     carry(
@@ -129,10 +124,10 @@ fn definition(source: &SourceRecord) -> Option<(Value, Option<i64>)> {
     if let Some(last) = ms(body, "last_run_at", "last_run_ns") {
         out.insert("last_run_ms".into(), last.into());
     }
-    Some((Value::Object(out), Some(created)))
+    Some(Value::Object(out))
 }
 
-fn revision(source: &SourceRecord) -> Option<(Value, Option<i64>)> {
+fn revision(source: &SourceRecord) -> Option<Value> {
     let body = &source.body;
     let mut out = Map::new();
     carry(
@@ -152,10 +147,10 @@ fn revision(source: &SourceRecord) -> Option<(Value, Option<i64>)> {
     if let Some(touched) = body.get("touched_ns").and_then(Value::as_i64) {
         out.insert("touched_ms".into(), (touched / 1_000_000).into());
     }
-    Some((Value::Object(out), Some(created)))
+    Some(Value::Object(out))
 }
 
-fn run(source: &SourceRecord) -> Option<(Value, Option<i64>)> {
+fn run(source: &SourceRecord) -> Option<Value> {
     let body = &source.body;
     let mut out = Map::new();
     carry(
@@ -191,10 +186,10 @@ fn run(source: &SourceRecord) -> Option<(Value, Option<i64>)> {
     if let Some(events) = body.get("events_json") {
         out.insert("events".into(), parsed(events));
     }
-    Some((Value::Object(out), Some(started)))
+    Some(Value::Object(out))
 }
 
-fn suggestion(source: &SourceRecord) -> Option<(Value, Option<i64>)> {
+fn suggestion(source: &SourceRecord) -> Option<Value> {
     let body = &source.body;
     let mut out = Map::new();
     carry(
@@ -223,10 +218,10 @@ fn suggestion(source: &SourceRecord) -> Option<(Value, Option<i64>)> {
     }
     let created = ms(body, "created_at", "created_ns").unwrap_or(source.meta.created_ms);
     out.insert("created_ms".into(), created.into());
-    Some((Value::Object(out), Some(created)))
+    Some(Value::Object(out))
 }
 
-fn draft(source: &SourceRecord) -> Option<(Value, Option<i64>)> {
+fn draft(source: &SourceRecord) -> Option<Value> {
     let whole = parsed(source.body.get("draft_json")?);
     let whole = whole.as_object()?;
     let mut out = Map::new();
@@ -255,7 +250,7 @@ fn draft(source: &SourceRecord) -> Option<(Value, Option<i64>)> {
         .unwrap_or(source.meta.created_ms);
     out.insert("created_ms".into(), created.into());
     out.insert("updated_ms".into(), updated.into());
-    Some((Value::Object(out), Some(created)))
+    Some(Value::Object(out))
 }
 
 #[cfg(test)]

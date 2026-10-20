@@ -129,12 +129,7 @@ fn revision(source: &SourceRecord) -> Option<TargetRecord> {
     };
     body.insert("workflow_id".into(), json!(workflow_id));
     body.insert("superseded_ms".into(), json!(superseded));
-    let target = TargetRecord::new(REVISIONS, source.id.clone(), Value::Object(body));
-    Some(if superseded > 0 {
-        target.created_ms(superseded)
-    } else {
-        target
-    })
+    Some(TargetRecord::new(REVISIONS, source.id.clone(), Value::Object(body)))
 }
 
 fn run(source: &SourceRecord) -> Option<TargetRecord> {
@@ -158,13 +153,7 @@ fn run(source: &SourceRecord) -> Option<TargetRecord> {
         return None;
     };
     body.insert("settled".into(), json!(settled));
-    let started = body.get("started_ms").and_then(Value::as_i64).unwrap_or(0);
-    let target = TargetRecord::new(RUNS, key(&id, &source.id), Value::Object(body));
-    Some(if started > 0 {
-        target.created_ms(started)
-    } else {
-        target
-    })
+    Some(TargetRecord::new(RUNS, key(&id, &source.id), Value::Object(body)))
 }
 
 fn journal(source: &SourceRecord) -> Option<TargetRecord> {
