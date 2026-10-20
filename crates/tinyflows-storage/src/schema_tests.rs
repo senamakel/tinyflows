@@ -2,9 +2,9 @@ use super::*;
 
 use serde_json::json;
 use std::sync::Arc;
-use tinystoragedrivers_testkit::MemoryBackend;
-use tinystoragedrivers_busproxy::{PerCallerEndpoint, StorageServer, connect_storage, serve};
 use tinybus_sdk::{Connection, broker::Broker, transport::memory::MemoryBus};
+use tinystoragedrivers_busproxy::{PerCallerEndpoint, StorageServer, connect_storage, serve};
+use tinystoragedrivers_testkit::MemoryBackend;
 
 struct BusDocumentsFixture {
     _broker_task: tokio::task::JoinHandle<tinybus_sdk::Result<()>>,
@@ -26,9 +26,8 @@ impl BusDocumentsFixture {
             .for_scope(&Scope::new("schema-bus").expect("valid test scope"))
             .expect("memory storage");
         let endpoint_storage = backing.clone();
-        let endpoint = PerCallerEndpoint::new(move |_| {
-            Some(StorageServer::new(endpoint_storage.clone()))
-        });
+        let endpoint =
+            PerCallerEndpoint::new(move |_| Some(StorageServer::new(endpoint_storage.clone())));
         let served = serve(&host, Arc::new(endpoint))
             .await
             .expect("serve TSD storage endpoint");
@@ -73,10 +72,7 @@ async fn schema_migration_uses_metadata_supported_by_the_real_tsd_busproxy() {
             Step::new("items_v2", "flows.items", 1, 2, |rows| {
                 Ok(rows
                     .into_iter()
-                    .map(|row| {
-                        TargetRecord::new("flows.items", row.id, json!({"value":"after"}))
-                            .created_ms(456)
-                    })
+                    .map(|row| TargetRecord::new("flows.items", row.id, json!({"value":"after"})))
                     .collect())
             })
             .source("legacy.items"),
@@ -96,14 +92,18 @@ async fn schema_migration_uses_metadata_supported_by_the_real_tsd_busproxy() {
     assert_eq!(migrated.meta.schema, 2);
     assert_eq!(migrated.meta.expires_ms, Some(i64::MAX));
     assert!(migrated.meta.created_ms > 0);
-    assert!(backing_docs
-        .get("legacy.items", "one")
-        .await
-        .expect("read old source")
-        .is_none());
+    assert!(
+        backing_docs
+            .get("legacy.items", "one")
+            .await
+            .expect("read old source")
+            .is_none()
+    );
 }
 
-async fn cross_collection_expiry_migration(target_expiry_ms: i64) -> (Arc<dyn DocumentStore>, Schema) {
+async fn cross_collection_expiry_migration(
+    target_expiry_ms: i64,
+) -> (Arc<dyn DocumentStore>, Schema) {
     let storage = MemoryBackend::new()
         .for_scope(&Scope::new("local").expect("valid scope"))
         .expect("memory scope");
@@ -128,9 +128,7 @@ async fn cross_collection_expiry_migration(target_expiry_ms: i64) -> (Arc<dyn Do
         "same-id",
         json!({"value":"after"}),
         Precondition::Absent,
-        WriteOptions::new()
-            .schema(9)
-            .expires_ms(target_expiry_ms),
+        WriteOptions::new().schema(9).expires_ms(target_expiry_ms),
     )
     .await
     .expect("seed target as if first migration write committed");
@@ -141,9 +139,7 @@ async fn cross_collection_expiry_migration(target_expiry_ms: i64) -> (Arc<dyn Do
             Step::new("archive_v2", "flows.items", 1, 2, |rows| {
                 Ok(rows
                     .into_iter()
-                    .map(|row| {
-                        TargetRecord::new("flows.archive", row.id, json!({"value":"after"}))
-                    })
+                    .map(|row| TargetRecord::new("flows.archive", row.id, json!({"value":"after"})))
                     .collect())
             })
             .source("legacy.items"),
@@ -167,11 +163,12 @@ async fn cross_collection_retry_accepts_exact_body_schema_and_source_expiry() {
     assert_eq!(target.doc, json!({"value":"after"}));
     assert_eq!(target.meta.schema, 9);
     assert_eq!(target.meta.expires_ms, Some(i64::MAX));
-    assert!(docs
-        .get("legacy.items", "same-id")
-        .await
-        .expect("read source")
-        .is_none());
+    assert!(
+        docs.get("legacy.items", "same-id")
+            .await
+            .expect("read source")
+            .is_none()
+    );
 }
 
 #[tokio::test]
@@ -351,7 +348,7 @@ async fn owner_migration_uses_the_declared_version_of_a_different_target_collect
                     .into_iter()
                     .map(|row| {
                         TargetRecord::new("flows.archive", row.id, json!({"value": "archived"}))
-                            .created_ms(456)
+                            .expires_ms(i64::MAX - 10)
                     })
                     .collect())
             })
@@ -368,7 +365,8 @@ async fn owner_migration_uses_the_declared_version_of_a_different_target_collect
         .expect("read archived row")
         .expect("archived row exists");
     assert_eq!(archived.meta.schema, 9);
-    assert_eq!(archived.meta.created_ms, 456);
+    assert!(archived.meta.created_ms > 0);
+    assert_eq!(archived.meta.expires_ms, Some(i64::MAX - 10));
     assert_eq!(archived.doc["value"], "archived");
 }
 

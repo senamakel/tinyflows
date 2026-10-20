@@ -301,8 +301,9 @@ impl Schema {
                             let identical = existing.is_some_and(|row| {
                                 row.doc == target.body
                                     && row.meta.schema == output_schema
-                                    && source_row
-                                        .is_none_or(|source| row.meta.created_ms == source.meta.created_ms)
+                                    && source_row.is_none_or(|source| {
+                                        row.meta.created_ms == source.meta.created_ms
+                                    })
                                     && row.meta.expires_ms == expected_expiry
                             });
                             if !identical {
