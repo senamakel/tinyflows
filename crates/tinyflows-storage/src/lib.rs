@@ -6,7 +6,11 @@
 pub use tinystoragedrivers_api::{DocumentStore, DocumentStoreExt, async_trait};
 pub use tinystoragedrivers_types::*;
 mod key;
+mod schema;
 pub use key::Key;
+pub use schema::{MigrateOptions, MigrationReport, Migrations, Owner, Schema, ScopeClass, SourceRecord, Step, StepReport, TargetRecord};
+mod blocking;
+pub use blocking::Blocking;
 pub use primitives::{Acquire, Acquisition, Counters, Kv, Lease, LeaseRecord, Leases, Repo, RetryPolicy};
 
 pub(crate) type Clock = std::sync::Arc<dyn Fn() -> u64 + Send + Sync>;
