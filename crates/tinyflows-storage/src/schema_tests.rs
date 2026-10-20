@@ -25,10 +25,17 @@ async fn owner_migration_rewrites_in_place_once_and_preserves_document_metadata(
     )
     .await
     .expect("seed source");
+    let before = docs
+        .query("flows.items", &Query::filter(Filter::default()).limit(100))
+        .await
+        .expect("query before migration");
+    assert_eq!(before.items.len(), 1);
+    assert_eq!(before.items[0].meta.schema, 1);
 
     let schema = Schema::new(Owner::new("flows").expect("valid owner"))
         .collection("flows.items", 2, ScopeClass::Tenant)
         .step(Step::new("items_v2", "flows.items", 1, 2, |rows| {
+            assert_eq!(rows.len(), 1, "one source row should be passed to the step");
             Ok(rows
                 .into_iter()
                 .map(|row| TargetRecord::new("flows.items", row.id, json!({"value": "after"})))
@@ -39,7 +46,10 @@ async fn owner_migration_rewrites_in_place_once_and_preserves_document_metadata(
         .migrate(&docs, &MigrateOptions::default())
         .await
         .expect("migration succeeds");
-    let stored = docs.get("flows.items", "one").await.expect("read migrated row");
+    let stored = docs
+        .get("flows.items", "one")
+        .await
+        .expect("read migrated row");
     assert!(stored.is_some(), "migration report: {first:?}");
     let stored = stored.expect("row retained");
     assert_eq!(stored.doc["value"], "after");
