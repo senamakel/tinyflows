@@ -1,0 +1,48 @@
+//! TinyFlows-owned storage helpers built on the public storage ports.
+//!
+//! These helpers contain record and migration behavior owned by TinyFlows;
+//! backend selection stays with the host.
+
+mod primitives;
+
+pub use tinystoragedrivers_api::{DocumentStore, DocumentStoreExt};
+pub use tinystoragedrivers_types::*;
+pub use primitives::{Acquire, Acquisition, Counters, Kv, Lease, LeaseRecord, Leases, Repo, RetryPolicy};
+
+pub(crate) type Clock = std::sync::Arc<dyn Fn() -> u64 + Send + Sync>;
+
+pub mod primitives {
+    use std::sync::Arc;
+
+    use tinystoragedrivers_types::{CollectionSpec, IndexSpec, Result};
+
+    mod counters;
+    mod kv;
+    mod leases;
+    mod repo;
+
+    pub use counters::Counters;
+    pub use kv::Kv;
+    pub use leases::{Acquire, Acquisition, Lease, LeaseRecord, Leases};
+    pub use repo::{Repo, RetryPolicy};
+
+    pub const LEASES: &str = "tsd.leases";
+    pub const KV: &str = "tsd.kv";
+    pub const COUNTERS: &str = "tsd.counters";
+
+    #[must_use]
+    pub fn collection_specs() -> Vec<CollectionSpec> {
+        vec![
+            CollectionSpec::new(LEASES),
+            CollectionSpec::new(KV).index(IndexSpec::new("kv_by_key", ["owner", "ns", "key"])),
+            CollectionSpec::new(COUNTERS),
+        ]
+    }
+
+    pub async fn ensure(docs: &Arc<dyn crate::DocumentStore>) -> Result<()> {
+        for spec in collection_specs() {
+            docs.ensure_collection(&spec).await?;
+        }
+        Ok(())
+    }
+}
