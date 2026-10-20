@@ -12,8 +12,8 @@ use std::sync::Arc;
 use tinyflows::store::WorkflowStore;
 use tinyflows_drivers::store::DriverWorkflowStore;
 use tinystoragedrivers_api::StorageBackend;
-use tinystoragedrivers_types::Scope;
 use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
+use tinystoragedrivers_types::Scope;
 
 /// An empty store over its own in-memory backend.
 pub fn empty() -> DriverWorkflowStore {
