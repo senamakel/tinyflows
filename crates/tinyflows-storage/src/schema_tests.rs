@@ -3,6 +3,105 @@ use super::*;
 use serde_json::json;
 use std::sync::Arc;
 use tinystoragedrivers_testkit::MemoryBackend;
+use tinystoragedrivers_busproxy::{PerCallerEndpoint, StorageServer, connect_storage, serve};
+use tinybus_sdk::{Connection, broker::Broker, transport::memory::MemoryBus};
+
+struct BusDocumentsFixture {
+    _broker_task: tokio::task::JoinHandle<tinybus_sdk::Result<()>>,
+    _host: Connection,
+    _served: tinystoragedrivers_busproxy::ServedStorage,
+    backing: tinystoragedrivers_api::Storage,
+    client: tinystoragedrivers_api::Storage,
+}
+
+impl BusDocumentsFixture {
+    async fn new() -> Self {
+        let bus = MemoryBus::new();
+        let broker = Broker::new();
+        let broker_task = broker.spawn(bus.clone());
+        let host = Connection::connect(bus.connect().await.expect("host transport"))
+            .await
+            .expect("host connection");
+        let backing = MemoryBackend::new()
+            .for_scope(&Scope::new("schema-bus").expect("valid test scope"))
+            .expect("memory storage");
+        let endpoint_storage = backing.clone();
+        let endpoint = PerCallerEndpoint::new(move |_| {
+            Some(StorageServer::new(endpoint_storage.clone()))
+        });
+        let served = serve(&host, Arc::new(endpoint))
+            .await
+            .expect("serve TSD storage endpoint");
+        let client_connection = Connection::connect(bus.connect().await.expect("client transport"))
+            .await
+            .expect("client connection");
+        let client = connect_storage(client_connection)
+            .await
+            .expect("connect through TSD busproxy");
+        Self {
+            _broker_task: broker_task,
+            _host: host,
+            _served: served,
+            backing,
+            client,
+        }
+    }
+}
+
+#[tokio::test]
+async fn schema_migration_uses_metadata_supported_by_the_real_tsd_busproxy() {
+    let fixture = BusDocumentsFixture::new().await;
+    let backing_docs = Arc::clone(fixture.backing.documents());
+    backing_docs
+        .ensure_collection(&CollectionSpec::new("legacy.items"))
+        .await
+        .expect("legacy collection");
+    backing_docs
+        .put_with(
+            "legacy.items",
+            "one",
+            json!({"value":"before"}),
+            Precondition::Absent,
+            WriteOptions::new().schema(1).expires_ms(i64::MAX),
+        )
+        .await
+        .expect("seed legacy record");
+
+    let schema = Schema::new(Owner::new("flows").expect("valid owner"))
+        .collection("flows.items", 2, ScopeClass::Tenant)
+        .step(
+            Step::new("items_v2", "flows.items", 1, 2, |rows| {
+                Ok(rows
+                    .into_iter()
+                    .map(|row| {
+                        TargetRecord::new("flows.items", row.id, json!({"value":"after"}))
+                            .created_ms(456)
+                    })
+                    .collect())
+            })
+            .source("legacy.items"),
+        );
+    let client_docs = Arc::clone(fixture.client.documents());
+    schema
+        .migrate(&client_docs, &MigrateOptions::default())
+        .await
+        .expect("module-compatible migration must not send host-only created_ms");
+
+    let migrated = backing_docs
+        .get("flows.items", "one")
+        .await
+        .expect("read migrated record")
+        .expect("record migrated");
+    assert_eq!(migrated.doc, json!({"value":"after"}));
+    assert_eq!(migrated.meta.schema, 2);
+    assert_eq!(migrated.meta.expires_ms, Some(i64::MAX));
+    assert!(migrated.meta.created_ms > 0);
+    assert!(backing_docs
+        .get("legacy.items", "one")
+        .await
+        .expect("read old source")
+        .is_none());
+}
 
 #[tokio::test]
 async fn owner_migration_rewrites_in_place_once_and_preserves_document_metadata() {
