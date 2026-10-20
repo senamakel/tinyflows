@@ -180,8 +180,8 @@ impl CronDocuments {
         bail!("cron store: admission initialization kept changing")
     }
 
-    /// Writes a new job with an explicit creation time (an importer keeps the
-    /// original) and enrols it in the admission ledger. The job is written
+    /// Writes a new job with its original creation time in the document body
+    /// and enrols it in the admission ledger. The job is written
     /// first and enrolled second, so a job over the cap is taken back.
     ///
     /// # Errors
