@@ -5,6 +5,8 @@
 
 pub use tinystoragedrivers_api::{DocumentStore, DocumentStoreExt};
 pub use tinystoragedrivers_types::*;
+mod key;
+pub use key::Key;
 pub use primitives::{Acquire, Acquisition, Counters, Kv, Lease, LeaseRecord, Leases, Repo, RetryPolicy};
 
 pub(crate) type Clock = std::sync::Arc<dyn Fn() -> u64 + Send + Sync>;
