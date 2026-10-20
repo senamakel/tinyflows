@@ -5,7 +5,6 @@ use super::super::{
     test_support::{FaultDocuments, daily, docs_in},
 };
 use std::sync::{Arc, atomic::AtomicBool};
-use tinyflows_storage::MemoryStorage;
 
 #[tokio::test]
 async fn nontransactional_deduplication_and_clear_keep_legacy_behavior() {

@@ -5,7 +5,6 @@ use super::{
     test_support::{daily, docs_in},
 };
 use chrono::Duration;
-use tinyflows_storage::MemoryStorage;
 
 #[tokio::test]
 async fn completed_receipt_cannot_remove_a_recreated_job() {

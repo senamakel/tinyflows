@@ -14,7 +14,6 @@ use tinyflows::store::{
     GraphHandle, WorkflowStore, apply_workflow_ops, apply_workflow_ops_observed, create_workflow,
     preview_workflow_ops, validate_handle,
 };
-use tinyflows_storage::MemoryStorage;
 
 use super::test_support::store_over;
 

@@ -382,7 +382,7 @@ async fn module_job_storage_preserves_policy_updates_and_run_history() {
         document_callbacks::Documents {
             docs: {
                 use tinyflows_storage::StorageBackend;
-                tinyflows_storage::MemoryStorage::new()
+                tinystoragedrivers_testkit::MemoryBackend::new()
                     .for_scope(&tinyflows_storage::Scope::local())
                     .unwrap()
                     .documents()

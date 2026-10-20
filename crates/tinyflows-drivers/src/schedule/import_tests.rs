@@ -5,7 +5,6 @@ use crate::schedule::job_not_found;
 use crate::schedule::test_support::{channel_origin, daily, docs_in, store};
 use chrono::{TimeZone, Utc};
 use tinyflows_schedule::{DeliveryStatus, Schedule};
-use tinyflows_storage::MemoryStorage;
 
 /// The JSON form, for comparing jobs (`CronJob` is not `PartialEq`).
 fn j<T: serde::Serialize>(value: &T) -> serde_json::Value {

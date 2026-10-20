@@ -7,7 +7,6 @@ use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use super::test_support::{record, store, store_over};
 use tinyflows::store::types::WorkflowError;
 use tinyflows::store::{MAX_REVISIONS, WorkflowStore, require, rollback, undo_last};
-use tinyflows_storage::MemoryStorage;
 
 #[test]
 fn a_workflow_saved_for_the_first_time_has_no_history_to_go_back_to() {

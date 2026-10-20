@@ -6,7 +6,6 @@ use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use std::sync::{Arc, Barrier};
 
 use tinyflows::store::WorkflowStore;
-use tinyflows_storage::MemoryStorage;
 
 use super::test_support::{record, store, store_over};
 

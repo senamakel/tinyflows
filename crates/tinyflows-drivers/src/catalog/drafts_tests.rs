@@ -1,7 +1,6 @@
 use super::*;
 use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use crate::catalog::test_support::{catalog, catalog_in};
-use tinyflows_storage::MemoryStorage;
 
 fn graph() -> Value {
     json!({ "nodes": [{ "id": "t", "kind": "trigger" }], "edges": [] })

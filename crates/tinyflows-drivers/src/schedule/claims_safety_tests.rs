@@ -7,7 +7,6 @@ use super::test_support::{FaultDocuments, daily, docs_in};
 use chrono::Duration;
 use std::sync::{Arc, atomic::AtomicBool};
 use tinyflows_schedule::CronJobPatch;
-use tinyflows_storage::MemoryStorage;
 
 fn fault_store(
     backend: &

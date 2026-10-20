@@ -205,7 +205,7 @@ async fn store_admission_cap_and_import_operations_are_served() {
         document_callbacks::Documents {
             docs: {
                 use tinyflows_storage::StorageBackend;
-                tinyflows_storage::MemoryStorage::new()
+                tinystoragedrivers_testkit::MemoryBackend::new()
                     .for_scope(&tinyflows_storage::Scope::local())
                     .unwrap()
                     .documents()

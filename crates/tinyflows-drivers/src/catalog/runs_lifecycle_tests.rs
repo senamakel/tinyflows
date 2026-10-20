@@ -20,8 +20,7 @@ fn step(node: &str) -> FlowRunStep {
 async fn two_handles_on_one_backend_agree_on_a_run_lifecycle() {
     use crate::catalog::FlowStateDocuments;
     use tinyflows::caps::StateStore;
-    use tinyflows_storage::MemoryStorage;
-
+    
     let storage = MemoryStorage::new();
     let a = crate::catalog::test_support::catalog_in(&storage, "tenant");
     let b = crate::catalog::test_support::catalog_in(&storage, "tenant");

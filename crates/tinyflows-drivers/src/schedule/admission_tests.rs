@@ -5,7 +5,6 @@ use super::{
     test_support::{daily, docs_in},
 };
 use tinyflows_schedule::CronJobPatch;
-use tinyflows_storage::MemoryStorage;
 
 #[tokio::test]
 async fn an_existing_unlimited_handle_cannot_bypass_installed_policy() {
