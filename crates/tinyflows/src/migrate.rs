@@ -167,10 +167,10 @@ fn locate_graph_error(migrated: &Value, err: &serde_json::Error) -> String {
     let mut skeleton = migrated.clone();
     if let Some(fields) = skeleton.as_object_mut() {
         for field in ELEMENT_ARRAYS {
-            if let Some(slot) = fields.get_mut(*field) {
-                if slot.is_array() {
-                    *slot = Value::Array(Vec::new());
-                }
+            if let Some(slot) = fields.get_mut(*field)
+                && slot.is_array()
+            {
+                *slot = Value::Array(Vec::new());
             }
         }
     }

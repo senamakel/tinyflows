@@ -157,11 +157,10 @@ async fn a_missing_interpreter_says_what_is_missing_rather_than_failing_opaquely
 
     // Only meaningful when python3 is genuinely absent; where it exists this
     // case cannot arise and the assertion is skipped.
-    if let Err(err) = err {
-        if err.to_string().contains("cannot run") {
+    if let Err(err) = err
+        && err.to_string().contains("cannot run") {
             assert!(err.to_string().contains("PATH"), "{err}");
         }
-    }
 }
 
 // Unix-only: these run `ScriptLanguage::Shell`, which `run_script` refuses

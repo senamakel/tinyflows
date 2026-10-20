@@ -46,7 +46,9 @@ async fn an_unparseable_record_is_an_error() {
 #[tokio::test]
 async fn storage_scopes_both_halves_together() {
     use crate::ledger::Ledger;
-    let storage = crate::storage::Storage::from_documents(memory_docs());
+    let storage = crate::storage::Storage::from_documents(memory_docs())
+        .await
+        .expect("open storage");
     let tenant = storage.for_tenant("t");
     assert_eq!(tenant.ledger().scope(), Some("t"));
     assert_eq!(tenant.vault().scope(), Some("t"));

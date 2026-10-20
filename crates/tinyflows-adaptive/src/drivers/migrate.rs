@@ -223,9 +223,10 @@ fn workflow(source: &SourceRecord) -> Option<TargetRecord> {
 /// `adaptive_counters_import`). New row and lesson ids keep counting from where
 /// v1 stopped. Returns how many sequences were carried.
 ///
-/// `tsd.counters` belongs to `tsd`, so a document step cannot write it: the
-/// host calls this once per scope after `storage_schema().migrate`. A completed
-/// import is skipped; with nothing to carry it only records completion.
+/// `tsd.counters` belongs to `tsd`, so a document step cannot write it. The
+/// adaptive owner's `Storage::from_documents` open path calls this after its
+/// schema migration. A completed import is skipped; with nothing to carry it
+/// only records completion.
 ///
 /// # Errors
 ///

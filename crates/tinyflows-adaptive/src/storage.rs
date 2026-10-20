@@ -45,6 +45,10 @@ pub enum StorageError {
     /// The vault backend refused to open.
     #[error("vault: {0}")]
     Vault(#[from] WorkflowError),
+    /// The host-provided document store could not be migrated or opened.
+    #[cfg(feature = "storage-drivers")]
+    #[error("document storage: {0}")]
+    DocumentStorage(#[from] tinyflows_storage::StorageError),
 }
 
 /// Where the storage setting is read from, when the environment supplies it.
@@ -175,19 +179,28 @@ impl Storage {
 
     /// Both halves on a `tinystoragedrivers` document handle, in the global
     /// bucket; [`for_tenant`](Self::for_tenant) scopes them as for every
-    /// other backend.
+    /// other backend. This owner-open operation runs the `flows` schema
+    /// migrations and imports legacy adaptive counters before returning.
     ///
     /// The handle is usually one the host already bound to a storage scope
     /// (its agent, its user), so the adaptive tenants live inside it.
+    ///
+    /// # Errors
+    /// Returns an error if schema migration or legacy counter import fails.
     #[cfg(feature = "storage-drivers")]
-    #[must_use]
-    pub fn from_documents(docs: std::sync::Arc<dyn tinyflows_storage::DocumentStore>) -> Self {
-        Self {
+    pub async fn from_documents(
+        docs: std::sync::Arc<dyn tinyflows_storage::DocumentStore>,
+    ) -> Result<Self, StorageError> {
+        crate::drivers::storage_schema()
+            .migrate(&docs, &tinyflows_storage::MigrateOptions::new())
+            .await?;
+        crate::drivers::import_legacy_adaptive_counters(&docs).await?;
+        Ok(Self {
             ledger: AnyLedger::Driver(crate::drivers::DriverLedger::new(std::sync::Arc::clone(
                 &docs,
             ))),
             vault: AnyVault::Driver(crate::drivers::DriverVault::new(docs)),
-        }
+        })
     }
 }
 

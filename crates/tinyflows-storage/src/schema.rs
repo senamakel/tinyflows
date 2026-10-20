@@ -251,7 +251,7 @@ impl Schema {
                     .map(|row| SourceRecord {
                         id: row.id.clone(),
                         body: row.doc.clone(),
-                        meta: row.meta.clone(),
+                        meta: row.meta,
                     })
                     .collect();
                 let outputs = (step.run)(inputs)?;

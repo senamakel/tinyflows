@@ -411,24 +411,23 @@ impl Tool for EditWorkflowTool {
         // agent "Edits live on draft {id}", which would be false if the write
         // never landed, leaving the next turn silently iterating on a stale
         // draft.
-        if let Some(draft_id) = write_back_draft.as_deref() {
-            if let Err(e) = self
+        if let Some(draft_id) = write_back_draft.as_deref()
+            && let Err(e) = self
                 .write_edit_to_draft(Some(draft_id), &edited, &name)
                 .await
-            {
-                tracing::warn!(
-                    target: "flows",
-                    %name,
-                    %draft_id,
-                    error = %e,
-                    "[flows] edit_workflow: draft write-back failed after validation passed"
-                );
-                return Ok(ToolResult::error(format!(
-                    "The edit passed validation, but could NOT be written back to draft \
+        {
+            tracing::warn!(
+                target: "flows",
+                %name,
+                %draft_id,
+                error = %e,
+                "[flows] edit_workflow: draft write-back failed after validation passed"
+            );
+            return Ok(ToolResult::error(format!(
+                "The edit passed validation, but could NOT be written back to draft \
                      {draft_id}: {e}\n\nThe draft still holds the PREVIOUS graph, not this edit. \
                      Retry edit_workflow."
-                )));
-            }
+            )));
         }
 
         // Full builder hard-gate stack + proposal payload (shared with revise).

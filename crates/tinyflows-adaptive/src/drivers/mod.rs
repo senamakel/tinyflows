@@ -40,8 +40,9 @@
 //! increment or share an id. First-write-wins edges (`$setOnInsert` in Mongo)
 //! are insert-only writes.
 //!
-//! [`storage_schema`] declares the collections and their v1 -> v2
-//! steps; [`import_legacy_adaptive_counters`] carries the v1 sequences.
+//! [`storage_schema`] declares the collections and their v1 -> v2 steps;
+//! `Storage::from_documents` runs those steps and carries the v1 sequences
+//! through [`import_legacy_adaptive_counters`] before returning the stores.
 
 mod convert;
 mod ledger;

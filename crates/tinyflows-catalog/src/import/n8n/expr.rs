@@ -54,24 +54,24 @@ pub(super) fn translate_expr(raw: &str, warnings: &mut Vec<String>, n8n_name: &s
     };
 
     // Trivial single-reference case: `$json.foo.bar` (or `$json["foo"]`).
-    if let Some(path) = inner.strip_prefix("$json") {
-        if let Some(jq_path) = json_path_to_jq(path) {
-            // `json_path_to_jq` returns the tail path RELATIVE to `$json`
-            // (`.foo`, `.foo.bar`, or `""` when there's no tail at all — see
-            // its doc). Prefixing `.item` here binds it at the tinyflows
-            // scope's `item` key instead of the scope root (see this fn's
-            // doc, R-C1): the empty-tail case naturally becomes `.item` (not
-            // `.item.`) because the tail is `""`, with no special-casing
-            // needed here.
-            tracing::debug!(
-                target: "flows",
-                node = %n8n_name,
-                %raw,
-                translated = %format!("=.item{jq_path}"),
-                "[flows] n8n_import: translated $json expression"
-            );
-            return format!("=.item{jq_path}");
-        }
+    if let Some(path) = inner.strip_prefix("$json")
+        && let Some(jq_path) = json_path_to_jq(path)
+    {
+        // `json_path_to_jq` returns the tail path RELATIVE to `$json`
+        // (`.foo`, `.foo.bar`, or `""` when there's no tail at all — see
+        // its doc). Prefixing `.item` here binds it at the tinyflows
+        // scope's `item` key instead of the scope root (see this fn's
+        // doc, R-C1): the empty-tail case naturally becomes `.item` (not
+        // `.item.`) because the tail is `""`, with no special-casing
+        // needed here.
+        tracing::debug!(
+            target: "flows",
+            node = %n8n_name,
+            %raw,
+            translated = %format!("=.item{jq_path}"),
+            "[flows] n8n_import: translated $json expression"
+        );
+        return format!("=.item{jq_path}");
     }
 
     warnings.push(untranslated_warning(n8n_name, raw));

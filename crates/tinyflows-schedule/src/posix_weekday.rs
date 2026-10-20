@@ -70,7 +70,7 @@ fn translate_item(item: &str) -> Result<String> {
         // Starting on Sunday already covers it.
         return Ok(format!("{CRATE_SUNDAY}-7{suffix}"));
     }
-    let lands_on_sunday = (POSIX_SUNDAY_ALIAS - start) % step == 0;
+    let lands_on_sunday = (POSIX_SUNDAY_ALIAS - start).is_multiple_of(step);
     let mut parts = Vec::with_capacity(2);
     if start < POSIX_SUNDAY_ALIAS {
         parts.push(format!("{}-7{suffix}", start + 1));
