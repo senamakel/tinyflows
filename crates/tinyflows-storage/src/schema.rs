@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tinystoragedrivers_api::{DocumentStore, DocumentStoreExt};
 use tinystoragedrivers_types::{
-    CollectionSpec, Filter, Meta, Precondition, Query, Result, StorageError, Versioned,
+    CollectionSpec, Filter, Meta, Precondition, Query, Result, StorageError,
     WriteOptions, SCHEMA_FIELD,
 };
 
@@ -115,7 +115,7 @@ impl Step {
 }
 
 /// One owner’s collections and migrations, opened by that owner.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Schema {
     /// Storage owner for these collections.
     pub owner: Owner,
@@ -171,7 +171,7 @@ impl Schema {
             if migrations.done(self.owner.as_str(), step.id).await? { report.already_done += 1; continue; }
             let progress_id = Key::of([self.owner.as_str(), step.id])?.as_str().to_owned();
             let progress = migrations.docs.get_as::<Progress>(&migrations.collection, &progress_id).await?;
-            let mut query = Query::filter(Filter::all()).limit(options.batch_size);
+            let mut query = Query::filter(Filter::default()).limit(options.batch_size);
             if let Some(cursor) = progress.and_then(|p| p.doc.cursor) {
                 query = query.after(tinystoragedrivers_types::Cursor(cursor));
             }
