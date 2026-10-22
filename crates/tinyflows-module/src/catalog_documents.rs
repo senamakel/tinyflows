@@ -16,7 +16,7 @@ use tinystoragedrivers_core::{
 
 /// The catalog's own collections (storage schema v2, owner `flows`) and the
 /// graph checkpointer's (owner `graph`).
-const ALLOWED: [&str; 16] = [
+const ALLOWED: [&str; 25] = [
     "flows.definitions",
     "flows.revisions",
     "flows.runs",
@@ -25,6 +25,15 @@ const ALLOWED: [&str; 16] = [
     "graph.checkpoints",
     "graph.threads",
     "graph.writes",
+    "graph_checkpoints",
+    "graph_threads",
+    "graph_writes",
+    "delegation_graph_checkpoints",
+    "delegation_graph_threads",
+    "delegation_graph_writes",
+    "flows_graph_checkpoints",
+    "flows_graph_threads",
+    "flows_graph_writes",
     "flows_definitions",
     "flows_revisions",
     "flows_runs",

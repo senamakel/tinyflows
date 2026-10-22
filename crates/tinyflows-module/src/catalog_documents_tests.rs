@@ -22,5 +22,6 @@ fn shared_catalog_records_are_key_fenced_and_never_scanned() {
     assert!(Documents::validate_set("tsd.kv").is_err());
     assert!(Documents::validate_set("tsd.leases").is_err());
     assert!(Documents::validate_collection("flows_revisions").is_ok());
+    assert!(Documents::validate_collection("graph_checkpoints").is_ok());
     assert!(Documents::validate_collection("unrelated").is_err());
 }
