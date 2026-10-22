@@ -82,7 +82,7 @@ async fn schema_migrates_flow_checkpoints_and_supports_resume_writes() {
             .iter()
             .all(|item| item.scope() == ScopeClass::Agent)
     );
-    let registry = Registry::compose([schema]).unwrap();
+    let registry = Registry::compose([super::storage_schema(), schema]).unwrap();
     for item in super::graph_checkpoint_schema().items {
         if let tinystoragedrivers_core::Item::Collection { spec, .. } = item {
             storage.documents().ensure_collection(&spec).await.unwrap();
