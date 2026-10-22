@@ -37,17 +37,6 @@ async fn schema_migrates_flow_checkpoints_and_supports_resume_writes() {
         )
         .await
         .unwrap();
-    let fallback_created_ms = storage
-        .documents()
-        .get(
-            "flows_graph_checkpoints",
-            "8:thread-1/20:00000000000000000001",
-        )
-        .await
-        .unwrap()
-        .expect("legacy root source")
-        .meta
-        .created_ms;
     storage
         .documents()
         .put(
@@ -63,6 +52,17 @@ async fn schema_migrates_flow_checkpoints_and_supports_resume_writes() {
         )
         .await
         .unwrap();
+    let fallback_created_ms = storage
+        .documents()
+        .get(
+            "flows_graph_checkpoints",
+            "8:thread-1/20:00000000000000000001",
+        )
+        .await
+        .unwrap()
+        .expect("legacy root source")
+        .meta
+        .created_ms;
     storage
         .documents()
         .put(
