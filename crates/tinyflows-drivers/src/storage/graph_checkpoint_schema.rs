@@ -178,13 +178,17 @@ fn checkpoint_row(namespace: &str, source: &SourceRecord) -> Option<TargetRecord
     }
     let sequence = source.body.get("seq")?.as_u64()?;
     let checkpoint_id = text(&source.body, "checkpoint_id")?;
-    let subgraph = source
-        .body
+    let subgraph = checkpoint
         .get("namespace")
         .and_then(Value::as_array)
         .map(|parts| namespace_key(parts))
         .unwrap_or_default();
     let id = key(&[namespace, &thread, &format!("{sequence:020}")]);
+    let created_ms = checkpoint
+        .get("created_at")
+        .and_then(Value::as_i64)
+        .filter(|created_ms| *created_ms > 0)
+        .unwrap_or(source.meta.created_ms);
     Some(target(
         CHECKPOINTS,
         id,
@@ -196,7 +200,7 @@ fn checkpoint_row(namespace: &str, source: &SourceRecord) -> Option<TargetRecord
             "checkpoint_id": checkpoint_id,
             "checkpoint": checkpoint,
         }),
-        source.meta.created_ms,
+        created_ms,
     ))
 }
 
