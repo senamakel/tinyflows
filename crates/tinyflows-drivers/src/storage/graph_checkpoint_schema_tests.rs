@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use serde_json::json;
 use tinystoragedrivers_core::{
-    MemoryStorage, MigrateOptions, Precondition, Registry, Scope, ScopeClass, ScopedStorage,
-    StorageBackend,
+    DocumentStoreExt, MemoryStorage, MigrateOptions, Precondition, Query, Registry, Scope,
+    ScopeClass, ScopedStorage, StorageBackend,
 };
 
 use crate::checkpoint::DriverCheckpointer;
@@ -18,7 +18,9 @@ fn scoped() -> ScopedStorage {
 #[tokio::test]
 async fn schema_migrates_flow_checkpoints_and_supports_resume_writes() {
     let storage = scoped();
-    let legacy = checkpoint("thread-1", "checkpoint-1", 7);
+    let mut nested = serde_json::to_value(checkpoint("thread-1", "checkpoint-1", 7)).unwrap();
+    nested["namespace"] = json!(["nested"]);
+    nested["created_at"] = json!(1234);
     storage
         .documents()
         .put(
@@ -29,7 +31,22 @@ async fn schema_migrates_flow_checkpoints_and_supports_resume_writes() {
                 "namespace": [],
                 "seq": 0,
                 "checkpoint_id": "checkpoint-1",
-                "record": serde_json::to_value(&legacy).unwrap(),
+                "record": nested,
+            }),
+            Precondition::None,
+        )
+        .await
+        .unwrap();
+    storage
+        .documents()
+        .put(
+            "flows_graph_checkpoints",
+            "8:thread-1/20:00000000000000000001",
+            json!({
+                "thread": "thread-1",
+                "seq": 1,
+                "checkpoint_id": "checkpoint-2",
+                "record": checkpoint("thread-1", "checkpoint-2", 8),
             }),
             Precondition::None,
         )
@@ -40,7 +57,7 @@ async fn schema_migrates_flow_checkpoints_and_supports_resume_writes() {
         .put(
             "flows_graph_threads",
             "8:thread-1",
-            json!({"thread": "thread-1", "next": 1}),
+            json!({"thread": "thread-1", "next": 2}),
             Precondition::None,
         )
         .await
@@ -68,11 +85,37 @@ async fn schema_migrates_flow_checkpoints_and_supports_resume_writes() {
     let checkpointer =
         DriverCheckpointer::<i32>::with_namespace(Arc::clone(storage.documents()), "flows");
     let resumed = checkpointer
-        .get("thread-1", None)
+        .get_scoped("thread-1", Some("checkpoint-1"), &["nested".to_owned()])
         .await
         .unwrap()
-        .expect("migrated flow checkpoint");
+        .expect("migrated nested flow checkpoint");
     assert_eq!(resumed.state, 7);
+    let root = checkpointer.get("thread-1", None).await.unwrap().unwrap();
+    assert_eq!(root.state, 8);
+
+    let nested_record = storage
+        .documents()
+        .get(
+            "graph.checkpoints",
+            "5:flows/8:thread-1/20:00000000000000000000",
+        )
+        .await
+        .unwrap()
+        .expect("migrated nested record");
+    assert_eq!(nested_record.doc["subgraph"], "1:n/6:nested");
+    assert_eq!(nested_record.meta.created_ms, 1234);
+    let root_record = storage
+        .documents()
+        .query_all("graph.checkpoints", &Query::all())
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|row| row.doc["checkpoint_id"] == "checkpoint-2")
+        .unwrap();
+    assert!(
+        root_record.meta.created_ms > 0,
+        "source metadata is preserved as fallback"
+    );
 
     let next = checkpoint("thread-1", "checkpoint-2", 8);
     checkpointer.put(next).await.unwrap();
