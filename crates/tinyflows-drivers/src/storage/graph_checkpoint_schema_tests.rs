@@ -18,9 +18,7 @@ fn scoped() -> ScopedStorage {
 #[tokio::test]
 async fn schema_migrates_flow_checkpoints_and_supports_resume_writes() {
     let storage = scoped();
-    let legacy = Checkpoint::new(7_i32, Vec::new())
-        .with_thread_id("thread-1".to_owned())
-        .with_checkpoint_id("checkpoint-1".to_owned());
+    let legacy = checkpoint("thread-1", "checkpoint-1", 7);
     storage
         .documents()
         .put(
@@ -76,9 +74,25 @@ async fn schema_migrates_flow_checkpoints_and_supports_resume_writes() {
         .expect("migrated flow checkpoint");
     assert_eq!(resumed.state, 7);
 
-    let next = Checkpoint::new(8_i32, Vec::new())
-        .with_thread_id("thread-1".to_owned())
-        .with_checkpoint_id("checkpoint-2".to_owned());
+    let next = checkpoint("thread-1", "checkpoint-2", 8);
     checkpointer.put(next).await.unwrap();
     assert_eq!(checkpointer.get_thread("thread-1").await.unwrap().len(), 2);
+}
+
+fn checkpoint(thread: &str, id: &str, state: i32) -> Checkpoint<i32> {
+    Checkpoint {
+        thread_id: thread.to_owned(),
+        checkpoint_id: id.to_owned(),
+        run_id: None,
+        parent_checkpoint_id: None,
+        namespace: Vec::new(),
+        state,
+        next_nodes: Vec::new(),
+        completed_tasks: Vec::new(),
+        pending_writes: Vec::new(),
+        interrupts: Vec::new(),
+        pending_activations: None,
+        barrier_arrivals: Vec::new(),
+        metadata: json!({"source": "loop"}),
+    }
 }
