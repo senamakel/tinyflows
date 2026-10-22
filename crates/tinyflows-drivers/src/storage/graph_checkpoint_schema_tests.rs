@@ -2,11 +2,12 @@ use std::sync::Arc;
 
 use serde_json::json;
 use tinystoragedrivers_core::{
-    DocumentStoreExt, MemoryStorage, MigrateOptions, Precondition, Registry, Scope, ScopeClass,
-    ScopedStorage, StorageBackend,
+    MemoryStorage, MigrateOptions, Precondition, Registry, Scope, ScopeClass, ScopedStorage,
+    StorageBackend,
 };
 
-use crate::checkpoint::{Checkpoint, Checkpointer, DriverCheckpointer};
+use crate::checkpoint::DriverCheckpointer;
+use tinyflows::graph::{Checkpoint, Checkpointer};
 
 fn scoped() -> ScopedStorage {
     MemoryStorage::new()
@@ -49,7 +50,12 @@ async fn schema_migrates_flow_checkpoints_and_supports_resume_writes() {
 
     let schema = super::graph_checkpoint_schema();
     assert_eq!(schema.owner.as_str(), "graph");
-    assert!(schema.items.iter().all(|item| item.scope() == ScopeClass::Agent));
+    assert!(
+        schema
+            .items
+            .iter()
+            .all(|item| item.scope() == ScopeClass::Agent)
+    );
     let registry = Registry::compose([schema]).unwrap();
     for item in super::graph_checkpoint_schema().items {
         if let tinystoragedrivers_core::Item::Collection { spec, .. } = item {
@@ -61,10 +67,8 @@ async fn schema_migrates_flow_checkpoints_and_supports_resume_writes() {
         .await
         .unwrap();
 
-    let checkpointer = DriverCheckpointer::<i32>::with_namespace(
-        Arc::clone(storage.documents()),
-        "flows",
-    );
+    let checkpointer =
+        DriverCheckpointer::<i32>::with_namespace(Arc::clone(storage.documents()), "flows");
     let resumed = checkpointer
         .get("thread-1", None)
         .await

@@ -83,8 +83,11 @@ pub fn graph_checkpoint_schema() -> Schema {
 
 fn checkpoint_step(from: u32, legacy: &'static Legacy) -> Step {
     Step::new(
-        ["checkpoints_graph_v2", "checkpoints_delegation_v2", "checkpoints_flows_v2"]
-            [usize::try_from(from - 1).unwrap_or(0)],
+        [
+            "checkpoints_graph_v2",
+            "checkpoints_delegation_v2",
+            "checkpoints_flows_v2",
+        ][usize::try_from(from - 1).unwrap_or(0)],
         CHECKPOINTS,
         from,
         from + 1,
@@ -100,8 +103,11 @@ fn checkpoint_step(from: u32, legacy: &'static Legacy) -> Step {
 
 fn thread_step(from: u32, legacy: &'static Legacy) -> Step {
     Step::new(
-        ["threads_graph_v2", "threads_delegation_v2", "threads_flows_v2"]
-            [usize::try_from(from - 1).unwrap_or(0)],
+        [
+            "threads_graph_v2",
+            "threads_delegation_v2",
+            "threads_flows_v2",
+        ][usize::try_from(from - 1).unwrap_or(0)],
         THREADS,
         from,
         from + 1,

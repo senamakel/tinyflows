@@ -20,9 +20,9 @@
 //! A host composes `Registry::compose([storage_schema(), cron_storage_schema(),
 //! ...])` and runs `Registry::migrate` per scope.
 
-mod kv_import;
 #[cfg(feature = "engine")]
 mod graph_checkpoint_schema;
+mod kv_import;
 
 use std::sync::Arc;
 
@@ -30,11 +30,11 @@ use tinystoragedrivers_core::{
     DocumentStore, MemoryStorage, Owner, Schema, Scope, ScopedStorage, StorageBackend,
 };
 
+#[cfg(feature = "engine")]
+pub use graph_checkpoint_schema::graph_checkpoint_schema;
 pub use kv_import::{
     CATALOG_NAMESPACE_PREFIX, KV_OWNER, STATE_NAMESPACE, catalog_namespace, import_legacy_kv,
 };
-#[cfg(feature = "engine")]
-pub use graph_checkpoint_schema::graph_checkpoint_schema;
 
 #[cfg(all(test, feature = "engine"))]
 #[path = "graph_checkpoint_schema_tests.rs"]
