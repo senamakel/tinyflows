@@ -5,7 +5,9 @@ use std::sync::Arc;
 use tinybus::Connection;
 use tinyflows_bus::catalog::CatalogStorage;
 use tinyflows_drivers::catalog::FlowCatalogDocuments;
-use tinyflows_drivers::{catalog_storage_schema, document_only_scope, import_legacy_kv};
+use tinyflows_drivers::{
+    catalog_storage_schema, document_only_scope, graph_checkpoint_schema, import_legacy_kv,
+};
 use tinystoragedrivers_core::{MigrateOptions, Registry, Scope};
 
 pub(super) async fn migrate(connection: Connection, storage: CatalogStorage) -> Result<()> {
@@ -16,7 +18,7 @@ pub(super) async fn migrate(connection: Connection, storage: CatalogStorage) -> 
     let documents = Arc::new(documents);
     let scoped = document_only_scope(Scope::local(), documents.clone())?;
     FlowCatalogDocuments::new(documents).ensure().await?;
-    let registry = Registry::compose([catalog_storage_schema()])?;
+    let registry = Registry::compose([catalog_storage_schema(), graph_checkpoint_schema()])?;
     let report = registry
         .migrate(&scoped, &MigrateOptions::default())
         .await?;

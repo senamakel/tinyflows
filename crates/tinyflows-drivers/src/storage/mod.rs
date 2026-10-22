@@ -9,9 +9,9 @@
 //!   schema with `flows.adaptive_*`.
 //! - [`cron_storage_schema()`] is owner `cron`: `cron.jobs`, `cron.runs`,
 //!   `cron.admission`.
-//! - The graph checkpointer is **not** declared here: owner `graph`
-//!   (`tinyagents-graph`) declares `graph.{checkpoints,threads,writes}` and
-//!   migrates `flows_graph_*` into namespace `flows`.
+//! - [`graph_checkpoint_schema()`] is owner `graph` and declares the durable
+//!   `graph.{checkpoints,threads,writes}` used by [`DriverCheckpointer`]. It
+//!   migrates the legacy `*_graph_*` collections into their namespaces.
 //! - Key-value state and counters live in `tsd.kv` / `tsd.counters`; a document
 //!   step cannot write another owner's collections, so [`import_legacy_kv`] and
 //!   [`import_legacy_cron_counters`] move them (host calls them once per scope
@@ -20,6 +20,8 @@
 //! A host composes `Registry::compose([storage_schema(), cron_storage_schema(),
 //! ...])` and runs `Registry::migrate` per scope.
 
+#[cfg(feature = "engine")]
+mod graph_checkpoint_schema;
 mod kv_import;
 
 use std::sync::Arc;
@@ -28,9 +30,15 @@ use tinystoragedrivers_core::{
     DocumentStore, MemoryStorage, Owner, Schema, Scope, ScopedStorage, StorageBackend,
 };
 
+#[cfg(feature = "engine")]
+pub use graph_checkpoint_schema::graph_checkpoint_schema;
 pub use kv_import::{
     CATALOG_NAMESPACE_PREFIX, KV_OWNER, STATE_NAMESPACE, catalog_namespace, import_legacy_kv,
 };
+
+#[cfg(all(test, feature = "engine"))]
+#[path = "graph_checkpoint_schema_tests.rs"]
+mod graph_checkpoint_schema_tests;
 
 /// The owner name of the flows schema.
 pub const FLOWS_OWNER: &str = "flows";

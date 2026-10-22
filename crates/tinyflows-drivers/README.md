@@ -45,12 +45,13 @@ engine nor its expression stack.
 ## Storage schema v2
 
 Everything here stores on the uniform schema of `tinystoragedrivers` v1.0.0.
-`storage_schema()` (owner `flows`) and `cron_storage_schema()` (owner `cron`)
-declare the collections and carry the v1 -> v2 steps; the host composes them
-with `Registry::compose` and runs `Registry::migrate` per scope, then calls
+`storage_schema()` (owner `flows`), `graph_checkpoint_schema()` (owner
+`graph`) and `cron_storage_schema()` (owner `cron`) declare the collections
+and carry their migration steps; the host composes them with
+`Registry::compose` and runs `Registry::migrate` per scope, then calls
 `import_legacy_kv` and `import_legacy_cron_counters` once per scope (a document
-step cannot write `tsd.*`). The graph checkpointer reads and writes the
-`graph.*` documents of `tinyagents-graph` under namespace `flows`. With the
+step cannot write `tsd.*`). `graph_checkpoint_schema()` owns the durable
+`graph.*` documents used by `DriverCheckpointer`. With the
 `store` feature `storage_schema()` also declares the workflow store
 (`flows.workflows`, `flows.workflow_*`). `tinyflows-adaptive` (feature
 `storage-drivers`) extends the same schema with `flows.adaptive_*` through

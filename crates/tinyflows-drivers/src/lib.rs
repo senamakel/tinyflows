@@ -24,11 +24,10 @@
 //!   It needs only `tinyflows-schedule`, not the engine.
 //!
 //! Everything stores on the uniform storage schema v2: [`storage_schema()`]
-//! (owner `flows`) and [`cron_storage_schema()`] (owner `cron`) declare the
-//! collections and carry the v1 -> v2 steps, and [`import_legacy_kv`] moves the
-//! retired key-value collections into `tsd.kv`. The graph checkpointer's
-//! `graph.*` collections are declared and migrated by `tinyagents-graph`
-//! (namespace `flows`), not here.
+//! (owner `flows`), [`graph_checkpoint_schema()`] (owner `graph`) and
+//! [`cron_storage_schema()`] (owner `cron`) declare the collections and carry
+//! their legacy steps; [`import_legacy_kv`] moves retired key-value
+//! collections into `tsd.kv`.
 //!
 //! The items above are behind Cargo features, so they are named rather than
 //! linked: a link would not resolve in a build without its feature.
@@ -61,6 +60,8 @@ pub use state_store::DriverStateStore;
 
 #[cfg(feature = "catalog")]
 pub use storage::catalog_storage_schema;
+#[cfg(feature = "engine")]
+pub use storage::graph_checkpoint_schema;
 pub use storage::{KV_OWNER, document_only_scope, import_legacy_kv, storage_schema};
 #[cfg(feature = "schedule")]
 pub use storage::{cron_storage_schema, import_legacy_cron_counters};

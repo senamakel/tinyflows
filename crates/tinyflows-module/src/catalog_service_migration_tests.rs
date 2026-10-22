@@ -61,9 +61,12 @@ async fn explicit_catalog_migration_preserves_records_and_imports_legacy_state()
         .await;
     assert!(
         first_attempt.is_err(),
-        "the injected mid-migration error is reported"
+        "the injected mid-migration error is reported: {first_attempt:?}"
     );
-    assert!(!fail_revision_put.load(Ordering::SeqCst));
+    assert!(
+        !fail_revision_put.load(Ordering::SeqCst),
+        "revision write injection was not reached: {first_attempt:?}"
+    );
     assert!(
         docs.get("flows_revisions", "legacy-revision")
             .await
