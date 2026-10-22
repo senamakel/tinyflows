@@ -112,7 +112,7 @@ async fn schema_migrates_flow_checkpoints_and_supports_resume_writes() {
         .into_iter()
         .find(|row| row.doc["checkpoint_id"] == "checkpoint-1")
         .expect("migrated nested record");
-    assert_eq!(nested_record.doc["subgraph"], "1:n/6:nested");
+    assert_eq!(nested_record.doc["subgraph"], "n/nested");
     assert_eq!(nested_record.meta.created_ms, 1234);
     let root_record = storage
         .documents()
