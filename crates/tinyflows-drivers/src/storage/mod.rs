@@ -21,6 +21,7 @@
 //! ...])` and runs `Registry::migrate` per scope.
 
 mod kv_import;
+#[cfg(feature = "engine")]
 mod graph_checkpoint_schema;
 
 use std::sync::Arc;
@@ -32,7 +33,12 @@ use tinystoragedrivers_core::{
 pub use kv_import::{
     CATALOG_NAMESPACE_PREFIX, KV_OWNER, STATE_NAMESPACE, catalog_namespace, import_legacy_kv,
 };
+#[cfg(feature = "engine")]
 pub use graph_checkpoint_schema::graph_checkpoint_schema;
+
+#[cfg(all(test, feature = "engine"))]
+#[path = "graph_checkpoint_schema_tests.rs"]
+mod graph_checkpoint_schema_tests;
 
 /// The owner name of the flows schema.
 pub const FLOWS_OWNER: &str = "flows";
