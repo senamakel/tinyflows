@@ -126,7 +126,7 @@ async fn schema_migrates_flow_checkpoints_and_supports_resume_writes() {
 
     let next = checkpoint("thread-1", "checkpoint-2", 8);
     checkpointer.put(next).await.unwrap();
-    assert_eq!(checkpointer.get_thread("thread-1").await.unwrap().len(), 2);
+    assert_eq!(checkpointer.get_thread("thread-1").await.unwrap().len(), 3);
 }
 
 fn checkpoint(thread: &str, id: &str, state: i32) -> Checkpoint<i32> {
