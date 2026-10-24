@@ -19,8 +19,8 @@ exclude = ["worktrees", "vendor/tinybus"]
 
 # Pin unpublished module APIs to a source available in non-recursive clones and archives.
 [patch.crates-io]
-tinybus = { git = "https://github.com/tinyhumansai/tinybus", rev = "eb5cf727071a6eb12f9efa3db8ec59e54039f336" }
-tinybus-module = { git = "https://github.com/tinyhumansai/tinybus", rev = "eb5cf727071a6eb12f9efa3db8ec59e54039f336" }
+tinybus = { git = "https://github.com/senamakel/tinybus", rev = "34d3bd6dda099e54cee11a2f96f28a21da9e0759" }
+tinybus-module = { git = "https://github.com/senamakel/tinybus", rev = "34d3bd6dda099e54cee11a2f96f28a21da9e0759" }
 
 [workspace.package]
 edition = "2024"
