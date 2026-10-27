@@ -6,7 +6,7 @@
 use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
 use tinyflows_catalog::{FlowRun, FlowRunStep};
-use tinystoragedrivers_core::{
+use tinyflows_storage::{
     DocumentStoreExt, ErrorKind, Filter, Precondition, Query, Sort, Versioned,
 };
 

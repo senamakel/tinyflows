@@ -1,7 +1,7 @@
 use super::*;
 use crate::catalog::test_support::catalog;
 use serde_json::json;
-use tinystoragedrivers_core::{
+use tinyflows_storage::{
     Capabilities, CollectionSpec, DocumentStore, Filter, Page, Precondition, Query,
     Result as StorageResult, Sort, StorageError, Version, Versioned,
 };
@@ -15,7 +15,7 @@ impl DeniedStore {
     }
 }
 
-#[tinystoragedrivers_core::async_trait]
+#[tinyflows_storage::async_trait]
 impl DocumentStore for DeniedStore {
     fn capabilities(&self) -> Capabilities {
         Capabilities::none()

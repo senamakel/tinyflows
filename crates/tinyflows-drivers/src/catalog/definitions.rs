@@ -6,7 +6,7 @@ use chrono::Utc;
 use serde_json::{Value, json};
 use tinyflows::model::WorkflowGraph;
 use tinyflows_catalog::Flow;
-use tinystoragedrivers_core::{
+use tinyflows_storage::{
     DocumentStoreExt, ErrorKind, Filter, Precondition, Query, Sort, Versioned,
 };
 use uuid::Uuid;

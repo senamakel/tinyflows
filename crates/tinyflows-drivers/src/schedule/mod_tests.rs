@@ -1,9 +1,10 @@
 use super::*;
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 use super::test_support::{daily, docs_in, store};
 use chrono::Utc;
 use serde_json::json;
-use tinystoragedrivers_core::{MemoryStorage, Precondition};
+use tinyflows_storage::Precondition;
 
 #[test]
 fn limits_default_like_the_sqlite_store_and_clamp_to_one() {
@@ -91,7 +92,7 @@ async fn compare_and_swap_skips_missing_documents_and_declined_changes() {
 
 #[tokio::test]
 async fn legacy_policy_documents_move_into_jobs_without_losing_seeded_fields() {
-    use tinystoragedrivers_core::CollectionSpec;
+    use tinyflows_storage::CollectionSpec;
     let store = store();
     let job = store
         .add_shell_job(Some("system".into()), daily(), "system:seeded")

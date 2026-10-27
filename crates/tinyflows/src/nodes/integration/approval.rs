@@ -171,18 +171,17 @@ impl NodeExecutor for ApprovalNode {
                 // card any more, so withdraw it rather than leave a stale entry
                 // in the host's queue. Best-effort: the run has already decided
                 // what to do, and a failed withdrawal must not change that.
-                if let Some(provider) = ctx.caps.approvals.as_ref() {
-                    if let Err(err) = provider
+                if let Some(provider) = ctx.caps.approvals.as_ref()
+                    && let Err(err) = provider
                         .cancel(&request.request_id, "resolved via resume")
                         .await
-                    {
-                        tracing::warn!(
-                            node = %ctx.node.id,
-                            request = %request.request_id,
-                            error = %err,
-                            "withdrawing the provider's review after a resume decision failed"
-                        );
-                    }
+                {
+                    tracing::warn!(
+                        node = %ctx.node.id,
+                        request = %request.request_id,
+                        error = %err,
+                        "withdrawing the provider's review after a resume decision failed"
+                    );
                 }
                 ApprovalOutcome::Decided(decision)
             }
@@ -293,18 +292,17 @@ impl ApprovalNode {
         // any more, so withdraw it rather than leaving a dead card in a queue.
         // Best-effort: the run has already decided what to do, and a failed
         // withdrawal must not change that.
-        if let Some(provider) = ctx.caps.approvals.as_ref() {
-            if let Err(err) = provider
+        if let Some(provider) = ctx.caps.approvals.as_ref()
+            && let Err(err) = provider
                 .cancel(&request.request_id, "approval node timed out")
                 .await
-            {
-                tracing::warn!(
-                    node = %ctx.node.id,
-                    request = %request.request_id,
-                    error = %err,
-                    "withdrawing the timed-out review failed"
-                );
-            }
+        {
+            tracing::warn!(
+                node = %ctx.node.id,
+                request = %request.request_id,
+                error = %err,
+                "withdrawing the timed-out review failed"
+            );
         }
 
         // The `=nodes.<id>.decision.approved` contract other settled reviews

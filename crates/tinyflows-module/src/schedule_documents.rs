@@ -4,7 +4,7 @@ use serde::{Deserialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 use tinybus::Connection;
 use tinyflows_bus::schedule::{CallbackAddress, DOCUMENT_INTERFACE, DOCUMENT_METHOD};
-use tinystoragedrivers_core::{
+use tinyflows_storage::{
     Capabilities, Capability, CollectionSpec, DocumentStore, Filter, Page, Precondition, Query,
     Result, Sort, StorageError, Version, Versioned, WriteOp, WriteOptions, WriteResult,
 };
@@ -49,10 +49,9 @@ impl Failure {
             "already_exists" => StorageError::already_exists(self.message),
             "not_found" => StorageError::not_found(self.message),
             "invalid_input" => StorageError::invalid_input(self.message),
-            "serialization" => StorageError::new(
-                tinystoragedrivers_core::ErrorKind::Serialization,
-                self.message,
-            ),
+            "serialization" => {
+                StorageError::new(tinyflows_storage::ErrorKind::Serialization, self.message)
+            }
             "unavailable" => StorageError::unavailable(self.message),
             _ => StorageError::backend(self.message),
         }
@@ -233,15 +232,17 @@ impl DocumentStore for Documents {
         precondition: Precondition,
         options: WriteOptions,
     ) -> Result<Version> {
+        if options.created_ms.is_some() {
+            return Err(StorageError::invalid_input(
+                "a module cannot set created_ms: it is a host-only migration option",
+            ));
+        }
         let mut request = json!({"op":"put","collection":collection,"id":id,"doc":doc,"precondition":precondition});
         if options.schema != 0 {
             request["schema"] = json!(options.schema);
         }
         if let Some(expires_ms) = options.expires_ms {
             request["expires_ms"] = json!(expires_ms);
-        }
-        if let Some(created_ms) = options.created_ms {
-            request["created_ms"] = json!(created_ms);
         }
         self.call_record(collection, id, request).await
     }

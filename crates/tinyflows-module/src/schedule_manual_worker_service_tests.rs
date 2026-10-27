@@ -1,4 +1,5 @@
 use super::*;
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 #[cfg(test)]
 #[path = "schedule_manual_worker_stop_identity_tests.rs"]
@@ -18,7 +19,7 @@ async fn claim_reply_lost_after_commit_is_reconciled_and_released_before_termina
         ManualDelivery, ManualRunOutcome, ManualRunRequest, ManualRunState, PrepareManualRun,
         StartManualRun, WaitManualRun,
     };
-    use tinystoragedrivers_core::{MemoryStorage, Scope, StorageBackend};
+    use tinyflows_storage::{Scope, StorageBackend};
 
     let (_server, host, state) = connections().await;
     let scoped = MemoryStorage::new()
@@ -134,7 +135,7 @@ async fn release_reply_loss_reports_cleanup_pending_until_retry_confirms_fence()
         ManualDelivery, ManualRunOutcome, ManualRunRequest, ManualRunState, PrepareManualRun,
         StartManualRun, StopManualRun, WaitManualRun,
     };
-    use tinystoragedrivers_core::{MemoryStorage, Scope, StorageBackend};
+    use tinyflows_storage::{Scope, StorageBackend};
 
     let (_server, host, state) = connections().await;
     state
@@ -273,7 +274,7 @@ async fn unsupported_claim_backend_fails_before_recording_claim_intent() {
         ManualDelivery, ManualRunOutcome, ManualRunRequest, ManualRunState, PrepareManualRun,
         StartManualRun, WaitManualRun,
     };
-    use tinystoragedrivers_core::{MemoryStorage, Scope, StorageBackend};
+    use tinyflows_storage::{Scope, StorageBackend};
 
     let (_server, host, state) = connections().await;
     let scoped = MemoryStorage::new()
@@ -387,7 +388,7 @@ async fn terminal_commit_error_releases_queued_claim_before_failed_terminal() {
         ManualDelivery, ManualRunOutcome, ManualRunRequest, ManualRunState, PrepareManualRun,
         StartManualRun, WaitManualRun,
     };
-    use tinystoragedrivers_core::{MemoryStorage, Scope, StorageBackend};
+    use tinyflows_storage::{Scope, StorageBackend};
 
     let (_server, host, state) = connections().await;
     let scoped = MemoryStorage::new()

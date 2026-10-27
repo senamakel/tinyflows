@@ -24,6 +24,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
+name = "arbitrary"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3bc62ac97cc33321f50863d514c3bc38a453947a8f9e781137e47c7401020aed"
+dependencies = [
+ "derive_arbitrary",
+]
+
+[[package]]
 name = "async-trait"
 version = "0.1.92"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -321,6 +330,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "crossbeam-utils"
+version = "0.8.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a31eee39dddec8330830986fcd7625edb5a24ec90ea038215273bbc3adb08ac6"
+
+[[package]]
 name = "crypto-common"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -344,6 +359,17 @@ name = "data-encoding"
 version = "2.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4583a4551df46e2792f82ceeac45e850d2e2d5debba0b91f102385cda5b11f06"
+
+[[package]]
+name = "derive_arbitrary"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1b034bd7d5f032402a2479444dcc6f74e36a03f31854d41680fb240ef682a1ac"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.6",
+]
 
 [[package]]
 name = "digest"
@@ -514,6 +540,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92d699e522242e69e3003b94ecc1f960f3a5e015aa7c5d7486e65ad01dd94f5e"
 
 [[package]]
+name = "futures-macro"
+version = "0.3.34"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9fb9654ba8355388abeb8dcb4fc62f511300867002afc858860463bdd9fe0c44"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.6",
+]
+
+[[package]]
 name = "futures-sink"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -538,6 +575,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0d50a92467f8ba5dd6e3ee5d4bd04d73ab2e4e1c44474a0674821dfce14b79bc"
 dependencies = [
  "futures-core",
+ "futures-macro",
  "futures-sink",
  "futures-task",
  "pin-project-lite",
@@ -2015,6 +2053,27 @@ dependencies = [
 
 [[package]]
 name = "tinybus"
+version = "0.1.5"
+source = "git+https://github.com/senamakel/tinybus?rev=d5b949be8ea56eb5a17289a09aa28e8c09bd88b7#d5b949be8ea56eb5a17289a09aa28e8c09bd88b7"
+dependencies = [
+ "async-trait",
+ "flate2",
+ "libc",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tar",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "toml",
+ "tracing",
+ "ureq",
+ "zip",
+]
+
+[[package]]
+name = "tinybus"
 version = "0.3.12"
 source = "git+https://github.com/senamakel/tinybus?rev=34d3bd6dda099e54cee11a2f96f28a21da9e0759#34d3bd6dda099e54cee11a2f96f28a21da9e0759"
 dependencies = [
@@ -2055,7 +2114,7 @@ dependencies = [
  "async-trait",
  "serde",
  "serde_json",
- "tinybus",
+ "tinybus 0.3.12",
  "tokio",
  "tracing",
 ]
@@ -2097,7 +2156,10 @@ dependencies = [
  "thiserror",
  "tinyflows",
  "tinyflows-drivers",
- "tinystoragedrivers-core",
+ "tinyflows-storage",
+ "tinystoragedrivers-api",
+ "tinystoragedrivers-testkit",
+ "tinystoragedrivers-types",
  "tokio",
  "tracing",
 ]
@@ -2155,32 +2217,13 @@ dependencies = [
  "tinyflows",
  "tinyflows-catalog",
  "tinyflows-schedule",
- "tinystoragedrivers-core",
+ "tinyflows-storage",
+ "tinystoragedrivers-api",
+ "tinystoragedrivers-testkit",
+ "tinystoragedrivers-types",
  "tokio",
  "tracing",
  "uuid",
-]
-
-[[package]]
-name = "tinyflows-import"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "hex",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "tempfile",
- "tinyflows",
- "tinyflows-bus",
- "tinyflows-catalog",
- "tinyflows-drivers",
- "tinyflows-schedule",
- "tinystoragedrivers-core",
- "tinystoragedrivers-sqlite",
- "tokio",
- "tracing",
 ]
 
 [[package]]
@@ -2193,16 +2236,18 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "tinybus",
+ "tinybus 0.3.12",
  "tinybus-module",
  "tinyflows",
  "tinyflows-bus",
  "tinyflows-catalog",
  "tinyflows-copilot",
  "tinyflows-drivers",
- "tinyflows-import",
  "tinyflows-schedule",
- "tinystoragedrivers-core",
+ "tinyflows-storage",
+ "tinystoragedrivers-api",
+ "tinystoragedrivers-testkit",
+ "tinystoragedrivers-types",
  "tinytools",
  "tokio",
  "tracing",
@@ -2227,32 +2272,176 @@ dependencies = [
 ]
 
 [[package]]
-name = "tinystoragedrivers-core"
-version = "1.0.0"
-source = "git+https://github.com/tinyhumansai/tinystoragedrivers?rev=be94f7568fe7650b0729be55128f48270414b9a7#be94f7568fe7650b0729be55128f48270414b9a7"
+name = "tinyflows-storage"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "data-encoding",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tinybus 0.1.5",
+ "tinystoragedrivers-api",
+ "tinystoragedrivers-busproxy",
+ "tinystoragedrivers-testkit",
+ "tinystoragedrivers-types",
+ "tokio",
+ "ulid",
+]
+
+[[package]]
+name = "tinystoragedrivers-api"
+version = "2.0.1"
+source = "git+https://github.com/senamakel/tinystoragedrivers?tag=v2.0.1#e3224a8262193e7466b230a59ef1c4769e44bf02"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "futures-core",
+ "serde",
+ "serde_json",
+ "tinystoragedrivers-types",
+ "zeroize",
+]
+
+[[package]]
+name = "tinystoragedrivers-blob"
+version = "2.0.1"
+source = "git+https://github.com/senamakel/tinystoragedrivers?tag=v2.0.1#e3224a8262193e7466b230a59ef1c4769e44bf02"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "futures-core",
+ "serde",
+ "serde_json",
+ "tinystoragedrivers-api",
+ "tinystoragedrivers-types",
+]
+
+[[package]]
+name = "tinystoragedrivers-bus"
+version = "2.0.1"
+source = "git+https://github.com/senamakel/tinystoragedrivers?tag=v2.0.1#e3224a8262193e7466b230a59ef1c4769e44bf02"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tinybus 0.1.5",
+ "tinystoragedrivers-types",
+]
+
+[[package]]
+name = "tinystoragedrivers-busproxy"
+version = "2.0.1"
+source = "git+https://github.com/senamakel/tinystoragedrivers?tag=v2.0.1#e3224a8262193e7466b230a59ef1c4769e44bf02"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "futures-core",
+ "serde",
+ "serde_json",
+ "tinybus 0.1.5",
+ "tinystoragedrivers-api",
+ "tinystoragedrivers-bus",
+ "tinystoragedrivers-types",
+ "tokio",
+ "zeroize",
+]
+
+[[package]]
+name = "tinystoragedrivers-connect"
+version = "2.0.1"
+source = "git+https://github.com/senamakel/tinystoragedrivers?tag=v2.0.1#e3224a8262193e7466b230a59ef1c4769e44bf02"
+dependencies = [
+ "rusqlite",
+ "tinystoragedrivers-types",
+ "tokio",
+]
+
+[[package]]
+name = "tinystoragedrivers-document"
+version = "2.0.1"
+source = "git+https://github.com/senamakel/tinystoragedrivers?tag=v2.0.1#e3224a8262193e7466b230a59ef1c4769e44bf02"
+dependencies = [
+ "async-trait",
+ "data-encoding",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tinystoragedrivers-api",
+ "tinystoragedrivers-connect",
+ "tinystoragedrivers-types",
+ "tokio",
+ "zstd",
+]
+
+[[package]]
+name = "tinystoragedrivers-kv"
+version = "2.0.1"
+source = "git+https://github.com/senamakel/tinystoragedrivers?tag=v2.0.1#e3224a8262193e7466b230a59ef1c4769e44bf02"
+dependencies = [
+ "async-trait",
+ "serde",
+ "serde_json",
+ "tinystoragedrivers-api",
+ "tinystoragedrivers-types",
+]
+
+[[package]]
+name = "tinystoragedrivers-queue"
+version = "2.0.1"
+source = "git+https://github.com/senamakel/tinystoragedrivers?tag=v2.0.1#e3224a8262193e7466b230a59ef1c4769e44bf02"
 dependencies = [
  "async-trait",
  "data-encoding",
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "thiserror",
+ "tinystoragedrivers-api",
+ "tinystoragedrivers-types",
  "tokio",
  "ulid",
- "zstd",
 ]
 
 [[package]]
-name = "tinystoragedrivers-sqlite"
-version = "1.0.0"
-source = "git+https://github.com/tinyhumansai/tinystoragedrivers?rev=be94f7568fe7650b0729be55128f48270414b9a7#be94f7568fe7650b0729be55128f48270414b9a7"
+name = "tinystoragedrivers-secrets"
+version = "2.0.1"
+source = "git+https://github.com/senamakel/tinystoragedrivers?tag=v2.0.1#e3224a8262193e7466b230a59ef1c4769e44bf02"
 dependencies = [
- "rusqlite",
+ "async-trait",
+ "tinystoragedrivers-api",
+ "tinystoragedrivers-types",
+ "zeroize",
+]
+
+[[package]]
+name = "tinystoragedrivers-testkit"
+version = "2.0.1"
+source = "git+https://github.com/senamakel/tinystoragedrivers?tag=v2.0.1#e3224a8262193e7466b230a59ef1c4769e44bf02"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "futures-util",
  "serde_json",
- "sha2 0.10.9",
- "tinystoragedrivers-core",
+ "tinystoragedrivers-api",
+ "tinystoragedrivers-blob",
+ "tinystoragedrivers-document",
+ "tinystoragedrivers-kv",
+ "tinystoragedrivers-queue",
+ "tinystoragedrivers-secrets",
+ "tinystoragedrivers-types",
  "tokio",
- "zstd",
+ "ulid",
+ "zeroize",
+]
+
+[[package]]
+name = "tinystoragedrivers-types"
+version = "2.0.1"
+source = "git+https://github.com/senamakel/tinystoragedrivers?tag=v2.0.1#e3224a8262193e7466b230a59ef1c4769e44bf02"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror",
 ]
 
 [[package]]
@@ -2269,7 +2458,7 @@ dependencies = [
 [[package]]
 name = "tinytools"
 version = "0.5.0"
-source = "git+https://github.com/tinyhumansai/tinytools?rev=643df90ba25f93187249fa99f6789f9aa7f8bbc8#643df90ba25f93187249fa99f6789f9aa7f8bbc8"
+source = "git+https://github.com/senamakel/tinytools?rev=643df90ba25f93187249fa99f6789f9aa7f8bbc8#643df90ba25f93187249fa99f6789f9aa7f8bbc8"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3025,6 +3214,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "zip"
+version = "2.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1dcb24d0152526ae49b9b96c1dcf71850ca1e0b882e4e28ed898a93c41334744"
+dependencies = [
+ "arbitrary",
+ "crc32fast",
+ "crossbeam-utils",
+ "flate2",
+ "indexmap",
+ "memchr",
+ "zopfli",
+]
+
+[[package]]
 name = "zlib-rs"
 version = "0.6.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3035,6 +3239,18 @@ name = "zmij"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
+
+[[package]]
+name = "zopfli"
+version = "0.8.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aaf7fc5d30c28483d93805c4a5e12b05bbb52407fa67c5f8bd552374cd01fb11"
+dependencies = [
+ "bumpalo",
+ "crc32fast",
+ "log",
+ "simd-adler32",
+]
 
 [[package]]
 name = "zstd"

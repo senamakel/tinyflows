@@ -7,7 +7,7 @@ use std::sync::Arc;
 use tinyflows::model::WorkflowGraph;
 use tinyflows_catalog::{Flow, FlowRevision};
 
-use tinystoragedrivers_core::{
+use tinyflows_storage::{
     DocumentStore, DocumentStoreExt, ErrorKind, Filter, Precondition, Query, Sort, Versioned,
 };
 

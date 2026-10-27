@@ -10,7 +10,8 @@ use tinyflows_bus::catalog::{
 };
 use tinyflows_bus::{BUS_NAME, catalog};
 use tinyflows_drivers::DriverCheckpointer;
-use tinystoragedrivers_core::{DocumentStore, MemoryStorage, Scope, StorageBackend};
+use tinyflows_storage::{DocumentStore, Scope, StorageBackend};
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 use super::storage_migration_artifact_tests::CatalogCallback;
 

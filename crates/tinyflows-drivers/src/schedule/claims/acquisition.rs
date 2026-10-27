@@ -1,5 +1,5 @@
 use super::*;
-use tinystoragedrivers_core::Lease;
+use tinyflows_storage::Lease;
 use uuid::Uuid;
 
 impl CronDocuments {

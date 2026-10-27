@@ -5,7 +5,7 @@
 //! their steps, state, suggestions, drafts), reporting [`FlowUpdateError`] for a
 //! guarded graph update. The backend is whatever document handle the host
 //! passes in. It replaces the `flows.db` and draft-file catalog of the retired
-//! `tinyflows-sqlite`, whose data `tinyflows-import` brings across.
+//! `tinyflows-sqlite`; hosts own any remaining file discovery or conversion.
 //!
 //! # Layout (storage schema v2, owner `flows`)
 //!
@@ -65,7 +65,7 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde_json::Value;
-use tinystoragedrivers_core::{
+use tinyflows_storage::{
     CollectionSpec, DocumentStore, ErrorKind, IndexSpec, Meta, Precondition, Repo, StorageError,
     Versioned, WriteOptions,
 };
@@ -150,7 +150,7 @@ impl FlowCatalogDocuments {
             .get_or_try_init(|| async {
                 for spec in Self::collections()
                     .into_iter()
-                    .chain(tinystoragedrivers_core::primitives::collection_specs())
+                    .chain(tinyflows_storage::primitives::collection_specs())
                 {
                     self.docs
                         .ensure_collection(&spec)
@@ -204,7 +204,7 @@ pub(crate) async fn put_doc(
     id: &str,
     doc: Value,
     precondition: Precondition,
-) -> std::result::Result<tinystoragedrivers_core::Version, StorageError> {
+) -> std::result::Result<tinyflows_storage::Version, StorageError> {
     docs.put_with(
         collection,
         id,

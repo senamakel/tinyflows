@@ -1,7 +1,6 @@
 //! The adaptive stores' schema v2 declarations, their v1 -> v2 steps and the
-//! counter importer. Owner `flows` (scope class Tenant): an owner is declared
-//! once, so a host passes `tinyflows_drivers::storage_schema()` through
-//! [`extend_storage_schema`].
+//! counter importer. The adaptive crate declares and migrates its own records
+//! under owner `flows`, preserving the existing `flows.adaptive_*` namespace.
 //!
 //! | v1 | v2 |
 //! |---|---|
@@ -20,25 +19,27 @@
 //! visible (readers report it) instead of being lost.
 
 use serde_json::{Map, Value};
-use tinystoragedrivers_core::{
-    Cursor, Filter, ID_FIELD, Key, Migrations, Query, Result, Schema, ScopeClass, ScopedStorage,
-    Sort, SourceRecord, Step, TargetRecord, primitives,
+use std::sync::Arc;
+use tinyflows_storage::{
+    Cursor, DocumentStore, Filter, ID_FIELD, Key, Migrations, Owner, Query, Result, Schema,
+    ScopeClass, Sort, SourceRecord, Step, TargetRecord, primitives,
 };
 
 use super::convert::{episode_body, lesson_body, row_body, step_body, workflow_body};
 use super::{
     COUNTER_OWNER, COUNTERS, EPISODES, EVIDENCE, LESSONS, ROWS, SCHEMA_VERSION, SCORES, STEPS,
-    VARIANTS, WORKFLOWS, collections,
+    VARIANTS, WORKFLOWS, indexed_collection_specs,
 };
 
 const COUNTERS_STEP: &str = "adaptive_counters_import";
 const PAGE: usize = 200;
 
-/// Declares the adaptive collections on `schema` (owner `flows`) with their
-/// v1 -> v2 steps.
+/// Adaptive-owned `flows.adaptive_*` declarations and their v1 -> v2 steps.
 #[must_use]
-pub fn extend_storage_schema(mut schema: Schema) -> Schema {
-    for spec in collections() {
+#[allow(clippy::expect_used, reason = "flows is a fixed valid owner name")]
+pub fn storage_schema() -> Schema {
+    let mut schema = Schema::new(Owner::new("flows").expect("valid flows owner"));
+    for spec in indexed_collection_specs() {
         schema = schema.collection_with(SCHEMA_VERSION, spec, ScopeClass::Tenant);
     }
     schema
@@ -50,6 +51,12 @@ pub fn extend_storage_schema(mut schema: Schema) -> Schema {
         .step(step("adaptive_episodes_v2", EPISODES, episode))
         .step(step("adaptive_steps_v2", STEPS, steps))
         .step(step("adaptive_workflows_v2", WORKFLOWS, workflow))
+}
+
+/// Pure adaptive collection declarations for host bootstrap and documentation.
+#[must_use]
+pub fn collections() -> Vec<tinyflows_storage::CollectionSpec> {
+    storage_schema().collections()
 }
 
 type Convert = fn(&SourceRecord) -> Option<TargetRecord>;
@@ -90,6 +97,7 @@ fn key(parts: &[&str], fallback: &str) -> String {
 
 fn carried(collection: &str, source: &SourceRecord) -> TargetRecord {
     TargetRecord::new(collection, source.id.clone(), source.body.clone())
+        .preserve_expiry_from(source)
 }
 
 fn row(source: &SourceRecord) -> Option<TargetRecord> {
@@ -97,13 +105,7 @@ fn row(source: &SourceRecord) -> Option<TargetRecord> {
         return Some(carried(ROWS, source));
     };
     let body = row_body(rec, text(source, "scope_key"), seq(source));
-    let at = body.get("at_ms").and_then(Value::as_i64).unwrap_or(0);
-    let target = TargetRecord::new(ROWS, source.id.clone(), body);
-    Some(if at > 0 {
-        target.created_ms(at)
-    } else {
-        target
-    })
+    Some(TargetRecord::new(ROWS, source.id.clone(), body).preserve_expiry_from(source))
 }
 
 fn lesson(source: &SourceRecord) -> Option<TargetRecord> {
@@ -116,7 +118,7 @@ fn lesson(source: &SourceRecord) -> Option<TargetRecord> {
         }
     }
     let body = lesson_body(rec, text(source, "scope_key"), seq(source));
-    Some(TargetRecord::new(LESSONS, source.id.clone(), body))
+    Some(TargetRecord::new(LESSONS, source.id.clone(), body).preserve_expiry_from(source))
 }
 
 fn evidence(source: &SourceRecord) -> Option<TargetRecord> {
@@ -124,11 +126,14 @@ fn evidence(source: &SourceRecord) -> Option<TargetRecord> {
     if lesson.is_empty() || row.is_empty() {
         return Some(carried(EVIDENCE, source));
     }
-    Some(TargetRecord::new(
-        EVIDENCE,
-        key(&[lesson, row], &source.id),
-        source.body.clone(),
-    ))
+    Some(
+        TargetRecord::new(
+            EVIDENCE,
+            key(&[lesson, row], &source.id),
+            source.body.clone(),
+        )
+        .preserve_expiry_from(source),
+    )
 }
 
 fn score(source: &SourceRecord) -> Option<TargetRecord> {
@@ -136,11 +141,14 @@ fn score(source: &SourceRecord) -> Option<TargetRecord> {
     if workflow.is_empty() {
         return Some(carried(SCORES, source));
     }
-    Some(TargetRecord::new(
-        SCORES,
-        key(&[scope, workflow], &source.id),
-        source.body.clone(),
-    ))
+    Some(
+        TargetRecord::new(
+            SCORES,
+            key(&[scope, workflow], &source.id),
+            source.body.clone(),
+        )
+        .preserve_expiry_from(source),
+    )
 }
 
 fn variant(source: &SourceRecord) -> Option<TargetRecord> {
@@ -148,11 +156,14 @@ fn variant(source: &SourceRecord) -> Option<TargetRecord> {
     if variant.is_empty() {
         return Some(carried(VARIANTS, source));
     }
-    Some(TargetRecord::new(
-        VARIANTS,
-        key(&[scope, variant], &source.id),
-        source.body.clone(),
-    ))
+    Some(
+        TargetRecord::new(
+            VARIANTS,
+            key(&[scope, variant], &source.id),
+            source.body.clone(),
+        )
+        .preserve_expiry_from(source),
+    )
 }
 
 fn episode(source: &SourceRecord) -> Option<TargetRecord> {
@@ -166,13 +177,10 @@ fn episode(source: &SourceRecord) -> Option<TargetRecord> {
         .unwrap_or_default()
         .to_owned();
     let body = episode_body(rec, scope);
-    let started = body.get("started_ms").and_then(Value::as_i64).unwrap_or(0);
-    let target = TargetRecord::new(EPISODES, key(&[scope, &id], &source.id), body);
-    Some(if started > 0 {
-        target.created_ms(started)
-    } else {
-        target
-    })
+    Some(
+        TargetRecord::new(EPISODES, key(&[scope, &id], &source.id), body)
+            .preserve_expiry_from(source),
+    )
 }
 
 fn steps(source: &SourceRecord) -> Option<TargetRecord> {
@@ -185,11 +193,14 @@ fn steps(source: &SourceRecord) -> Option<TargetRecord> {
         seq(source),
     );
     let body = step_body(rec, scope, row_id, n);
-    Some(TargetRecord::new(
-        STEPS,
-        key(&[scope, row_id, &format!("{n:08}")], &source.id),
-        body,
-    ))
+    Some(
+        TargetRecord::new(
+            STEPS,
+            key(&[scope, row_id, &format!("{n:08}")], &source.id),
+            body,
+        )
+        .preserve_expiry_from(source),
+    )
 }
 
 fn workflow(source: &SourceRecord) -> Option<TargetRecord> {
@@ -203,11 +214,10 @@ fn workflow(source: &SourceRecord) -> Option<TargetRecord> {
         .unwrap_or_default()
         .to_owned();
     let target_key = key(&[scope, &id], &source.id);
-    Some(TargetRecord::new(
-        WORKFLOWS,
-        target_key,
-        workflow_body(rec, scope),
-    ))
+    Some(
+        TargetRecord::new(WORKFLOWS, target_key, workflow_body(rec, scope))
+            .preserve_expiry_from(source),
+    )
 }
 
 /// Move the v1 id sequences (`adaptive_counters`: `{seq}` per sequence name)
@@ -216,24 +226,24 @@ fn workflow(source: &SourceRecord) -> Option<TargetRecord> {
 /// `adaptive_counters_import`). New row and lesson ids keep counting from where
 /// v1 stopped. Returns how many sequences were carried.
 ///
-/// `tsd.counters` belongs to `tsd`, so a document step cannot write it: the
-/// host calls this once per scope after `Registry::migrate`. A completed
-/// import is skipped; with nothing to carry it only records completion.
+/// `tsd.counters` belongs to `tsd`, so a document step cannot write it. The
+/// adaptive owner's `Storage::from_documents` open path calls this after its
+/// schema migration. A completed import is skipped; with nothing to carry it
+/// only records completion.
 ///
 /// # Errors
 ///
 /// The first storage error; the import resumes on the next call because
 /// nothing is removed before the counters are raised.
-pub async fn import_legacy_adaptive_counters(storage: &ScopedStorage) -> Result<u64> {
-    let migrations = Migrations::new(storage);
+pub async fn import_legacy_adaptive_counters(docs: &Arc<dyn DocumentStore>) -> Result<u64> {
+    let migrations = Migrations::new(docs, COUNTER_OWNER);
     if migrations.done(COUNTER_OWNER, COUNTERS_STEP).await? {
         return Ok(0);
     }
-    primitives::ensure(storage).await?;
-    let docs = storage.documents();
-    docs.ensure_collection(&tinystoragedrivers_core::CollectionSpec::new(COUNTERS))
+    primitives::ensure(docs).await?;
+    docs.ensure_collection(&tinyflows_storage::CollectionSpec::new(COUNTERS))
         .await?;
-    let counters = tinystoragedrivers_core::Counters::new(docs);
+    let counters = tinyflows_storage::Counters::new(docs);
     let mut carried = 0_u64;
     let mut cursor: Option<Cursor> = None;
     loop {

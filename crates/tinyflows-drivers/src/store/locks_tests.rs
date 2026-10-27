@@ -3,10 +3,11 @@
 
 use std::sync::mpsc;
 use std::time::Duration;
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 use serde_json::json;
 use tinyflows::store::WorkflowStore;
-use tinystoragedrivers_core::{Key, MemoryStorage, Precondition, primitives};
+use tinyflows_storage::{Key, Precondition, primitives};
 
 use super::DriverWorkflowStore;
 use super::locks::{LEASE_OWNER, lease_key};

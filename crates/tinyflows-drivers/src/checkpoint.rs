@@ -44,7 +44,7 @@ use tinyflows::graph::ids::CheckpointId;
 use tinyflows::graph::{
     Checkpoint, CheckpointConfig, CheckpointMetadata, CheckpointTuple, Checkpointer, PendingWrite,
 };
-use tinystoragedrivers_core::{
+use tinyflows_storage::{
     DocumentStore, DocumentStoreExt, ErrorKind, Filter, Query, Repo, Sort, Versioned, WriteOptions,
 };
 use tokio::sync::OnceCell;

@@ -286,10 +286,10 @@ pub(super) fn map_http_request(
         _ => Map::new(),
     };
     // Normalize the method key (`requestMethod` is the older n8n spelling).
-    if !cfg.contains_key("method") {
-        if let Some(method) = cfg.remove("requestMethod") {
-            cfg.insert("method".to_string(), method);
-        }
+    if !cfg.contains_key("method")
+        && let Some(method) = cfg.remove("requestMethod")
+    {
+        cfg.insert("method".to_string(), method);
     }
     if !cfg.contains_key("body") {
         if let Some(body) = cfg.remove("jsonBody") {

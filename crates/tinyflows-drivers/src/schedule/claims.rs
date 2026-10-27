@@ -31,7 +31,7 @@ use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tinyflows_schedule::CronJob;
-use tinystoragedrivers_core::{
+use tinyflows_storage::{
     Capability, ErrorKind, Key, Leases, Precondition, Versioned, WriteOp, primitives,
 };
 

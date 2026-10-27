@@ -22,9 +22,12 @@ exclude = ["worktrees", "vendor/tinybus"]
 tinybus = { git = "https://github.com/senamakel/tinybus", rev = "34d3bd6dda099e54cee11a2f96f28a21da9e0759" }
 tinybus-module = { git = "https://github.com/senamakel/tinybus", rev = "34d3bd6dda099e54cee11a2f96f28a21da9e0759" }
 
+[patch."https://github.com/tinyhumansai/tinybus"]
+tinybus = { git = "https://github.com/senamakel/tinybus", rev = "d5b949be8ea56eb5a17289a09aa28e8c09bd88b7" }
+
 [workspace.package]
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.88"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/tinyhumansai/tinyflows"
 homepage = "https://github.com/tinyhumansai/tinyflows"
@@ -37,7 +40,6 @@ async-trait = "0.1"
 thiserror = "2"
 tracing = { version = "0.1", default-features = false, features = ["std"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
-rusqlite = { version = "0.40", features = ["bundled"] }
 sha2 = "0.11"
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde", "std"] }
 uuid = { version = "1", features = ["v4", "serde"] }

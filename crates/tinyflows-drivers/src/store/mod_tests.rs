@@ -3,11 +3,12 @@
 //! guarded, and the host policy judges reads as well as writes.
 
 use std::sync::Arc;
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 use serde_json::json;
 use tinyflows::store::types::{WorkflowDefaults, WorkflowError, WorkflowRecord};
 use tinyflows::store::{HostPolicy, WorkflowStore, parse_workflow, require};
-use tinystoragedrivers_core::{MemoryStorage, Precondition};
+use tinyflows_storage::Precondition;
 
 use super::test_support::{Faulty, block_on, docs_in, record, store, valid_document};
 use super::*;

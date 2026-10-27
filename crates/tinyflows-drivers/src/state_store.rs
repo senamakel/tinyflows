@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use serde_json::Value;
-use tinystoragedrivers_core::{DocumentStore, Kv, StorageError, primitives};
+use tinyflows_storage::{DocumentStore, Kv, StorageError, primitives};
 use tokio::sync::OnceCell;
 
 use tinyflows::caps::StateStore;

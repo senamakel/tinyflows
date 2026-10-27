@@ -4,7 +4,7 @@
 //! storage backend (SQLite on a desktop, MongoDB in the cloud, memory in tests)
 //! hands it a document handle, usually one already bound to a tenant scope. It
 //! replaces the `jobs.db` store of the retired `tinyflows-sqlite`, whose data
-//! `tinyflows-import` brings across.
+//! host-owned migration tooling may bring across.
 //!
 //! # Layout (storage schema v2, owner `cron`)
 //!
@@ -16,7 +16,9 @@
 //!
 //! Run numbers come from `tsd.counters` (owner `cron`, name `runs`), occurrence
 //! claims are `tsd.leases` (owner `cron`, key `Key::of([job_id, occurrence_ms])`)
-//! and a job's creation time is the document's `created_ms` metadata. A job's
+//! and a job's creation time is normally the document's `created_ms` metadata.
+//! Imported and migrated jobs retain their original time in the body field
+//! `created_ms`, since module ports cannot set host-owned metadata. A job's
 //! `schedule`, `delivery`, `origin` and `policy` are real objects. Optional
 //! fields are left out rather than stored as `null`. Every other instant is one
 //! epoch-millisecond field: `next_run_ms`, `last_run_ms`, `started_ms`,
@@ -70,7 +72,7 @@ use std::sync::Arc;
 pub(crate) use crate::ids::new_id;
 use anyhow::{Result, anyhow};
 use serde_json::Value;
-use tinystoragedrivers_core::{
+use tinyflows_storage::{
     CollectionSpec, DocumentStore, IndexSpec, StorageError, Versioned, primitives,
 };
 
@@ -241,8 +243,7 @@ async fn compare_job(
             .await
         {
             Ok(results) => {
-                let Some(tinystoragedrivers_core::WriteResult::Put { version }) = results.first()
-                else {
+                let Some(tinyflows_storage::WriteResult::Put { version }) = results.first() else {
                     anyhow::bail!("cron store: invalid atomic write result");
                 };
                 return Ok(Some(Versioned {

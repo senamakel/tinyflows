@@ -64,7 +64,7 @@ use std::sync::{Arc, OnceLock};
 
 use tinyflows::store::types::WorkflowError;
 use tinyflows::store::{EnginePolicy, HostPolicy, MAX_NOTES};
-use tinystoragedrivers_core::{
+use tinyflows_storage::{
     Blocking, CollectionSpec, DocumentStore, IndexSpec, Key, Precondition, StorageError, Version,
     WriteOptions, primitives,
 };

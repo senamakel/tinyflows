@@ -2,13 +2,14 @@ use super::*;
 use crate::drivers::key;
 use crate::execute::StepRecord;
 use crate::ledger::{Ledger, Score, conformance};
-use tinystoragedrivers_core::Counters;
-use tinystoragedrivers_core::{MemoryStorage, Scope, StorageBackend};
+use tinyflows_storage::Counters;
+use tinyflows_storage::{Scope, StorageBackend};
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 fn memory_docs() -> Arc<dyn DocumentStore> {
     Arc::clone(
         MemoryStorage::new()
-            .for_scope(&Scope::local())
+            .for_scope(&Scope::new("local").expect("valid scope"))
             .unwrap()
             .documents(),
     )

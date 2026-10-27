@@ -1,6 +1,7 @@
 use super::*;
 use std::sync::Arc;
-use tinystoragedrivers_core::{DocumentStore, MemoryStorage, Precondition};
+use tinyflows_storage::{DocumentStore, Precondition};
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 use crate::catalog::test_support::{Interposed, docs_in, trigger_graph};
 

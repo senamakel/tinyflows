@@ -3,7 +3,7 @@
 use anyhow::{Context, Result};
 use serde_json::{Value, json};
 use tinyflows_catalog::{FlowSuggestion, SuggestionStatus};
-use tinystoragedrivers_core::{Filter, Query, Sort, Versioned};
+use tinyflows_storage::{Filter, Query, Sort, Versioned};
 
 use super::{
     FlowCatalogDocuments, SUGGESTIONS, compare_and_swap, instant_ms, int, required, rfc3339,

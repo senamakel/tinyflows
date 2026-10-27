@@ -16,7 +16,7 @@ use tinyflows_bus::catalog::{
 };
 use tinyflows_catalog::Flow as StoredFlow;
 use tinyflows_drivers::catalog::FlowCatalogDocuments;
-use tinystoragedrivers_core::DocumentStore;
+use tinyflows_storage::DocumentStore;
 
 struct CatalogService {
     connection: Connection,

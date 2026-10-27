@@ -32,7 +32,7 @@ use tinyflows_adaptive::ledger::EpisodeStatus;
 use tinyflows_adaptive::workflows::Snapshot;
 
 // once, at boot
-let storage = Storage::from_documents(scoped_storage.documents().clone());  // the host's backend
+let storage = Storage::from_documents(scoped_storage.documents().clone()).await?;  // migrate and open the host's backend
 let (ledger_root, vault_root) = (storage.ledger(), storage.vault());
 let caps = Capabilities { llm: Arc::new(MyTieredClient::new(cfg)), /* … */ };
 

@@ -10,14 +10,13 @@
 //! has since been written to without clobbering anything. The return value says
 //! whether this call wrote the record.
 //!
-//! The reading half (opening the legacy files) lives in the unpublished
-//! `tinyflows-import` crate, which is where the file formats are known.
+//! Hosts own any file discovery and source-format decoding.
 
 use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
 use std::sync::Arc;
 use tinyflows_catalog::{Flow, FlowDraft, FlowRevision, FlowRun, FlowSuggestion};
-use tinystoragedrivers_core::{DocumentStore, ErrorKind, Precondition};
+use tinyflows_storage::{DocumentStore, ErrorKind, Precondition};
 
 use super::definitions::to_doc as flow_doc;
 use super::drafts::{check_id, to_doc as draft_doc};

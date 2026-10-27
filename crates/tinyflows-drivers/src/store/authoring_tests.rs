@@ -4,6 +4,7 @@
 //! workflow.
 
 use std::sync::Arc;
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 use serde_json::json;
 use tinyflows::graph_ops::GraphOp;
@@ -13,7 +14,6 @@ use tinyflows::store::{
     GraphHandle, WorkflowStore, apply_workflow_ops, apply_workflow_ops_observed, create_workflow,
     preview_workflow_ops, validate_handle,
 };
-use tinystoragedrivers_core::MemoryStorage;
 
 use super::test_support::store_over;
 

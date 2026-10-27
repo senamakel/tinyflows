@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use tinyflows::store::types::{WorkflowError, WorkflowRecord};
-use tinystoragedrivers_core::{
+use tinyflows_storage::{
     DocumentStore, DocumentStoreExt, Filter, Precondition, Query, Sort, StorageError, WriteOptions,
     primitives,
 };

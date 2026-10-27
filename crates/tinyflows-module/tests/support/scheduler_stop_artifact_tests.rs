@@ -7,7 +7,8 @@ use tinybus::{
 use tinyflows_bus::schedule::{CallbackAddress, StartScheduler};
 use tinyflows_drivers::schedule::CronDocuments;
 use tinyflows_schedule::Schedule;
-use tinystoragedrivers_core::{MemoryStorage, Scope, StorageBackend};
+use tinyflows_storage::{Scope, StorageBackend};
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 #[tokio::test]
 #[ignore = "run with TINYFLOWS_MODULE_ARTIFACT set to a compiled cdylib"]

@@ -261,7 +261,7 @@ pub const STORE_OPERATIONS: &[&str] = &[
 /// it accepts a JSON request with `op` and the corresponding core-port fields.
 /// Operations are ensure/get/put/delete/query/count/delete_where. Replies are
 /// `{value: JSON}` or `{error: {kind, message}}`, preserving conflict kinds.
-/// Core-port JSON uses the tinystoragedrivers-core vocabulary. The host
+/// Port JSON uses the tinystoragedrivers-types vocabulary. The host
 /// delegates mechanically to its scoped DocumentStore and owns no cron policy.
 pub const DOCUMENT_INTERFACE: &str = "ai.tinyhumans.tinyflows.ScheduleDocuments";
 /// Exact document callback member used by the module.
