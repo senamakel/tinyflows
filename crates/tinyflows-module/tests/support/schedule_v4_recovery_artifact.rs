@@ -6,7 +6,7 @@ use tinybus::Proxy;
 use tinyflows_bus::schedule::{CallbackAddress, StartScheduler, StoreConfig};
 use tinyflows_drivers::schedule::CronDocuments;
 use tinyflows_schedule::Schedule;
-use tinystoragedrivers_core::DocumentStore;
+use tinyflows_storage::DocumentStore;
 
 /// Recovers an expired persisted lease through the loaded cdylib, then proves
 /// the former owner cannot renew, release or complete the recovered run.

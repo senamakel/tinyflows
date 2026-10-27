@@ -93,10 +93,10 @@ pub fn validate_delivery(
         reply_target,
         ..
     }) = origin
+        && channel.eq_ignore_ascii_case(original)
+        && to == reply_target
     {
-        if channel.eq_ignore_ascii_case(original) && to == reply_target {
-            return Ok(());
-        }
+        return Ok(());
     }
     if channel.eq_ignore_ascii_case("web") {
         return Ok(());

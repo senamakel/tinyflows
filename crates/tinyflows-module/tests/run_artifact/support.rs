@@ -11,7 +11,8 @@ use tinyflows_bus::{
         AgentRunHandle, AgentRunOutcome, AgentRunRequest,
     },
 };
-use tinystoragedrivers_core::{DocumentStore, MemoryStorage, Scope, StorageBackend};
+use tinyflows_storage::{DocumentStore, Scope, StorageBackend};
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use tokio::sync::Notify;
 
 #[path = "graphs.rs"]

@@ -5,7 +5,8 @@
 use serde_json::json;
 use tinyflows::store::types::{NoteKind, NoteSource, WorkflowError, WorkflowNote};
 use tinyflows::store::{MAX_NOTES, WorkflowStore, current_notes, mint_note_id};
-use tinystoragedrivers_core::{DocumentStoreExt, MemoryStorage, Precondition, Query};
+use tinyflows_storage::{DocumentStoreExt, Precondition, Query};
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 use super::test_support::{block_on, docs_in, store, store_over};
 use super::{DriverWorkflowStore, NOTES, QUARANTINE};

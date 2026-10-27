@@ -1,8 +1,0 @@
-{
-  "id": "run-a",
-  "workflowId": "sweep",
-  "status": "succeeded",
-  "startedAt": 100,
-  "steps": [],
-  "pendingApprovals": []
-}

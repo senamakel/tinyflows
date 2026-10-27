@@ -3,7 +3,7 @@
 
 use serde_json::Value;
 use tinyflows::store::types::{WorkflowError, WorkflowProposal, fingerprint};
-use tinystoragedrivers_core::{
+use tinyflows_storage::{
     Capability, DocumentStoreExt, ExpectedDocument, Filter, Precondition, Query, ReadCheck, Sort,
     Versioned, WriteOp,
 };

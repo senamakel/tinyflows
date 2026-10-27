@@ -2,7 +2,7 @@
 
 use serde_json::Value;
 use tinyflows::store::types::{RunRecord, WorkflowError};
-use tinystoragedrivers_core::{DocumentStoreExt, Filter, Precondition, Query, Sort, Versioned};
+use tinyflows_storage::{DocumentStoreExt, Filter, Precondition, Query, Sort, Versioned};
 
 use super::codec::{run_body, run_from_body};
 use super::{Inner, RUNS, doc_id, put_doc, storage};

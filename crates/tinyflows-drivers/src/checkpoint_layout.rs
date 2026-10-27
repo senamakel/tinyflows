@@ -14,7 +14,7 @@ use serde_json::Value;
 use tinyflows::graph::CheckpointConfig;
 use tinyflows::graph::PendingWrite;
 use tinyflows::graph::error::{GraphError, Result};
-use tinystoragedrivers_core::{CollectionSpec, IndexSpec, Key, StorageError};
+use tinyflows_storage::{CollectionSpec, IndexSpec, Key, StorageError};
 
 /// The body version of every `graph.*` document (tinyagents' `SCHEMA_VERSION`).
 pub(crate) const SCHEMA_VERSION: u32 = 4;

@@ -8,7 +8,7 @@ use tinybus::Connection;
 use tinyflows::graph::checkpoint::Checkpointer as _;
 use tinyflows_bus::runs::{CancelRunResponse, RunControlRequest, RunEvent};
 use tinyflows_drivers::{DriverCheckpointer, catalog::FlowCatalogDocuments};
-use tinystoragedrivers_core::DocumentStore;
+use tinyflows_storage::DocumentStore;
 
 use super::dedup_settlement::{DedupSettlementScope, from_snapshot};
 use super::events::EventWriter;

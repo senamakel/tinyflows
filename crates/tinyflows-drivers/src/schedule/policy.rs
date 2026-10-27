@@ -1,6 +1,6 @@
 //! Upgrade legacy host policies through CAS; never lose fields or delete first.
 use super::*;
-use tinystoragedrivers_core::{DocumentStoreExt, ErrorKind, Query};
+use tinyflows_storage::{DocumentStoreExt, ErrorKind, Query};
 
 impl CronDocuments {
     pub(super) async fn migrate_policies(&self) -> Result<()> {

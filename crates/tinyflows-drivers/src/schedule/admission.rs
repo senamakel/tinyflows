@@ -4,7 +4,7 @@ use super::{ADMISSION, CAS_ATTEMPTS, CronDocuments, JOBS, storage_error};
 use anyhow::{Result, anyhow, bail};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tinystoragedrivers_core::{
+use tinyflows_storage::{
     Capability, DocumentStoreExt, ErrorKind, Precondition, Query, Versioned, WriteOp, WriteResult,
 };
 
@@ -180,8 +180,8 @@ impl CronDocuments {
         bail!("cron store: admission initialization kept changing")
     }
 
-    /// Writes a new job with an explicit creation time (an importer keeps the
-    /// original) and enrols it in the admission ledger. The job is written
+    /// Writes a new job with its original creation time in the document body
+    /// and enrols it in the admission ledger. The job is written
     /// first and enrolled second, so a job over the cap is taken back.
     ///
     /// # Errors
@@ -189,14 +189,14 @@ impl CronDocuments {
     pub(super) async fn insert_with_created(
         &self,
         id: &str,
-        doc: Value,
+        mut doc: Value,
         created_ms: i64,
     ) -> Result<()> {
-        let mut options =
-            tinystoragedrivers_core::WriteOptions::new().schema(super::SCHEMA_VERSION);
-        if created_ms > 0 {
-            options = options.created_ms(created_ms);
-        }
+        let body = doc
+            .as_object_mut()
+            .ok_or_else(|| anyhow!("cron store: imported job must be an object"))?;
+        body.insert("created_ms".into(), created_ms.into());
+        let options = tinyflows_storage::WriteOptions::new().schema(super::SCHEMA_VERSION);
         let member = member(id, &doc)?;
         // A nontransactional backend cannot enrol, so check the persisted
         // policy before the job exists rather than after it is written.
@@ -210,14 +210,6 @@ impl CronDocuments {
             .await
         {
             Ok(_) => {}
-            // A store that cannot set a creation time (a module's document
-            // callback) files the job under the time of the import instead.
-            Err(error) if matches!(error.kind(), ErrorKind::Unsupported(_)) => {
-                return self
-                    .commit_job(id, None, Some(doc), vec![])
-                    .await
-                    .map(|_| ());
-            }
             Err(error) => return Err(storage_error(error)),
         }
         if !transactional {
@@ -305,18 +297,18 @@ impl CronDocuments {
             _ => false,
         };
         if !owns {
-            return Err(storage_error(
-                tinystoragedrivers_core::StorageError::conflict("cron job incarnation changed"),
-            ));
+            return Err(storage_error(tinyflows_storage::StorageError::conflict(
+                "cron job incarnation changed",
+            )));
         }
         let current = self.docs.get(JOBS, id).await.map_err(storage_error)?;
         let precondition = match (previous, current.as_ref()) {
             (None, None) => Precondition::Absent,
             (Some(old), Some(current)) if old.doc == current.doc => current.unchanged(),
             _ => {
-                return Err(storage_error(
-                    tinystoragedrivers_core::StorageError::conflict("cron job changed"),
-                ));
+                return Err(storage_error(tinyflows_storage::StorageError::conflict(
+                    "cron job changed",
+                )));
             }
         };
         let op = match next {
@@ -355,6 +347,6 @@ impl CronDocuments {
 pub(super) fn conflict(error: &anyhow::Error) -> bool {
     // `storage_error` retains the storage error as an anyhow source below.
     error
-        .downcast_ref::<tinystoragedrivers_core::StorageError>()
+        .downcast_ref::<tinyflows_storage::StorageError>()
         .is_some_and(|error| error.kind() == ErrorKind::Conflict)
 }

@@ -1,7 +1,8 @@
 use super::*;
 use serde_json::json;
 use std::sync::Arc;
-use tinystoragedrivers_core::{DocumentStore, MemoryStorage, Precondition};
+use tinyflows_storage::{DocumentStore, Precondition};
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 use crate::catalog::test_support::{Interposed, docs_in, trigger_graph};
 
@@ -98,12 +99,12 @@ async fn an_unchanged_flow_lists_its_runs() {
 /// The continuity rule `list_flow_runs` re-checks after its query.
 #[test]
 fn continuity_follows_the_incarnation_or_the_pre_fence_version() {
-    use tinystoragedrivers_core::Version;
+    use tinyflows_storage::Version;
     let def = |doc: serde_json::Value, version: u64| Versioned {
         id: "f".to_string(),
         version: Version(version),
         doc,
-        meta: tinystoragedrivers_core::Meta::unknown(),
+        meta: tinyflows_storage::Meta::unknown(),
     };
     let fenced = def(json!({ "incarnation": "a" }), 1);
     assert!(still_the_flow(

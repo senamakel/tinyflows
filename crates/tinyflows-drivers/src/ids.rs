@@ -3,7 +3,7 @@
 use std::sync::atomic::{AtomicI64, Ordering};
 
 use chrono::Utc;
-use tinystoragedrivers_core::Key;
+use tinyflows_storage::Key;
 
 /// Now in epoch milliseconds, never repeating within the process: creations
 /// in quick succession still get distinct, increasing times, which is what

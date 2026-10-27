@@ -9,7 +9,7 @@
 
 use anyhow::{Context, Result};
 use serde_json::Value;
-use tinystoragedrivers_core::Kv;
+use tinyflows_storage::Kv;
 
 use super::FlowCatalogDocuments;
 use crate::storage::{KV_OWNER, catalog_namespace};

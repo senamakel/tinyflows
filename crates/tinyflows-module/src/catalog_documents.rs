@@ -9,7 +9,7 @@ use tinyflows_bus::catalog::{
     DocDeleteRequest, DocDeleteWhereRequest, DocEnsureRequest, DocGetRequest, DocPutRequest,
     DocQueryRequest, STORAGE_INTERFACE, storage,
 };
-use tinystoragedrivers_core::{
+use tinyflows_storage::{
     Capabilities, Capability, CollectionSpec, DocumentStore, Filter, Page, Precondition, Query,
     Result, Sort, StorageError, Version, Versioned, WriteOp, WriteOptions, WriteResult,
 };
@@ -65,10 +65,9 @@ fn storage_error(error: CatalogStorageFailure) -> StorageError {
         "already_exists" => StorageError::already_exists(error.message),
         "not_found" => StorageError::not_found(error.message),
         "invalid_input" => StorageError::invalid_input(error.message),
-        "serialization" => StorageError::new(
-            tinystoragedrivers_core::ErrorKind::Serialization,
-            error.message,
-        ),
+        "serialization" => {
+            StorageError::new(tinyflows_storage::ErrorKind::Serialization, error.message)
+        }
         "unavailable" => StorageError::unavailable(error.message),
         _ => StorageError::backend(error.message),
     }
@@ -271,6 +270,11 @@ impl DocumentStore for Documents {
         precondition: Precondition,
         options: WriteOptions,
     ) -> Result<Version> {
+        if options.created_ms.is_some() {
+            return Err(StorageError::invalid_input(
+                "a module cannot set created_ms: it is a host-only migration option",
+            ));
+        }
         self.call_record(
             storage::PUT,
             collection,
@@ -282,7 +286,7 @@ impl DocumentStore for Documents {
                 precondition: serde_json::from_value(serde_json::to_value(precondition)?)?,
                 schema: options.schema,
                 expires_ms: options.expires_ms,
-                created_ms: options.created_ms,
+                created_ms: None,
             },
         )
         .await

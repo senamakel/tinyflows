@@ -1,3 +1,0 @@
-{"namespace":[],"checkpoint_id":"c2","write":{"node":"work","task_id":"task-1","idx":0,"channel":"out","payload":{"v":1}}}
-{"namespace":[],"checkpoint_id":"c2","write":{"node":"work","task_id":"task-1","idx":1,"channel":"out","payload":{"v":2}}}
-{"namespace":[],"checkpoint_id":"c2","write":{"node":"t","task_id":"task-0","idx":0,"channel":"t","payload":null}}

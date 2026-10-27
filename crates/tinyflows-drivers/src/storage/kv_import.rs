@@ -2,7 +2,7 @@
 //!
 //! A document step may only write its own owner's collections and `tsd.kv`
 //! belongs to `tsd`, so the move is an importer the host calls once per scope
-//! after `Registry::migrate` (the pattern `tinyagents-harness` uses):
+//! after the driver's own schema migration:
 //! [`import_legacy_kv`] copies `flows_kv` (the catalog's namespaced state,
 //! `{namespace, key, value_json}`) and `flows_state` (`DriverStateStore`,
 //! `{key, value}`), removes them and records completion in `tsd.migrations`.
@@ -12,9 +12,10 @@
 //! is never overwritten by a stale v1 row.
 
 use serde_json::Value;
-use tinystoragedrivers_core::{
-    CollectionSpec, Cursor, ErrorKind, Filter, ID_FIELD, Key, Migrations, Precondition, Query,
-    Result, ScopedStorage, Sort, primitives,
+use std::sync::Arc;
+use tinyflows_storage::{
+    CollectionSpec, Cursor, DocumentStore, ErrorKind, Filter, ID_FIELD, Key, Migrations,
+    Precondition, Query, Result, Sort, primitives,
 };
 
 /// The `tsd.kv` owner of every entry tinyflows stores.
@@ -51,11 +52,10 @@ fn convert_state(body: &Value) -> Option<(String, String, Value)> {
 }
 
 async fn copy(
-    storage: &ScopedStorage,
+    docs: &Arc<dyn DocumentStore>,
     legacy: &str,
     convert: fn(&Value) -> Option<(String, String, Value)>,
 ) -> Result<u64> {
-    let docs = storage.documents();
     docs.ensure_collection(&CollectionSpec::new(legacy)).await?;
     let mut written = 0_u64;
     let mut cursor: Option<Cursor> = None;
@@ -104,15 +104,15 @@ async fn copy(
 ///
 /// The first storage error; the import resumes on the next call because
 /// nothing is removed before its collection has been copied.
-pub async fn import_legacy_kv(storage: &ScopedStorage) -> Result<u64> {
-    let migrations = Migrations::new(storage);
+pub async fn import_legacy_kv(docs: &Arc<dyn DocumentStore>) -> Result<u64> {
+    let migrations = Migrations::new(docs, KV_OWNER);
     if migrations.done(KV_OWNER, STEP).await? {
         tracing::debug!("[flows-storage] kv import already done");
         return Ok(0);
     }
-    primitives::ensure(storage).await?;
-    let written = copy(storage, "flows_kv", convert_catalog).await?
-        + copy(storage, "flows_state", convert_state).await?;
+    primitives::ensure(docs).await?;
+    let written = copy(docs, "flows_kv", convert_catalog).await?
+        + copy(docs, "flows_state", convert_state).await?;
     migrations.mark_done(KV_OWNER, STEP).await?;
     tracing::debug!(written, "[flows-storage] kv import complete");
     Ok(written)

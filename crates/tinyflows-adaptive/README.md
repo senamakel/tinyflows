@@ -301,7 +301,7 @@ backend (SQLite on a desktop, MongoDB in the cloud, files, memory), opened once
 and handed over as a document handle:
 
 ```rust
-let storage = Storage::from_documents(scoped_storage.documents().clone());
+let storage = Storage::from_documents(scoped_storage.documents().clone()).await?;
 let tenant = storage.for_tenant(&user_id);       // ledger and vault, scoped together
 ```
 

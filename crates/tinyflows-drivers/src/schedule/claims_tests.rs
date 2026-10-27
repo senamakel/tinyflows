@@ -4,7 +4,7 @@ use super::{
     test_support::{daily, docs_in},
 };
 use chrono::Duration;
-use tinystoragedrivers_core::MemoryStorage;
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 #[tokio::test]
 async fn two_handles_cannot_claim_the_same_occurrence() {
@@ -282,7 +282,7 @@ async fn release_and_restart_recovery_issue_fresh_tokens() {
 #[tokio::test]
 async fn invalid_inputs_and_malformed_stored_leases_fail_closed() {
     use serde_json::json;
-    use tinystoragedrivers_core::Precondition;
+    use tinyflows_storage::Precondition;
     let a = super::test_support::store();
     let job = a.add_shell_job(None, daily(), "echo").await.unwrap();
     let now = job.next_run;
@@ -323,12 +323,12 @@ async fn invalid_inputs_and_malformed_stored_leases_fail_closed() {
             .is_err()
     );
     // The claim's lease record, tampered with.
-    let key = tinystoragedrivers_core::Key::of([
+    let key = tinyflows_storage::Key::of([
         job.id.as_str(),
         job.next_run.timestamp_millis().to_string().as_str(),
     ])
     .unwrap();
-    let id = tinystoragedrivers_core::Key::of(["cron", key.as_str()]).unwrap();
+    let id = tinyflows_storage::Key::of(["cron", key.as_str()]).unwrap();
     a.docs
         .put(
             "tsd.leases",
@@ -437,7 +437,7 @@ async fn completion_already_in_flight_cannot_write_into_a_recreated_job() {
 #[tokio::test]
 async fn a_claim_is_a_tsd_lease_and_run_numbers_a_tsd_counter() {
     use serde_json::Value;
-    use tinystoragedrivers_core::Key;
+    use tinyflows_storage::Key;
     let a = super::test_support::store();
     let job = a.add_shell_job(None, daily(), "echo").await.unwrap();
     let claim = a

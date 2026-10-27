@@ -285,63 +285,58 @@ async fn run_turn_indexed(
     } else {
         value.get("tool_call").cloned()
     };
-    if let Some(tool_call) = model_tool_call {
-        if let Some(slug) = tool_call.get("slug").and_then(Value::as_str) {
-            // Only a tool actually offered in `config.tools` may be invoked;
-            // keep the matched descriptor so its trusted `connection_ref` wins.
-            let offered_tool = cfg
-                .get("tools")
-                .and_then(Value::as_array)
-                .and_then(|tools| {
-                    tools
-                        .iter()
-                        .find(|t| t.get("slug").and_then(Value::as_str) == Some(slug))
-                });
-            if let Some(offered_tool) = offered_tool {
-                tracing::debug!(slug, "agent tool sub-port: invoking model-elected tool");
-                let args = tool_call.get("args").cloned().unwrap_or(Value::Null);
-                // Credentials come from trusted config only: the offered tool
-                // descriptor's `connection_ref`, else the node's. The model's
-                // `tool_call.connection_ref` is deliberately NOT trusted — a
-                // prompt-injection could otherwise elect an arbitrary host
-                // credential id for the call.
-                let tool_conn = offered_tool
-                    .get("connection_ref")
-                    .and_then(Value::as_str)
-                    .or(conn);
-                let result = ctx.caps.tools.invoke(slug, args, tool_conn).await?;
-                if let Value::Object(map) = &mut value {
-                    map.insert("tool_result".to_string(), result);
-                }
-            } else {
-                tracing::warn!(
-                    slug,
-                    "agent tool sub-port: model elected an un-offered tool; ignoring"
-                );
+    if let Some(tool_call) = model_tool_call
+        && let Some(slug) = tool_call.get("slug").and_then(Value::as_str)
+    {
+        // Only a tool actually offered in `config.tools` may be invoked;
+        // keep the matched descriptor so its trusted `connection_ref` wins.
+        let offered_tool = cfg
+            .get("tools")
+            .and_then(Value::as_array)
+            .and_then(|tools| {
+                tools
+                    .iter()
+                    .find(|t| t.get("slug").and_then(Value::as_str) == Some(slug))
+            });
+        if let Some(offered_tool) = offered_tool {
+            tracing::debug!(slug, "agent tool sub-port: invoking model-elected tool");
+            let args = tool_call.get("args").cloned().unwrap_or(Value::Null);
+            // Credentials come from trusted config only: the offered tool
+            // descriptor's `connection_ref`, else the node's. The model's
+            // `tool_call.connection_ref` is deliberately NOT trusted — a
+            // prompt-injection could otherwise elect an arbitrary host
+            // credential id for the call.
+            let tool_conn = offered_tool
+                .get("connection_ref")
+                .and_then(Value::as_str)
+                .or(conn);
+            let result = ctx.caps.tools.invoke(slug, args, tool_conn).await?;
+            if let Value::Object(map) = &mut value {
+                map.insert("tool_result".to_string(), result);
             }
+        } else {
+            tracing::warn!(
+                slug,
+                "agent tool sub-port: model elected an un-offered tool; ignoring"
+            );
         }
     }
 
     // Output-parser sub-port: validate/repair the agent output against a schema.
-    if let Some(parser) = cfg.get("output_parser").filter(|p| !p.is_null()) {
-        if let Some(parser_schema) = parser.get("schema").filter(|s| !s.is_null()) {
-            let auto_fix = parser
-                .get("auto_fix")
-                .and_then(Value::as_bool)
-                .unwrap_or(true);
-            let parser_conn = parser
-                .get("connection_ref")
-                .and_then(Value::as_str)
-                .or(conn);
-            value = schema::parse_and_validate(
-                value,
-                parser_schema,
-                auto_fix,
-                &ctx.caps.llm,
-                parser_conn,
-            )
-            .await?;
-        }
+    if let Some(parser) = cfg.get("output_parser").filter(|p| !p.is_null())
+        && let Some(parser_schema) = parser.get("schema").filter(|s| !s.is_null())
+    {
+        let auto_fix = parser
+            .get("auto_fix")
+            .and_then(Value::as_bool)
+            .unwrap_or(true);
+        let parser_conn = parser
+            .get("connection_ref")
+            .and_then(Value::as_str)
+            .or(conn);
+        value =
+            schema::parse_and_validate(value, parser_schema, auto_fix, &ctx.caps.llm, parser_conn)
+                .await?;
     }
 
     // Emit the stable envelope: `json` is the structured (tool/parser-threaded)

@@ -1,11 +1,12 @@
 use super::*;
 use tinyflows_catalog::FlowRunStep;
-use tinystoragedrivers_core::{MemoryStorage, StorageBackend};
+use tinyflows_storage::StorageBackend;
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 async fn running_with_lease(lease: &str) -> (FlowCatalogDocuments, String) {
     let storage = MemoryStorage::new();
     let scoped = storage
-        .for_scope(&tinystoragedrivers_core::Scope::local())
+        .for_scope(&tinyflows_storage::Scope::new("local").expect("valid scope"))
         .unwrap();
     let catalog = FlowCatalogDocuments::new(scoped.documents().clone());
     let graph = tinyflows::migrate::deserialize_graph(serde_json::json!({
@@ -32,7 +33,7 @@ async fn running_with_lease(lease: &str) -> (FlowCatalogDocuments, String) {
 async fn legacy_parked() -> (FlowCatalogDocuments, String) {
     let storage = MemoryStorage::new();
     let scoped = storage
-        .for_scope(&tinystoragedrivers_core::Scope::local())
+        .for_scope(&tinyflows_storage::Scope::new("local").expect("valid scope"))
         .unwrap();
     let catalog = FlowCatalogDocuments::new(scoped.documents().clone());
     let graph = tinyflows::migrate::deserialize_graph(serde_json::json!({

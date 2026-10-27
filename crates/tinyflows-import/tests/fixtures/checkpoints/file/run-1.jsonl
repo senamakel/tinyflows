@@ -1,4 +1,0 @@
-{"thread_id":"run-1","checkpoint_id":"c1","run_id":"run-1","parent_checkpoint_id":null,"namespace":[],"state":{"n":1},"next_nodes":["next"],"completed_tasks":["done"],"pending_writes":[],"interrupts":[],"pending_activations":null,"barrier_arrivals":[],"metadata":{"source":"loop","step":1}}
-{"thread_id":"run-1","checkpoint_id":"c2","run_id":"run-1","parent_checkpoint_id":"c1","namespace":[],"state":{"n":2},"next_nodes":["next"],"completed_tasks":["done"],"pending_writes":[],"interrupts":[],"pending_activations":null,"barrier_arrivals":[],"metadata":{"source":"loop","step":2}}
-{"thread_id":"run-1","checkpoint_id":"s1","run_id":"run-1","parent_checkpoint_id":null,"namespace":["sub"],"state":{"sub":true},"next_nodes":["next"],"completed_tasks":["done"],"pending_writes":[],"interrupts":[],"pending_activations":null,"barrier_arrivals":[],"metadata":{"source":"loop","step":1}}
-{"thread_id":"run-1","checkpoint_id":"to

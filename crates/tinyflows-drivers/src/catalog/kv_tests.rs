@@ -1,7 +1,7 @@
 use super::*;
 use crate::catalog::test_support::{catalog, catalog_in};
 use serde_json::json;
-use tinystoragedrivers_core::MemoryStorage;
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 #[tokio::test]
 async fn values_round_trip_per_namespace() {

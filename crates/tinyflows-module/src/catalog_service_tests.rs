@@ -9,10 +9,10 @@ use tinyflows_bus::catalog::{
     self, CallbackAddress, CatalogStorage, GetRevisionRequest, ListRevisionsRequest,
     PutWorkflowRequest, PutWorkflowResponse,
 };
-use tinystoragedrivers_core::{
-    CollectionSpec, DocumentStore, Key, MemoryStorage, Precondition, Scope, StorageBackend,
-    WriteOptions,
+use tinyflows_storage::{
+    CollectionSpec, DocumentStore, Key, Precondition, Scope, StorageBackend, WriteOptions,
 };
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 pub(super) struct HostDocuments {
     pub(super) documents: Arc<dyn DocumentStore>,
@@ -44,21 +44,23 @@ impl HostDocuments {
     }
 
     async fn doc_put(&self, request: Value) -> tinybus::Result<Value> {
+        if request["created_ms"].as_i64().is_some() {
+            return Ok(reply(Err::<(), _>(
+                tinyflows_storage::StorageError::invalid_input(
+                    "a module cannot set created_ms: it is a host-only migration option",
+                ),
+            )));
+        }
         if request["collection"] == "flows.revisions"
             && self.fail_revision_put.swap(false, Ordering::SeqCst)
         {
             return Ok(reply(Err::<(), _>(
-                tinystoragedrivers_core::StorageError::unavailable(
-                    "injected revision migration failure",
-                ),
+                tinyflows_storage::StorageError::unavailable("injected revision migration failure"),
             )));
         }
         let mut options = WriteOptions::new();
         if let Some(schema) = request["schema"].as_u64() {
             options = options.schema(u32::try_from(schema).unwrap_or(0));
-        }
-        if let Some(created_ms) = request["created_ms"].as_i64() {
-            options = options.created_ms(created_ms);
         }
         let result = self
             .documents
@@ -75,7 +77,7 @@ impl HostDocuments {
 
     async fn doc_delete(&self, request: Value) -> tinybus::Result<Value> {
         let result = if self.fail_draft_deletes && text(&request, "collection") == "flows.drafts" {
-            Err(tinystoragedrivers_core::StorageError::unavailable(
+            Err(tinyflows_storage::StorageError::unavailable(
                 "injected draft delete failure",
             ))
         } else {
@@ -115,7 +117,7 @@ fn decode<T: DeserializeOwned>(value: &Value) -> tinybus::Result<T> {
     serde_json::from_value(value.clone()).map_err(tinybus::Error::from)
 }
 
-fn reply(value: tinystoragedrivers_core::Result<impl Serialize>) -> Value {
+fn reply(value: tinyflows_storage::Result<impl Serialize>) -> Value {
     match value {
         Ok(value) => json!({"value":serde_json::to_value(value).unwrap()}),
         Err(error) => {

@@ -194,25 +194,25 @@ pub(super) fn scope_reads(expression: &str) -> Vec<(String, Vec<String>)> {
     while i < bytes.len() {
         let nested_dot =
             i > 0 && (bytes[i - 1].is_ascii_alphanumeric() || matches!(bytes[i - 1], b'_' | b']'));
-        if bytes[i] == b'.' && !nested_dot {
-            if let Some((end, scope)) = root_selector(body, i + 1) {
-                match scope {
-                    Some(scope)
-                        if matches!(
-                            scope.as_str(),
-                            "inputs" | "run" | "item" | "items" | "nodes"
-                        ) =>
-                    {
-                        let path =
-                            input_path(&format!("=inputs{}", &body[end..])).unwrap_or_default();
-                        reads.push((scope, path));
-                    }
-                    None => reads.push(("run".into(), vec![])),
-                    _ => {}
+        if bytes[i] == b'.'
+            && !nested_dot
+            && let Some((end, scope)) = root_selector(body, i + 1)
+        {
+            match scope {
+                Some(scope)
+                    if matches!(
+                        scope.as_str(),
+                        "inputs" | "run" | "item" | "items" | "nodes"
+                    ) =>
+                {
+                    let path = input_path(&format!("=inputs{}", &body[end..])).unwrap_or_default();
+                    reads.push((scope, path));
                 }
-                i = end;
-                continue;
+                None => reads.push(("run".into(), vec![])),
+                _ => {}
             }
+            i = end;
+            continue;
         }
         if bytes[i] == b'"' || bytes[i] == b'\'' {
             let quote = bytes[i];
@@ -229,17 +229,17 @@ pub(super) fn scope_reads(expression: &str) -> Vec<(String, Vec<String>)> {
                     i += 1;
                 }
             }
-            if root_access && i < bytes.len() && bytes[i] == b']' {
-                if let Ok(scope) = serde_json::from_str::<String>(&body[start..i]) {
-                    if matches!(
-                        scope.as_str(),
-                        "inputs" | "run" | "item" | "items" | "nodes"
-                    ) {
-                        let path =
-                            input_path(&format!("=inputs{}", &body[i + 1..])).unwrap_or_default();
-                        reads.push((scope, path));
-                    }
-                }
+            if root_access
+                && i < bytes.len()
+                && bytes[i] == b']'
+                && let Ok(scope) = serde_json::from_str::<String>(&body[start..i])
+                && matches!(
+                    scope.as_str(),
+                    "inputs" | "run" | "item" | "items" | "nodes"
+                )
+            {
+                let path = input_path(&format!("=inputs{}", &body[i + 1..])).unwrap_or_default();
+                reads.push((scope, path));
             }
         } else if bytes[i].is_ascii_alphabetic() || bytes[i] == b'_' {
             let start = i;

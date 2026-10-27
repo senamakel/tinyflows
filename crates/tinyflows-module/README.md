@@ -126,14 +126,15 @@ host reads SQLite and draft files; file paths and scope choices stay in the
 host. The module performs typed decode and graph migration, then writes
 definitions, revisions, runs, state, suggestions, drafts, checkpoints and
 pending writes idempotently, returning per-kind tallies and bounded problems.
-The raw `flow-read` and `checkpoint-read` features link no TinyFlows
-implementation crates. The public `tinyflows-import` APIs share the same
-reader and module-side semantic writer.
+Hosts own the raw file readers and source-format policy; the module applies
+already bounded records through the same semantic writer used by the catalog
+callback.
 
 The host runs every batch during exclusive migration startup, before run
 execution or other writers can mutate that scope. Checkpoints use an
 append-only sequence and are not atomically fenced against concurrent live
-writes.
+writes. TinyFlows retains the bounded semantic writer in the module, while
+hosts own source-file discovery, decoding and compatibility policy.
 
 ### Pure members (retained from contract v3)
 
@@ -156,7 +157,8 @@ A document callback serves `ai.tinyhumans.tinyflows.ScheduleDocuments.Document`
 with a JSON request and returns `{value: JSON}` or `{error: {kind, message}}`.
 The error kinds are conflict, already_exists, not_found, invalid_input,
 serialization, unavailable or backend. Preserve conflict separately so module
-CAS loops can retry. Core-port values use tinystoragedrivers-core v0.5 serde.
+CAS loops can retry. Port values use the stable `tinystoragedrivers-types`
+serde contract.
 
 The module first requests capabilities and requires a typed
 `{value: {transactions: bool}}` reply; missing or invalid capability reports
@@ -170,7 +172,7 @@ get (collection/id), put
 (collection/filter). Only cron_jobs, cron_runs, cron_counters and legacy
 cron_job_policies are used. The host mechanically forwards these to its scoped
 document port, without linking TinyFlows storage implementations. Atomic batches
-use tinystoragedrivers-core WriteOp and WriteResult JSON and must be forwarded
+use the storage API's `WriteOp` and `WriteResult` JSON and must be forwarded
 as one backend transaction. Every collection in the batch is checked before
 forwarding; unsupported transactions fail instead of falling back to individual
 writes.

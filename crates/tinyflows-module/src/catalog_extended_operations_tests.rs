@@ -8,7 +8,7 @@ use tinyflows_bus::catalog::{
     SuggestionStatus, UpdateDraftRequest, UpsertSuggestionsRequest,
 };
 use tinyflows_drivers::catalog::FlowCatalogDocuments;
-use tinystoragedrivers_core::DocumentStore;
+use tinyflows_storage::DocumentStore;
 
 fn suggestion(id: &str) -> FlowSuggestion {
     FlowSuggestion {

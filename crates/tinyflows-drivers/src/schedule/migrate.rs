@@ -2,7 +2,7 @@
 //!
 //! | v1 | v2 |
 //! |---|---|
-//! | `cron_jobs` | `cron.jobs`: `schedule`/`delivery`/`origin` become objects, `next_run`+`next_run_ns` become `next_run_ms`, `created_at`+`created_ms` become the record's creation metadata, `last_run` becomes `last_run_ms` |
+//! | `cron_jobs` | `cron.jobs`: `schedule`/`delivery`/`origin` become objects, `next_run`+`next_run_ns` become `next_run_ms`, `created_at`+`created_ms` become the body field `created_ms`, `last_run` becomes `last_run_ms` |
 //! | `cron_runs` | `cron.runs`: `started_at`+`started_ns` become `started_ms`, `finished_at` becomes `finished_ms` |
 //! | `cron_counters` `admission` | `cron.admission` `ledger` (members as a list) |
 //! | `cron_counters` `runs` | `tsd.counters` owner `cron` name `runs`, through [`import_legacy_cron_counters`] |
@@ -18,11 +18,12 @@
 //! `tsd.counters` belongs to `tsd`, so a document step cannot write it. The
 //! step that reads `cron_counters` therefore files the run counter as
 //! `cron.admission/runs_counter` (`{next}`), and [`import_legacy_cron_counters`]
-//! moves it into `tsd.counters` once per scope after `Registry::migrate`.
+//! moves it into `tsd.counters` once per scope after this schema migration.
 
 use serde_json::{Map, Value, json};
-use tinystoragedrivers_core::{
-    Counters, Migrations, Owner, Precondition, Result, Schema, ScopeClass, ScopedStorage,
+use std::sync::Arc;
+use tinyflows_storage::{
+    Counters, DocumentStore, Migrations, Owner, Precondition, Result, Schema, ScopeClass,
     SourceRecord, Step, TargetRecord,
 };
 
@@ -34,8 +35,7 @@ const STAGED_COUNTER: &str = "runs_counter";
 const COUNTERS_STEP: &str = "counters_import";
 
 /// The `cron` owner's declarations (`cron.jobs`, `cron.runs`,
-/// `cron.admission`) and their v1 -> v2 steps. The host composes it with
-/// `Registry::compose` and runs `Registry::migrate` per scope.
+/// `cron.admission`) and their v1 -> v2 steps.
 #[must_use]
 #[allow(clippy::expect_used, reason = "`cron` is a valid owner name")]
 pub fn storage_schema() -> Schema {
@@ -72,6 +72,7 @@ fn map(
             convert(source).unwrap_or_else(|| {
                 tracing::warn!(collection, id = %source.id, "[cron-storage] carrying unconvertible v1 record");
                 TargetRecord::new(collection, source.id.clone(), source.body.clone())
+                    .preserve_expiry_from(source)
             })
         })
         .collect()
@@ -165,12 +166,10 @@ fn job(source: &SourceRecord) -> Option<TargetRecord> {
         .and_then(instant_ms)
         .or_else(|| body.get("created_ms").and_then(Value::as_i64))
         .unwrap_or(source.meta.created_ms);
-    let record = TargetRecord::new(JOBS, source.id.clone(), Value::Object(out));
-    Some(if created > 0 {
-        record.created_ms(created)
-    } else {
-        record
-    })
+    out.insert("created_ms".into(), created.into());
+    Some(
+        TargetRecord::new(JOBS, source.id.clone(), Value::Object(out)).preserve_expiry_from(source),
+    )
 }
 
 fn run(source: &SourceRecord) -> Option<TargetRecord> {
@@ -201,7 +200,9 @@ fn run(source: &SourceRecord) -> Option<TargetRecord> {
         "finished_ms".into(),
         ms("finished_at", "finished_ns")?.into(),
     );
-    Some(TargetRecord::new(RUNS, source.id.clone(), Value::Object(out)).created_ms(started))
+    Some(
+        TargetRecord::new(RUNS, source.id.clone(), Value::Object(out)).preserve_expiry_from(source),
+    )
 }
 
 /// `cron_counters` holds two documents: the run counter and the admission
@@ -225,13 +226,19 @@ fn counter_record(source: &SourceRecord) -> Option<TargetRecord> {
                 out.insert("limit".into(), limit.clone());
             }
             out.insert("members".into(), Value::Array(members));
-            Some(TargetRecord::new(ADMISSION, LEDGER, Value::Object(out)))
+            Some(
+                TargetRecord::new(ADMISSION, LEDGER, Value::Object(out))
+                    .preserve_expiry_from(source),
+            )
         }
-        "runs" => Some(TargetRecord::new(
-            ADMISSION,
-            STAGED_COUNTER,
-            json!({ "next": source.body.get("next")?.as_i64()? }),
-        )),
+        "runs" => Some(
+            TargetRecord::new(
+                ADMISSION,
+                STAGED_COUNTER,
+                json!({ "next": source.body.get("next")?.as_i64()? }),
+            )
+            .preserve_expiry_from(source),
+        ),
         _ => None,
     }
 }
@@ -248,13 +255,12 @@ fn counter_record(source: &SourceRecord) -> Option<TargetRecord> {
 /// # Errors
 ///
 /// The first storage error; the import resumes on the next call.
-pub async fn import_legacy_cron_counters(storage: &ScopedStorage) -> Result<bool> {
-    let migrations = Migrations::new(storage);
+pub async fn import_legacy_cron_counters(docs: &Arc<dyn DocumentStore>) -> Result<bool> {
+    let migrations = Migrations::new(docs, OWNER);
     if migrations.done(OWNER, COUNTERS_STEP).await? {
         return Ok(false);
     }
-    tinystoragedrivers_core::primitives::ensure(storage).await?;
-    let docs = storage.documents();
+    tinyflows_storage::primitives::ensure(docs).await?;
     docs.ensure_collection(&CronDocuments::collections().remove(2))
         .await?;
     let mut carried = false;

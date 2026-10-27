@@ -12,6 +12,19 @@ permissions:
   contents: read
 
 jobs:
+  msrv:
+    name: Minimum supported Rust
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@1.88.0
+
+      - name: Check the workspace at its declared minimum compiler version
+        run: cargo check --locked --workspace --all-features
+
   rust-sdk:
     name: Rust SDK
     runs-on: ubuntu-latest
@@ -36,6 +49,9 @@ jobs:
       - name: Check the published crate carries no storage git dependency
         run: scripts/check-published-crate.sh
 
+      - name: Check storage port users do not link engine crates
+        run: scripts/check-storage-engine-free.sh
+
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
 
@@ -44,29 +60,6 @@ jobs:
 
       - name: Clippy the schedule-only drivers build
         run: cargo clippy -p tinyflows-drivers --all-targets --no-default-features --features schedule -- -D warnings
-
-      - name: Clippy the schedule-only importer build
-        run: cargo clippy -p tinyflows-import --all-targets --no-default-features --features schedule -- -D warnings
-
-      - name: Clippy the schedule-read importer build
-        run: cargo clippy -p tinyflows-import --all-targets --no-default-features --features schedule-read -- -D warnings
-
-      - name: Check the schedule-read importer has no driver dependency
-        run: |
-          cargo check -p tinyflows-import --no-default-features --features schedule-read
-          schedule_read_tree=$(cargo tree -p tinyflows-import --no-default-features --features schedule-read -e normal --prefix none --format '{p} features=[{f}]')
-          if grep -q '^tinyflows-drivers ' <<<"$schedule_read_tree"; then
-            echo "schedule-read unexpectedly links tinyflows-drivers" >&2
-            exit 1
-          fi
-
-      - name: Check the schedule importer enables its driver dependency
-        run: |
-          schedule_tree=$(cargo tree -p tinyflows-import --no-default-features --features schedule -e normal --prefix none --format '{p} features=[{f}]')
-          grep -q '^tinyflows-drivers v.* features=\[schedule\]$' <<<"$schedule_tree"
-
-      - name: Check legacy flow and checkpoint importer feature boundaries
-        run: scripts/check-legacy-import-modes.sh
 
       - name: Build
         run: cargo build --all-targets
@@ -86,14 +79,6 @@ jobs:
       - name: Test the schedule-only drivers build
         # The cron store must build and pass without the engine.
         run: cargo test -p tinyflows-drivers --no-default-features --features schedule
-
-      - name: Test the schedule-only importer build
-        # Legacy cron jobs must import without the flows engine.
-        run: cargo test -p tinyflows-import --no-default-features --features schedule
-
-      - name: Test the schedule-read importer build
-        # The bus DTO reader compiles without linking the scheduler or driver implementations.
-        run: cargo test -p tinyflows-import --no-default-features --features schedule-read
 
       - uses: taiki-e/install-action@cargo-llvm-cov
 

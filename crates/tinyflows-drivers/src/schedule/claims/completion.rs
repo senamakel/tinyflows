@@ -9,7 +9,7 @@ use super::{
 use anyhow::{Result, bail};
 use chrono::{DateTime, Utc};
 use tinyflows_schedule::{DeliveryStatus, Schedule, next_run_for_schedule, truncate_cron_output};
-use tinystoragedrivers_core::{Capability, Precondition, WriteOp};
+use tinyflows_storage::{Capability, Precondition, WriteOp};
 
 /// The outcome and invocation identity to persist for a claimed run.
 #[derive(Debug, Clone)]

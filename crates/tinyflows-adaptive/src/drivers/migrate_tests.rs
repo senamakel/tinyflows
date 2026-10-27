@@ -1,9 +1,10 @@
 use std::sync::Arc;
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 use serde_json::{Value, json};
-use tinystoragedrivers_core::{
-    Counters, DocumentStore, DocumentStoreExt, Key, MemoryStorage, MigrateOptions, Owner,
-    Precondition, Registry, Schema, Scope, ScopeClass, ScopedStorage, StorageBackend,
+use tinyflows_storage::{
+    Counters, DocumentStore, DocumentStoreExt, Key, MigrateOptions, Precondition, Scope,
+    ScopeClass, Storage, StorageBackend,
 };
 
 use super::*;
@@ -11,19 +12,21 @@ use crate::drivers::{DriverLedger, DriverVault};
 use crate::ledger::{Ledger, conformance};
 use crate::workflows::Vault;
 
-fn scoped() -> ScopedStorage {
-    MemoryStorage::new().for_scope(&Scope::local()).unwrap()
+fn scoped() -> Storage {
+    MemoryStorage::new()
+        .for_scope(&Scope::new("local").expect("valid scope"))
+        .unwrap()
 }
 
-fn docs(storage: &ScopedStorage) -> Arc<dyn DocumentStore> {
+fn docs(storage: &Storage) -> Arc<dyn DocumentStore> {
     Arc::clone(storage.documents())
 }
 
-fn schema() -> Schema {
-    extend_storage_schema(Schema::new(Owner::new("flows").unwrap()))
+fn schema() -> tinyflows_storage::Schema {
+    storage_schema()
 }
 
-async fn seed(storage: &ScopedStorage, collection: &str, id: &str, body: Value) {
+async fn seed(storage: &Storage, collection: &str, id: &str, body: Value) {
     storage
         .documents()
         .put(collection, id, body, Precondition::None)
@@ -31,10 +34,9 @@ async fn seed(storage: &ScopedStorage, collection: &str, id: &str, body: Value) 
         .unwrap();
 }
 
-async fn migrate(storage: &ScopedStorage) {
-    Registry::compose([schema()])
-        .unwrap()
-        .migrate(storage, &MigrateOptions::new())
+async fn migrate(storage: &Storage) {
+    schema()
+        .migrate(storage.documents(), &MigrateOptions::new())
         .await
         .unwrap();
 }
@@ -42,7 +44,11 @@ async fn migrate(storage: &ScopedStorage) {
 #[test]
 fn the_schema_declares_the_eight_adaptive_collections_and_the_vault() {
     let schema = schema();
-    let names: Vec<&str> = schema.items.iter().map(|item| item.name()).collect();
+    let names: Vec<String> = schema
+        .items
+        .iter()
+        .map(|(item, _, _)| item.name.clone())
+        .collect();
     for name in [
         "flows.adaptive_rows",
         "flows.adaptive_lessons",
@@ -53,10 +59,23 @@ fn the_schema_declares_the_eight_adaptive_collections_and_the_vault() {
         "flows.adaptive_steps",
         "flows.adaptive_workflows",
     ] {
-        assert!(names.contains(&name), "{name} missing from {names:?}");
+        assert!(
+            names.iter().any(|candidate| candidate == name),
+            "{name} missing from {names:?}"
+        );
     }
-    assert!(schema.items.iter().all(|i| i.scope() == ScopeClass::Tenant));
-    Registry::compose([schema]).unwrap();
+    assert!(
+        schema
+            .items
+            .iter()
+            .all(|(_, _, scope)| *scope == ScopeClass::Tenant)
+    );
+    assert!(
+        schema
+            .collections()
+            .iter()
+            .any(|item| item.name == "tsd.migrations")
+    );
 }
 
 #[tokio::test]
@@ -86,7 +105,7 @@ async fn a_v1_row_migrates_to_a_flat_body_with_an_ms_time() {
     assert_eq!(stored.doc["at_ms"], 1_767_225_602_000_i64);
     assert_eq!(stored.doc["satisfied"], true);
     assert!(stored.doc.get("record").is_none() && stored.doc.get("at").is_none());
-    assert_eq!(stored.meta.created_ms, 1_767_225_602_000_i64);
+    assert!(stored.meta.created_ms > 0, "backend owns record metadata");
     let ledger = DriverLedger::new(docs(&storage)).for_tenant("t");
     let rows = ledger.rows("ep").await.unwrap();
     assert_eq!(rows[0].id, "ldg_00000007");
@@ -220,10 +239,7 @@ async fn migrating_twice_changes_nothing() {
     migrate(&storage).await;
     migrate(&storage).await;
     let all = docs(&storage)
-        .query_all(
-            "flows.adaptive_variants",
-            &tinystoragedrivers_core::Query::all(),
-        )
+        .query_all("flows.adaptive_variants", &tinyflows_storage::Query::all())
         .await
         .unwrap();
     assert_eq!(all.len(), 1);
@@ -247,13 +263,19 @@ async fn the_v1_sequences_carry_into_tsd_counters() {
     )
     .await;
 
-    assert_eq!(import_legacy_adaptive_counters(&storage).await.unwrap(), 2);
+    let document_store = docs(&storage);
+    assert_eq!(
+        import_legacy_adaptive_counters(&document_store)
+            .await
+            .unwrap(),
+        2
+    );
 
-    let counters = Counters::new(&docs(&storage));
+    let counters = Counters::new(&document_store);
     assert_eq!(counters.peek("flows", "adaptive_rows").await.unwrap(), 41);
     assert_eq!(counters.peek("flows", "adaptive_lessons").await.unwrap(), 6);
     assert!(
-        docs(&storage)
+        document_store
             .get("adaptive_counters", "adaptive_rows")
             .await
             .unwrap()
@@ -268,11 +290,21 @@ async fn the_v1_sequences_carry_into_tsd_counters() {
         .unwrap();
     assert_eq!(id, "ldg_00000042");
     // A second run is a no-op.
-    assert_eq!(import_legacy_adaptive_counters(&storage).await.unwrap(), 0);
+    assert_eq!(
+        import_legacy_adaptive_counters(&document_store)
+            .await
+            .unwrap(),
+        0
+    );
 }
 
 #[tokio::test]
 async fn importing_with_no_v1_counters_only_records_completion() {
     let storage = scoped();
-    assert_eq!(import_legacy_adaptive_counters(&storage).await.unwrap(), 0);
+    assert_eq!(
+        import_legacy_adaptive_counters(&docs(&storage))
+            .await
+            .unwrap(),
+        0
+    );
 }

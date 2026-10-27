@@ -1,6 +1,7 @@
 use super::*;
 use serde_json::json;
 use tinyflows_bus::schedule::{CALLBACK_INTERFACE, CallbackAddress, CronJob};
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 use tokio::sync::Mutex;
 
 #[cfg(test)]
@@ -125,7 +126,7 @@ async fn separate_schedule_object_parses_delays_and_rejects_cross_tenant_deliver
 #[tokio::test]
 async fn run_job_now_is_a_typed_module_owned_admission_operation() {
     use tinyflows_bus::schedule::{ManualDelivery, RunJobNow, RunJobReply, StoreConfig};
-    use tinystoragedrivers_core::{MemoryStorage, Scope, StorageBackend};
+    use tinyflows_storage::{Scope, StorageBackend};
 
     let (_server, host, state) = connections().await;
     let backend = MemoryStorage::new();
@@ -222,7 +223,7 @@ async fn run_job_now_returns_typed_refusal_when_a_scheduled_claim_is_active() {
     use tinyflows_bus::schedule::{
         ManualDelivery, RunJobNow, RunJobRefusal, RunJobReply, StoreConfig,
     };
-    use tinystoragedrivers_core::{MemoryStorage, Scope, StorageBackend};
+    use tinyflows_storage::{Scope, StorageBackend};
 
     let (_server, host, _) = connections().await;
     let backend = MemoryStorage::new();
@@ -380,9 +381,9 @@ async fn module_job_storage_preserves_policy_updates_and_run_history() {
         "/test/Documents".try_into().unwrap(),
         document_callbacks::Documents {
             docs: {
-                use tinystoragedrivers_core::StorageBackend;
-                tinystoragedrivers_core::MemoryStorage::new()
-                    .for_scope(&tinystoragedrivers_core::Scope::local())
+                use tinyflows_storage::StorageBackend;
+                tinystoragedrivers_testkit::MemoryBackend::new()
+                    .for_scope(&tinyflows_storage::Scope::new("local").expect("valid scope"))
                     .unwrap()
                     .documents()
                     .clone()
@@ -425,9 +426,11 @@ mod queue_tests;
 
 #[tokio::test]
 async fn module_document_store_retries_policy_migration_conflicts_without_losing_seeded_jobs() {
-    use tinystoragedrivers_core::{MemoryStorage, Precondition, Scope, StorageBackend};
+    use tinyflows_storage::{Precondition, Scope, StorageBackend};
     let (_server, host, _) = connections().await;
-    let scoped = MemoryStorage::new().for_scope(&Scope::local()).unwrap();
+    let scoped = MemoryStorage::new()
+        .for_scope(&Scope::new("local").expect("valid scope"))
+        .unwrap();
     let docs = scoped.documents().clone();
     host.serve_at(
         "/test/Documents".try_into().unwrap(),

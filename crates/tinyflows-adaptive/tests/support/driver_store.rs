@@ -11,12 +11,14 @@ use std::sync::Arc;
 
 use tinyflows::store::WorkflowStore;
 use tinyflows_drivers::store::DriverWorkflowStore;
-use tinystoragedrivers_core::{MemoryStorage, Scope, StorageBackend};
+use tinystoragedrivers_api::StorageBackend;
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
+use tinystoragedrivers_types::Scope;
 
 /// An empty store over its own in-memory backend.
 pub fn empty() -> DriverWorkflowStore {
     let scoped = MemoryStorage::new()
-        .for_scope(&Scope::local())
+        .for_scope(&Scope::new("local").expect("valid scope"))
         .expect("a local scope");
     DriverWorkflowStore::new(scoped.documents().clone())
 }

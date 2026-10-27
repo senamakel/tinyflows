@@ -126,10 +126,11 @@ impl ActOnce {
 #[async_trait]
 impl StepInterceptor for ActOnce {
     async fn intercept(&self, frame: StepFrame<'_>) -> StepAction {
-        if frame.phase == self.phase && frame.node.id == self.node_id {
-            if let Some(action) = self.action.lock().expect("action lock").take() {
-                return action;
-            }
+        if frame.phase == self.phase
+            && frame.node.id == self.node_id
+            && let Some(action) = self.action.lock().expect("action lock").take()
+        {
+            return action;
         }
         StepAction::Continue { state_patch: None }
     }

@@ -207,16 +207,16 @@ pub(super) fn validate_node_configs(graph: &WorkflowGraph, errors: &mut Vec<Vali
             });
         }
 
-        if let Some(scope) = scope {
-            if !matches!(scope, "user" | "flow" | "flows") {
-                errors.push(ValidationError::InvalidNodeConfig {
-                    node: node.id.clone(),
-                    reason: format!(
-                        "memory node has unknown scope {scope:?} (expected \
+        if let Some(scope) = scope
+            && !matches!(scope, "user" | "flow" | "flows")
+        {
+            errors.push(ValidationError::InvalidNodeConfig {
+                node: node.id.clone(),
+                reason: format!(
+                    "memory node has unknown scope {scope:?} (expected \
                          user|flow|flows)"
-                    ),
-                });
-            }
+                ),
+            });
         }
 
         // `scope` is required for recall/remember/forget (not search/flavour/
@@ -342,18 +342,17 @@ pub(super) fn validate_node_configs(graph: &WorkflowGraph, errors: &mut Vec<Vali
         // be read as "nobody", and the review would go to an empty audience
         // with no error anywhere. An empty array reaches the same audience of
         // nobody just as silently, so it is refused for the same reason.
-        if let Some(assignees) = node.config.get("assignees") {
-            if !assignees
+        if let Some(assignees) = node.config.get("assignees")
+            && !assignees
                 .as_array()
                 .is_some_and(|values| !values.is_empty() && values.iter().all(Value::is_string))
-            {
-                errors.push(ValidationError::InvalidNodeConfig {
-                    node: node.id.clone(),
-                    reason: "approval node `assignees` must be a non-empty array of strings (a \
+        {
+            errors.push(ValidationError::InvalidNodeConfig {
+                node: node.id.clone(),
+                reason: "approval node `assignees` must be a non-empty array of strings (a \
                              single reviewer is a one-element array)"
-                        .to_string(),
-                });
-            }
+                    .to_string(),
+            });
         }
     }
 }

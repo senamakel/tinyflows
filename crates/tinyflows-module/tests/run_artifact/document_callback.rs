@@ -4,7 +4,7 @@ use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
-use tinystoragedrivers_core::DocumentStore;
+use tinyflows_storage::DocumentStore;
 use tokio::sync::Notify;
 
 pub(crate) struct OwnerDocuments {
@@ -211,7 +211,7 @@ fn decode<T: DeserializeOwned>(value: &Value) -> tinybus::Result<T> {
     serde_json::from_value(value.clone()).map_err(tinybus::Error::from)
 }
 
-fn reply(value: tinystoragedrivers_core::Result<impl Serialize>) -> Value {
+fn reply(value: tinyflows_storage::Result<impl Serialize>) -> Value {
     match value {
         Ok(value) => json!({"value":serde_json::to_value(value).unwrap()}),
         Err(error) => json!({

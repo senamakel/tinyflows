@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result};
 use serde_json::Value;
-use tinystoragedrivers_core::{Capability, DocumentStoreExt, Filter, Query, Versioned};
+use tinyflows_storage::{Capability, DocumentStoreExt, Filter, Query, Versioned};
 
 use super::codec::incarnation;
 use super::jobs::runs_of;
@@ -59,7 +59,7 @@ impl CronDocuments {
             {
                 Ok(results) => matches!(
                     results.first(),
-                    Some(tinystoragedrivers_core::WriteResult::Delete { removed: true })
+                    Some(tinyflows_storage::WriteResult::Delete { removed: true })
                 ),
                 Err(error) if super::admission::conflict(&error) => false,
                 Err(error) => return Err(error).context("Failed to delete cron job"),
@@ -105,7 +105,7 @@ impl CronDocuments {
                 Ok(results)
                     if matches!(
                         results.first(),
-                        Some(tinystoragedrivers_core::WriteResult::Delete { removed: true })
+                        Some(tinyflows_storage::WriteResult::Delete { removed: true })
                     ) =>
                 {
                     self.delete_runs_of(stored).await?;

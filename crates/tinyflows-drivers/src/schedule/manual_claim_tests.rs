@@ -2,7 +2,7 @@ use super::test_support::docs_in;
 use super::*;
 use chrono::{Duration, Utc};
 use tinyflows_schedule::{CronJobPatch, DeliveryStatus, Schedule};
-use tinystoragedrivers_core::MemoryStorage;
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 #[tokio::test]
 async fn reconciles_manual_claim_receipt_after_an_ambiguous_claim_reply() {

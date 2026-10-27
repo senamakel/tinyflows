@@ -1,9 +1,10 @@
 //! Fixtures shared by the catalog tests.
 
 use std::sync::Arc;
+use tinystoragedrivers_testkit::MemoryBackend as MemoryStorage;
 
 use tinyflows::model::{Node, NodeKind, WorkflowGraph};
-use tinystoragedrivers_core::{DocumentStore, MemoryStorage, Scope, StorageBackend};
+use tinyflows_storage::{DocumentStore, Scope, StorageBackend};
 
 use super::FlowCatalogDocuments;
 
@@ -105,16 +106,16 @@ impl Interposed {
     }
 }
 
-#[tinystoragedrivers_core::async_trait]
+#[tinyflows_storage::async_trait]
 impl DocumentStore for Interposed {
-    fn capabilities(&self) -> tinystoragedrivers_core::Capabilities {
+    fn capabilities(&self) -> tinyflows_storage::Capabilities {
         self.inner.capabilities()
     }
 
     async fn ensure_collection(
         &self,
-        spec: &tinystoragedrivers_core::CollectionSpec,
-    ) -> tinystoragedrivers_core::Result<()> {
+        spec: &tinyflows_storage::CollectionSpec,
+    ) -> tinyflows_storage::Result<()> {
         self.inner.ensure_collection(spec).await
     }
 
@@ -122,9 +123,7 @@ impl DocumentStore for Interposed {
         &self,
         collection: &str,
         id: &str,
-    ) -> tinystoragedrivers_core::Result<
-        Option<tinystoragedrivers_core::Versioned<serde_json::Value>>,
-    > {
+    ) -> tinyflows_storage::Result<Option<tinyflows_storage::Versioned<serde_json::Value>>> {
         self.maybe_interject("get", collection).await;
         self.inner.get(collection, id).await
     }
@@ -134,8 +133,8 @@ impl DocumentStore for Interposed {
         collection: &str,
         id: &str,
         doc: serde_json::Value,
-        precondition: tinystoragedrivers_core::Precondition,
-    ) -> tinystoragedrivers_core::Result<tinystoragedrivers_core::Version> {
+        precondition: tinyflows_storage::Precondition,
+    ) -> tinyflows_storage::Result<tinyflows_storage::Version> {
         self.maybe_interject("put", collection).await;
         self.inner.put(collection, id, doc, precondition).await
     }
@@ -145,9 +144,9 @@ impl DocumentStore for Interposed {
         collection: &str,
         id: &str,
         doc: serde_json::Value,
-        precondition: tinystoragedrivers_core::Precondition,
-        options: tinystoragedrivers_core::WriteOptions,
-    ) -> tinystoragedrivers_core::Result<tinystoragedrivers_core::Version> {
+        precondition: tinyflows_storage::Precondition,
+        options: tinyflows_storage::WriteOptions,
+    ) -> tinyflows_storage::Result<tinyflows_storage::Version> {
         self.maybe_interject("put_with", collection).await;
         self.inner
             .put_with(collection, id, doc, precondition, options)
@@ -158,8 +157,8 @@ impl DocumentStore for Interposed {
         &self,
         collection: &str,
         id: &str,
-        precondition: tinystoragedrivers_core::Precondition,
-    ) -> tinystoragedrivers_core::Result<bool> {
+        precondition: tinyflows_storage::Precondition,
+    ) -> tinyflows_storage::Result<bool> {
         self.maybe_interject("delete", collection).await;
         self.inner.delete(collection, id, precondition).await
     }
@@ -167,9 +166,9 @@ impl DocumentStore for Interposed {
     async fn query(
         &self,
         collection: &str,
-        query: &tinystoragedrivers_core::Query,
-    ) -> tinystoragedrivers_core::Result<
-        tinystoragedrivers_core::Page<tinystoragedrivers_core::Versioned<serde_json::Value>>,
+        query: &tinyflows_storage::Query,
+    ) -> tinyflows_storage::Result<
+        tinyflows_storage::Page<tinyflows_storage::Versioned<serde_json::Value>>,
     > {
         self.maybe_interject("query", collection).await;
         self.inner.query(collection, query).await
@@ -178,32 +177,30 @@ impl DocumentStore for Interposed {
     async fn count(
         &self,
         collection: &str,
-        filter: &tinystoragedrivers_core::Filter,
-    ) -> tinystoragedrivers_core::Result<u64> {
+        filter: &tinyflows_storage::Filter,
+    ) -> tinyflows_storage::Result<u64> {
         self.inner.count(collection, filter).await
     }
 
     async fn delete_where(
         &self,
         collection: &str,
-        filter: &tinystoragedrivers_core::Filter,
-    ) -> tinystoragedrivers_core::Result<u64> {
+        filter: &tinyflows_storage::Filter,
+    ) -> tinyflows_storage::Result<u64> {
         self.inner.delete_where(collection, filter).await
     }
 
     async fn claim(
         &self,
         collection: &str,
-        filter: &tinystoragedrivers_core::Filter,
-        sort: &[tinystoragedrivers_core::Sort],
+        filter: &tinyflows_storage::Filter,
+        sort: &[tinyflows_storage::Sort],
         patch: &serde_json::Value,
-    ) -> tinystoragedrivers_core::Result<
-        Option<tinystoragedrivers_core::Versioned<serde_json::Value>>,
-    > {
+    ) -> tinyflows_storage::Result<Option<tinyflows_storage::Versioned<serde_json::Value>>> {
         self.inner.claim(collection, filter, sort, patch).await
     }
 
-    async fn drop_collection(&self, collection: &str) -> tinystoragedrivers_core::Result<()> {
+    async fn drop_collection(&self, collection: &str) -> tinyflows_storage::Result<()> {
         self.inner.drop_collection(collection).await
     }
 }
