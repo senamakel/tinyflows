@@ -9,8 +9,8 @@ publish = false
 description = "TinyFlows-owned generic document persistence helpers"
 
 [dependencies]
-tinystoragedrivers-api = { git = "https://github.com/senamakel/tinystoragedrivers", version = "2.0.1", tag = "v2.0.1" }
-tinystoragedrivers-types = { git = "https://github.com/senamakel/tinystoragedrivers", version = "2.0.1", tag = "v2.0.1" }
+tinystoragedrivers-api = { git = "https://github.com/senamakel/tinystoragedrivers", version = "2.1.2", rev = "2d23a6a6009fa52d1e7aa18de589bdd109a54b6a" }
+tinystoragedrivers-types = { git = "https://github.com/senamakel/tinystoragedrivers", version = "2.1.2", rev = "2d23a6a6009fa52d1e7aa18de589bdd109a54b6a" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 async-trait = { workspace = true }
@@ -20,6 +20,6 @@ ulid = "1"
 data-encoding = "2"
 
 [dev-dependencies]
-tinystoragedrivers-testkit = { git = "https://github.com/senamakel/tinystoragedrivers", version = "2.0.1", tag = "v2.0.1" }
-tinystoragedrivers-busproxy = { git = "https://github.com/senamakel/tinystoragedrivers", version = "2.0.1", tag = "v2.0.1" }
-tinybus-sdk = { package = "tinybus", git = "https://github.com/senamakel/tinybus", rev = "d5b949be8ea56eb5a17289a09aa28e8c09bd88b7", default-features = false }
+tinystoragedrivers-testkit = { git = "https://github.com/senamakel/tinystoragedrivers", version = "2.1.2", rev = "2d23a6a6009fa52d1e7aa18de589bdd109a54b6a" }
+tinystoragedrivers-busproxy = { git = "https://github.com/senamakel/tinystoragedrivers", version = "2.1.2", rev = "2d23a6a6009fa52d1e7aa18de589bdd109a54b6a" }
+tinybus-sdk = { package = "tinybus", git = "https://github.com/senamakel/tinybus", rev = "0de2d283f35cbbff08efad6fbe05537ffb74611b", default-features = false }
