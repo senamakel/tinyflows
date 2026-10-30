@@ -29,6 +29,9 @@ fn channel_job_origin_roundtrips_session_and_conversation_identity() {
 
     let wire = serde_json::to_value(&origin).unwrap();
     assert_eq!(wire["channel_session"]["tenant_key"], "profile:alice");
-    assert_eq!(wire["channel_session"]["conversation"]["thread_id"], "thread-1");
+    assert_eq!(
+        wire["channel_session"]["conversation"]["thread_id"],
+        "thread-1"
+    );
     assert_eq!(serde_json::from_value::<JobOrigin>(wire).unwrap(), origin);
 }
