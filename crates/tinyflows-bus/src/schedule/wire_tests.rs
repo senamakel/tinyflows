@@ -123,6 +123,7 @@ fn origin_wire_bytes() {
             history_key: "telegram:42".into(),
             sender: Some("alice".into()),
             thread_id: Some("7".into()),
+            channel_session: None,
         },
     );
 }

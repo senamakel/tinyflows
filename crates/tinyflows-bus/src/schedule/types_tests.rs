@@ -317,6 +317,7 @@ fn job_origin_channel_roundtrips_with_and_without_optionals() {
         history_key: "telegram:chat-42".into(),
         sender: Some("alice".into()),
         thread_id: Some("topic-7".into()),
+        channel_session: None,
     };
     let v = serde_json::to_value(&full).unwrap();
     assert_eq!(v["kind"], "channel");
@@ -340,6 +341,7 @@ fn job_origin_channel_roundtrips_with_and_without_optionals() {
             history_key: "discord:c1".into(),
             sender: None,
             thread_id: None,
+            channel_session: None,
         }
     );
     assert_eq!(serde_json::to_value(&parsed).unwrap(), minimal);

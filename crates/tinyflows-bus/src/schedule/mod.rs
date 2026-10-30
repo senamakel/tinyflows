@@ -21,8 +21,9 @@ pub use store_types::{
     AgentJobSpec, ImportedJob, MAX_CRON_OUTPUT_BYTES, StoreOperation, TRUNCATED_OUTPUT_MARKER,
 };
 pub use types::{
-    ActiveHours, CronJob, CronJobPatch, CronRun, DeliveryConfig, DeliveryStatus, JobOrigin,
-    JobPolicy, JobType, Schedule, SessionTarget, delivery_mode,
+    ActiveHours, ChannelConversationIdentity, ChannelSessionIdentity, CronJob, CronJobPatch,
+    CronRun, DeliveryConfig, DeliveryStatus, JobOrigin, JobPolicy, JobType, Schedule,
+    SessionTarget, delivery_mode,
 };
 
 /// The module has one bus identity and separately served authoring/schedule objects.
