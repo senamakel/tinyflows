@@ -3,12 +3,14 @@
 use serde::{Deserialize, Serialize};
 
 mod frequency;
+mod identity;
 mod records;
 mod requests;
 mod store_types;
 pub mod types;
 
 pub use frequency::{MIN_AGENT_JOB_INTERVAL, TooFrequent, describe_gap};
+pub use identity::{ChannelConversationIdentity, ChannelSessionIdentity};
 pub use records::{Attempt, Completion, RunRecord};
 pub use requests::{
     AcknowledgeManualRun, CheckOriginRequest, CheckPatchRequest, DeliveryProjection,
@@ -21,9 +23,8 @@ pub use store_types::{
     AgentJobSpec, ImportedJob, MAX_CRON_OUTPUT_BYTES, StoreOperation, TRUNCATED_OUTPUT_MARKER,
 };
 pub use types::{
-    ActiveHours, ChannelConversationIdentity, ChannelSessionIdentity, CronJob, CronJobPatch,
-    CronRun, DeliveryConfig, DeliveryStatus, JobOrigin, JobPolicy, JobType, Schedule,
-    SessionTarget, delivery_mode,
+    ActiveHours, CronJob, CronJobPatch, CronRun, DeliveryConfig, DeliveryStatus, JobOrigin,
+    JobPolicy, JobType, Schedule, SessionTarget, delivery_mode,
 };
 
 /// The module has one bus identity and separately served authoring/schedule objects.
