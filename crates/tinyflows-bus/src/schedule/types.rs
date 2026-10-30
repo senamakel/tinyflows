@@ -470,3 +470,7 @@ pub struct CronJobPatch {
 #[cfg(test)]
 #[path = "types_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "identity_tests.rs"]
+mod identity_tests;
