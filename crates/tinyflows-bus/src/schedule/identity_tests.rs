@@ -1,6 +1,5 @@
 use super::*;
 use crate::schedule::{ChannelConversationIdentity, ChannelSessionIdentity};
-use serde_json::json;
 
 #[test]
 fn channel_job_origin_roundtrips_session_and_conversation_identity() {
